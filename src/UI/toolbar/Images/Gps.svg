@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 72 72">
+    <!-- Modern Bolder Satellite Icon -->
+    <g fill="none" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+        <!-- Satellite Body -->
+        <rect x="28" y="24" width="16" height="24" rx="2" />
+        <!-- Solar Panels (Simplified & Bolder) -->
+        <path d="M 12 28 L 28 28 M 12 36 L 28 36 M 12 44 L 28 44" stroke-width="3" />
+        <path d="M 44 28 L 60 28 M 44 36 L 60 36 M 44 44 L 60 44" stroke-width="3" />
+        <rect x="8" y="26" width="20" height="20" rx="1" stroke-width="2" />
+        <rect x="44" y="26" width="20" height="20" rx="1" stroke-width="2" />
+        <!-- Antenna Status (Bolder waves) -->
+        <path d="M 36 48 L 36 54" />
+        <path d="M 28 60 Q 36 52 44 60" />
+        <path d="M 22 68 Q 36 54 50 68" stroke-width="3" />
+    </g>
+</svg>
