@@ -562,7 +562,7 @@ Item {
         id:                 toolbar
         guidedValueSlider:  _guidedValueSlider
         utmspSliderTrigger: utmspSendActTrigger
-        visible:            !QGroundControl.videoManager.fullScreen
+        visible:            !QGroundControl.videoManager.fullScreen && !mainWindow.modeSelectionVisible
     }
 
     // PlanView Toolbar (visible when IN plan edit mode)
@@ -648,7 +648,7 @@ Item {
                     return qsTr("Add")
                 }
                 renderType: Text.NativeRendering
-                font.pixelSize: ScreenTools.defaultFontPixelSize
+                font.pixelSize: ScreenTools.defaultFontPixelHeight
                 font.weight: Font.DemiBold
                 color: addButton._missionRunning ? "white" : qgcPal.text
                 anchors.verticalCenter: parent.verticalCenter
@@ -724,7 +724,7 @@ Item {
                 Text {
                     text: qsTr("Exit")
                     renderType: Text.NativeRendering
-                    font.pixelSize: ScreenTools.defaultFontPixelSize
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight
                     font.weight: Font.DemiBold
                     color: qgcPal.text
                     anchors.verticalCenter: parent.verticalCenter
@@ -781,7 +781,7 @@ Item {
                 Text {
                     text: qsTr("Use")
                     renderType: Text.NativeRendering
-                    font.pixelSize: ScreenTools.defaultFontPixelSize
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight
                     font.weight: Font.DemiBold
                     color: qgcPal.text
                     anchors.verticalCenter: parent.verticalCenter

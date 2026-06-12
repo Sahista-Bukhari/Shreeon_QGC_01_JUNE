@@ -108,7 +108,7 @@ Item {
         anchors.bottomMargin: _toolsMargin * 0.4
         anchors.right: parent.right
         anchors.rightMargin: _toolsMargin
-        visible: !QGroundControl.videoManager.fullScreen
+        visible: !QGroundControl.videoManager.fullScreen && !mainWindow.modeSelectionVisible
 
         // Slide down off-screen when plan edit mode is active
         transform: Translate {
@@ -523,7 +523,7 @@ Item {
 
                 // Text
                 ctx.fillStyle = "black";
-                ctx.font = "bold 9px Helvetica";
+                ctx.font = "bold 9px " + ScreenTools.normalFontFamily;
                 ctx.textAlign = "center";
                 ctx.textBaseline = "middle";
                 ctx.fillText("2.5m", lX + lW / 2, lY + lH / 2);
@@ -545,7 +545,7 @@ Item {
                     Layout.fillWidth: true
                     color: "white"
                     font.bold: true
-                    font.family: "Helvetica"
+                    font.family: ScreenTools.normalFontFamily
                     font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.3
                     text: "TERRAIN FLOW"
                 }
@@ -876,7 +876,7 @@ Item {
 
                     // Obstacle Label
                     ctx.fillStyle = "#ff4444";
-                    ctx.font = "bold 9px Monospace";
+                    ctx.font = "bold 9px " + ScreenTools.fixedFontFamily;
                     ctx.textAlign = "center";
                     ctx.fillText(obj.label, obj.x, obj.y - 12);
                 });
@@ -915,7 +915,7 @@ Item {
                 ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
                 ctx.strokeRect(width - 55, 35, 45, 18);
                 ctx.fillStyle = "white";
-                ctx.font = "9px Arial";
+                ctx.font = "9px " + ScreenTools.normalFontFamily;
                 ctx.fillText("FOV: 90°", width - 52, 47);
             }
             onPhaseChanged: requestPaint()

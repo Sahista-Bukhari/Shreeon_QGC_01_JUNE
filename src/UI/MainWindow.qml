@@ -664,7 +664,6 @@ ApplicationWindow {
                     onLoaded:       item.popped = true
                 }
             }
-
             onClosing: {
                 visible = false
                 source = ""
@@ -682,6 +681,8 @@ ApplicationWindow {
         onShowSettings:     mainWindow.showSettingsTool()
         onShowConfigure:    mainWindow.showVehicleConfig()
     }
+
+    readonly property bool modeSelectionVisible: modeSelectionOverlay.isOpen
 
     ModeSelectionOverlay {
         id: modeSelectionOverlay

@@ -232,6 +232,7 @@ Item {
     PlanViewToolBar {
         id: planToolBar
         planMasterController: _planMasterController
+        visible: !mainWindow.modeSelectionVisible
     }
 
     Item {

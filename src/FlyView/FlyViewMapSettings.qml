@@ -175,7 +175,7 @@ Item {
             Text {
                 text:           qsTr("Provider")
                 color:          "#333333"
-                font.pixelSize: ScreenTools.defaultFontPixelSize * 0.85
+                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.85
                 font.weight:    Font.DemiBold
                 leftPadding:    ScreenTools.defaultFontPixelWidth * 0.2
             }
@@ -206,7 +206,7 @@ Item {
                                 anchors.centerIn: parent
                                 text:           modelData
                                 color:          mapProviderFact.rawValue === modelData ? "white" : "#555555"
-                                font.pixelSize: ScreenTools.defaultFontPixelSize * 0.9
+                                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.9
                                 font.weight:    mapProviderFact.rawValue === modelData ? Font.DemiBold : Font.Normal
                             }
 
@@ -239,7 +239,7 @@ Item {
             Text {
                 text:           qsTr("Type")
                 color:          "#333333"
-                font.pixelSize: ScreenTools.defaultFontPixelSize * 0.85
+                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.85
                 font.weight:    Font.DemiBold
                 leftPadding:    ScreenTools.defaultFontPixelWidth * 0.2
             }
@@ -311,7 +311,7 @@ Item {
                                         anchors.centerIn: parent
                                         text:           "✓"
                                         color:          "white"
-                                        font.pixelSize: ScreenTools.defaultFontPixelSize * 0.8
+                                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.8
                                         font.weight:    Font.Bold
                                     }
                                 }
@@ -326,7 +326,7 @@ Item {
                                 verticalAlignment:  Text.AlignVCenter
                                 text:               modelData
                                 color:              mapTypeFact.rawValue === modelData ? "#2E9B54" : "#555555"
-                                font.pixelSize:     ScreenTools.defaultFontPixelSize * 0.85
+                                font.pixelSize:     ScreenTools.defaultFontPixelHeight * 0.85
                                 font.weight:        mapTypeFact.rawValue === modelData ? Font.DemiBold : Font.Normal
                             }
                         }
