@@ -23,6 +23,7 @@ ApplicationWindow {
 
     Component.onCompleted: {
         // Start the sequence of first run prompt(s)
+        modeSelectionOverlay.isOpen = true
         firstRunPromptManager.nextPrompt()
     }
 

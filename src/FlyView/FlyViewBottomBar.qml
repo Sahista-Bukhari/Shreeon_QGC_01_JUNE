@@ -156,7 +156,7 @@ Item {
     readonly property color _togglePanelBorder: Qt.rgba(0.20, 0.20, 0.20, 0.65)
     readonly property color _hudGrayWhite:      Qt.rgba(0.82, 0.82, 0.82, 0.95)
     readonly property real  _glassPanelRadius:  ScreenTools.defaultFontPixelHeight * 0.5
-
+    
     // Custom Background Shape
     Canvas {
         id: bgCanvas
@@ -174,7 +174,6 @@ Item {
 
             if (!telemetryItem || !mainItem || telemetryItem.width === 0)
                 return;
-
             var tPos = telemetryItem.mapToItem(bgCanvas, 0, 0);
             var mPos = mainItem.mapToItem(bgCanvas, 0, 0);
 

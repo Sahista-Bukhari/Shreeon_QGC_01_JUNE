@@ -11,6 +11,8 @@ Button {
     hoverEnabled:   !ScreenTools.isMobile
     autoExclusive:  true
     icon.color:     textColor
+    implicitWidth: 200
+    implicitHeight: 60
 
     property color textColor: checked || pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
 
@@ -34,7 +36,6 @@ Button {
             width:  ScreenTools.defaultFontPixelHeight
             height: ScreenTools.defaultFontPixelHeight
         }
-
         QGCLabel {
             id:                     displayText
             Layout.fillWidth:       true
