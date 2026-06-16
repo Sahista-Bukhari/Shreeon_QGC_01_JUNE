@@ -148,6 +148,7 @@ qt_add_qml_module(QGroundControlControlsModule
         QGCPageIndicator.qml
         QGCPillSlider.qml
         QGCTankIndicator.qml
+        VerticalBatteryIcon.qml
     QGCBrandingBadge.qml
         QGCPopupDialog.qml
         QGCRadioButton.qml

@@ -136,7 +136,6 @@ Item {
     }
 
 
-
     ParameterDownloadProgress {
         anchors.fill: parent
     }

@@ -35,7 +35,7 @@ RowLayout {
         font.pointSize:     ScreenTools.largeFontPointSize
 
         property string _commLostText:      qsTr("Comms Lost")
-        property string _readyToFlyText:    qsTr("Ready")
+        property string _readyToFlyText:    qsTr("Ready to go")
         property string _notReadyToFlyText: qsTr("Not Ready")
         property string _disconnectedText:  qsTr("Disconnected - Click to manually connect")
         property string _armedText:         qsTr("Armed")

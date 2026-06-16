@@ -164,6 +164,8 @@ Item {
 
     QGCPalette { id: qgcPal }
 
+    property color labelColor: qgcPal.windowTransparentText
+
     RowLayout {
         id:             batteryIndicatorRow
         anchors.top:    parent.top
@@ -272,6 +274,27 @@ Item {
                 return qsTr("n/a")
             }
 
+            function getBatteryPercentageValue() {
+                if (!isNaN(battery.percentRemaining.rawValue)) {
+                    if (battery.percentRemaining.rawValue > 98.9) {
+                        return qsTr("100")
+                    }
+                    return battery.percentRemaining.valueString
+                }
+                return getBatteryPercentageText()
+            }
+
+            function showBatteryPercentSymbol() {
+                return !isNaN(battery.percentRemaining.rawValue)
+            }
+
+            function getBatteryLevel() {
+                if (!isNaN(battery.percentRemaining.rawValue)) {
+                    return battery.percentRemaining.rawValue
+                }
+                return -1
+            }
+
             function getBatteryVoltageText() {
                 if (!isNaN(battery.voltage.rawValue)) {
                     return battery.voltage.valueString + battery.voltage.units
@@ -309,35 +332,50 @@ Item {
                 }
             }
 
-            QGCColoredImage {
+            VerticalBatteryIcon {
                 anchors.top:        parent.top
                 anchors.bottom:     parent.bottom
-                width:              height
-                sourceSize.width:   width
-                source:             getBatterySvgSource()
-                fillMode:           Image.PreserveAspectFit
-                color:              getBatteryColor()
+                width:              height * 0.46
+                level:              getBatteryLevel()
+                outlineColor:       "#FFFFFF"
+                fillColor:          "#FFFFFF"
+                showChargeArrow:    true
             }
 
-           ColumnLayout {
+            ColumnLayout {
                 id:                     batteryInfoColumn
                 anchors.top:            parent.top
                 anchors.bottom:         parent.bottom
                 spacing:                0
 
-                QGCLabel {
+                Row {
                     Layout.alignment:       Qt.AlignHCenter
-                    verticalAlignment:      Text.AlignVCenter
-                    color:                  qgcPal.windowTransparentText
-                    text:                   getBatteryPercentageText()
-                    font.pointSize:         _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
+                    spacing:                0
                     visible:                _showBoth || _showPercentage
+
+                    QGCLabel {
+                        verticalAlignment:  Text.AlignVCenter
+                        color:              showBatteryPercentSymbol() ? getBatteryColor() : control.labelColor
+                        text:               getBatteryPercentageValue()
+                        font.pointSize:     _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.largeFontPointSize
+                        font.bold:          true
+                    }
+
+                    QGCLabel {
+                        verticalAlignment:  Text.AlignTop
+                        color:              getBatteryColor()
+                        text:               "%"
+                        font.pointSize:     _showBoth ? ScreenTools.smallFontPointSize : ScreenTools.defaultFontPointSize
+                        font.bold:          true
+                        visible:            showBatteryPercentSymbol()
+                        anchors.topMargin:  _showBoth ? 0 : ScreenTools.defaultFontPixelHeight * 0.12
+                    }
                 }
 
                 QGCLabel {
                     Layout.alignment:       Qt.AlignHCenter
                     font.pointSize:         _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
-                    color:                  qgcPal.windowTransparentText
+                    color:                  control.labelColor
                     text:                   getBatteryVoltageText()
                     visible:                _showBoth || _showVoltage
                 }

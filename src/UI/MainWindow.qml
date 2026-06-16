@@ -15,6 +15,8 @@ import QGroundControl.Toolbar
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:         mainWindow
+    height: 400
+    width: 800
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
     flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
@@ -170,8 +172,8 @@ ApplicationWindow {
 
     Component {
         id: simpleMessageDialogComponent
-
         QGCSimpleMessageDialog {
+
         }
     }
 
@@ -225,9 +227,9 @@ ApplicationWindow {
         for (var index=0; index<QGroundControl.multiVehicleManager.vehicles.count; index++) {
             if (QGroundControl.multiVehicleManager.vehicles.get(index).parameterManager.pendingWrites) {
                 mainWindow.showMessageDialog(closeDialogTitle,
-                    qsTr("You have pending parameter updates to a vehicle. If you close you will lose changes. Are you sure you want to close?"),
-                    Dialog.Yes | Dialog.No,
-                    function() { _closeChecksToSkip |= _skipPendingParameterWritesCheckMask; performCloseChecks() })
+                                             qsTr("You have pending parameter updates to a vehicle. If you close you will lose changes. Are you sure you want to close?"),
+                                             Dialog.Yes | Dialog.No,
+                                             function() { _closeChecksToSkip |= _skipPendingParameterWritesCheckMask; performCloseChecks() })
                 return false
             }
         }
@@ -237,9 +239,9 @@ ApplicationWindow {
     function checkForActiveConnections() {
         if (QGroundControl.multiVehicleManager.activeVehicle) {
             mainWindow.showMessageDialog(closeDialogTitle,
-                qsTr("There are still active connections to vehicles. Are you sure you want to exit?"),
-                Dialog.Yes | Dialog.No,
-                function() { _closeChecksToSkip |= _skipActiveConnectionsCheckMask; performCloseChecks() })
+                                         qsTr("There are still active connections to vehicles. Are you sure you want to exit?"),
+                                         Dialog.Yes | Dialog.No,
+                                         function() { _closeChecksToSkip |= _skipActiveConnectionsCheckMask; performCloseChecks() })
             return false
         } else {
             return true
@@ -247,11 +249,11 @@ ApplicationWindow {
     }
 
     onClosing: (close) => {
-        if (!_forceClose) {
-            _closeChecksToSkip = 0
-            close.accepted = performCloseChecks()
-        }
-    }
+                   if (!_forceClose) {
+                       _closeChecksToSkip = 0
+                       close.accepted = performCloseChecks()
+                   }
+               }
 
     background: Rectangle {
         anchors.fill:   parent
@@ -351,7 +353,7 @@ ApplicationWindow {
             anchors.right:  parent.right
             anchors.top:    parent.top
             height:         ScreenTools.toolbarHeight
-            color:          qgcPal.toolbarBackground
+            color: Qt.rgba(0, 0, 0, 0.35)
 
             QGCToolBarButton {
                 id:                 backButton
