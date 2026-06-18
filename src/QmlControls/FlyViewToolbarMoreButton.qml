@@ -35,7 +35,8 @@ Item {
         anchors.horizontalCenter: parent.horizontalCenter
         width:                  ScreenTools.defaultFontPixelHeight * 1.5
         height:                 width
-        source:                 "qrc:/qmlimages/HamburgerThin.svg"
+        // source:                 "qrc:/qmlimages/HamburgerThin.svg"
+        source:  "/res/gear-black.svg"
         color:                  qgcPal.text
         fillMode:               Image.PreserveAspectFit
         opacity:                hamburgerMouseArea.containsMouse || moreMenu.visible ? 1.0 : 0.7

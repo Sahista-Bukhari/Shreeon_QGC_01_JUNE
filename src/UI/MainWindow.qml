@@ -24,10 +24,13 @@ ApplicationWindow {
     property bool   _utmspSendActTrigger
 
     Component.onCompleted: {
+        console.log("the application begins")
+
         // Start the sequence of first run prompt(s)
         modeSelectionOverlay.isOpen = true
         firstRunPromptManager.nextPrompt()
     }
+
 
     /// Saves main window position and size and re-opens it in the same position and size next time
     MainWindowSavedState {

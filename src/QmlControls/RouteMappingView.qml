@@ -30,7 +30,6 @@ Item {
         coordinate.altitude  = coordinate.altitude.toFixed(_decimalPlaces)
         return coordinate
     }
-
     function addRouteMappingPoint() {
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
         _missionController.insertSimpleMissionItem(mapCenter(), nextIndex, true)
@@ -60,7 +59,6 @@ Item {
             fileDialog.openForSave()
         }
     }
-
     QGCFileDialog {
         id: fileDialog
         folder: _appSettings ? _appSettings.missionSavePath : ""
@@ -69,24 +67,14 @@ Item {
         property var _appSettings: QGroundControl.settingsManager.appSettings
 
         onAcceptedForSave: (file) => {
-            _planMasterController.saveToFile(file)
-            close()
-        }
-    }
-
-    PlanViewToolBar {
-        id: planToolBar
-        planMasterController: _planMasterController
-        visible: !mainWindow.modeSelectionVisible
-        onExitPlanEditMode: mainWindow.showFlyView()
+                               _planMasterController.saveToFile(file)
+                               close()
+                           }
     }
 
     Item {
         id: routeContent
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.top: planToolBar.bottom
-        anchors.bottom: parent.bottom
+        anchors.fill: parent
 
         FlightMap {
             id: routeMap
@@ -179,34 +167,34 @@ Item {
         Row {
             id: mapTools
             anchors.top: parent.top
-            anchors.topMargin: ScreenTools.defaultFontPixelHeight * 1.2
+            anchors.topMargin: mainToolBar.height + ScreenTools.defaultFontPixelHeight * 1.2
             anchors.right: parent.right
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.2
             spacing: ScreenTools.defaultFontPixelWidth * 1.5
             z: QGroundControl.zOrderWidgets + 10
 
-            Repeater {
-                model: ["/res/pencil.svg", "/res/target-crosshair.svg", "/res/FlyingPaperPlane.svg", "/InstrumentValueIcons/layers.svg"]
+            // Repeater {
+            //     model: ["/res/pencil.svg", "/res/target-crosshair.svg", "/res/FlyingPaperPlane.svg", "/InstrumentValueIcons/layers.svg"]
 
-                Rectangle {
-                    width: ScreenTools.defaultFontPixelHeight * 2.1
-                    height: width
-                    radius: width * 0.2
-                    color: toolMouse.pressed ? Qt.rgba(0, 0, 0, 0.32) : "transparent"
+            //     Rectangle {
+            //         width: ScreenTools.defaultFontPixelHeight * 2.1
+            //         height: width
+            //         radius: width * 0.2
+            //         color: toolMouse.pressed ? Qt.rgba(0, 0, 0, 0.32) : "transparent"
 
-                    QGCColoredImage {
-                        anchors.margins: parent.width * 0.16
-                        anchors.fill: parent
-                        source: modelData
-                        color: "white"
-                    }
+            //         QGCColoredImage {
+            //             anchors.margins: parent.width * 0.16
+            //             anchors.fill: parent
+            //             source: modelData
+            //             color: "white"
+            //         }
 
-                    QGCMouseArea {
-                        id: toolMouse
-                        anchors.fill: parent
-                    }
-                }
-            }
+            //         QGCMouseArea {
+            //             id: toolMouse
+            //             anchors.fill: parent
+            //         }
+            //     }
+            // }
         }
 
         Rectangle {
@@ -215,7 +203,7 @@ Item {
             anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.5
             anchors.right: parent.right
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth
-            width: ScreenTools.defaultFontPixelWidth * 18
+            width: ScreenTools.defaultFontPixelWidth * 30
             height: statsGrid.implicitHeight + ScreenTools.defaultFontPixelHeight
             radius: ScreenTools.defaultFontPixelWidth * 0.35
             color: Qt.rgba(0.03, 0.03, 0.03, 0.52)
@@ -232,11 +220,11 @@ Item {
                 rowSpacing: ScreenTools.defaultFontPixelHeight * 0.35
                 columnSpacing: ScreenTools.defaultFontPixelWidth
 
-                QGCLabel { text: qsTr("Mapping Area"); color: "white"; opacity: 0.92; Layout.fillWidth: true }
+                QGCLabel { text: qsTr("Mapping Area"); color: "white"; /*opacity: 0.92;*/ Layout.fillWidth: true }
                 QGCLabel { text: "0.0 Ha"; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
-                QGCLabel { text: qsTr("Est. Photo Count"); color: "white"; opacity: 0.92; Layout.fillWidth: true }
+                QGCLabel { text: qsTr("Est. Photo Count"); color: "white"; /*opacity: 0.92; */Layout.fillWidth: true }
                 QGCLabel { text: _fieldPointCount; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
-                QGCLabel { text: qsTr("Est. Flight Time"); color: "white"; opacity: 0.92; Layout.fillWidth: true }
+                QGCLabel { text: qsTr("Est. Flight Time"); color: "white"; /*opacity: 0.92;*/ Layout.fillWidth: true }
                 QGCLabel { text: "0 min"; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
             }
         }
@@ -244,46 +232,45 @@ Item {
         Rectangle {
             id: fieldsPanel
             anchors.right: parent.right
+            anchors.top: mappingStats.bottom
+            anchors.topMargin: ScreenTools.defaultFontPixelHeight * 2.0
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.8
-            anchors.verticalCenter: parent.verticalCenter
-            anchors.verticalCenterOffset: -ScreenTools.defaultFontPixelHeight * 2.6
-            width: ScreenTools.defaultFontPixelWidth * 18.5
-            height: ScreenTools.defaultFontPixelHeight * 8.6
+            width: Math.min(ScreenTools.defaultFontPixelWidth * 22, parent.width * 0.30)
+            height: ScreenTools.defaultFontPixelHeight * 5.2
             radius: ScreenTools.defaultFontPixelWidth * 0.55
             color: Qt.rgba(0, 0, 0, 0.34)
-            z: QGroundControl.zOrderWidgets + 9
+            z: QGroundControl.zOrderWidgets + 11
 
             Rectangle {
-                width: ScreenTools.defaultFontPixelHeight * 0.65
+                width: ScreenTools.defaultFontPixelHeight * 0.5
                 height: width
                 radius: width / 2
                 color: "magenta"
                 anchors.left: parent.left
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.7
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.4
                 anchors.top: parent.top
-                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 1.2
+                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.65
             }
 
             QGCLabel {
                 anchors.left: parent.left
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 5
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 4.2
                 anchors.top: parent.top
-                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.9
+                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.5
                 text: qsTr("Fields")
                 color: "white"
                 font.bold: true
-                font.pointSize: ScreenTools.largeFontPointSize
             }
 
             Rectangle {
                 id: plusButton
                 anchors.left: parent.left
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.1
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.0
                 anchors.bottom: parent.bottom
-                anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.65
-                width: ScreenTools.defaultFontPixelHeight * 3.25
+                anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.45
+                width: ScreenTools.defaultFontPixelHeight * 2.1
                 height: width
-                radius: ScreenTools.defaultFontPixelWidth * 0.45
+                radius: ScreenTools.defaultFontPixelWidth * 0.35
                 color: "white"
                 border.color: "#78d957"
                 border.width: 2
@@ -291,9 +278,8 @@ Item {
                 QGCLabel {
                     anchors.centerIn: parent
                     text: "+"
-                    color: "#303030"
+                    color: "#515151"
                     font.bold: true
-                    font.pointSize: ScreenTools.largeFontPointSize
                 }
 
                 QGCMouseArea {
@@ -304,20 +290,19 @@ Item {
 
             Rectangle {
                 anchors.left: plusButton.right
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.65
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.5
                 anchors.right: parent.right
                 anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.75
                 anchors.verticalCenter: plusButton.verticalCenter
                 height: plusButton.height
-                radius: ScreenTools.defaultFontPixelWidth * 0.45
+                radius: ScreenTools.defaultFontPixelWidth * 0.25
                 color: "white"
 
                 QGCLabel {
                     anchors.centerIn: parent
                     text: qsTr("Add")
-                    color: "#303030"
+                    color: "#515151"
                     font.bold: true
-                    font.pointSize: ScreenTools.mediumFontPointSize
                 }
 
                 QGCMouseArea {
@@ -327,104 +312,133 @@ Item {
             }
         }
 
-        Rectangle {
-            id: videoPreview
-            anchors.left: parent.left
-            anchors.leftMargin: ScreenTools.defaultFontPixelWidth
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.8
-            width: Math.min(parent.width * 0.23, ScreenTools.defaultFontPixelWidth * 24)
-            height: width * 0.58
-            radius: ScreenTools.defaultFontPixelWidth * 0.45
-            clip: true
-            color: "#1e2b34"
-            border.color: Qt.rgba(1, 1, 1, 0.45)
-            border.width: 1
-            z: QGroundControl.zOrderWidgets + 10
 
-            FlyViewVideo {
-                anchors.fill: parent
-            }
+        // Rectangle {
+        //     anchors.centerIn: routeTelemetry
+        //     width: routeTelemetry.width + ScreenTools.defaultFontPixelWidth * 3
+        //     height: routeTelemetry.height + ScreenTools.defaultFontPixelHeight * 1.1
+        //     radius: ScreenTools.defaultFontPixelWidth * 0.55
+        //     color: Qt.rgba(0, 0, 0, 0.30)
+        //     z: QGroundControl.zOrderWidgets + 9
+        // }
 
-            Rectangle {
-                anchors.fill: parent
-                color: Qt.rgba(0.2, 0.62, 0.82, 0.28)
-                visible: !QGroundControl.videoManager.hasVideo
-            }
+        // RowLayout {
+        //     id: routeTelemetry
+        //     anchors.horizontalCenter: parent.horizontalCenter
+        //     anchors.bottom: parent.bottom
+        //     anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 1.3
+        //     spacing: ScreenTools.defaultFontPixelWidth * 3.2
+        //     z: QGroundControl.zOrderWidgets + 10
 
-            QGCLabel {
-                anchors.centerIn: parent
-                text: qsTr("Camera")
-                color: "white"
-                font.bold: true
-                visible: !QGroundControl.videoManager.hasVideo
-            }
-        }
+        //     Repeater {
+        //         model: [
+        //             { label: qsTr("Relative to\nHome"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.altitudeRelative ? _activeVehicle.altitudeRelative.rawValue : 0), units: " m" },
+        //             { label: qsTr("Speed"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.groundSpeed ? _activeVehicle.groundSpeed.rawValue : 0), units: " km/h" },
+        //             { label: qsTr("Distance"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.distanceToHome ? _activeVehicle.distanceToHome.rawValue : 0), units: " m" },
+        //             { label: qsTr("Flow"), value: "0.0", units: " L/min" }
+        //         ]
 
-        Rectangle {
-            anchors.centerIn: routeTelemetry
-            width: routeTelemetry.width + ScreenTools.defaultFontPixelWidth * 3
-            height: routeTelemetry.height + ScreenTools.defaultFontPixelHeight * 1.1
-            radius: ScreenTools.defaultFontPixelWidth * 0.55
-            color: Qt.rgba(0, 0, 0, 0.30)
-            z: QGroundControl.zOrderWidgets + 9
-        }
+        //         Column {
+        //             spacing: 0
+        //             QGCLabel { text: modelData.label; color: "white"; horizontalAlignment: Text.AlignHCenter }
+        //             Row {
+        //                 anchors.horizontalCenter: parent.horizontalCenter
+        //                 QGCLabel { text: modelData.value; color: "white"; font.bold: true; font.pointSize: ScreenTools.largeFontPointSize }
+        //                 QGCLabel { text: modelData.units; color: "white"; anchors.bottom: parent.bottom }
+        //             }
+        //         }
 
-        Row {
-            id: routeTelemetry
-            anchors.horizontalCenter: parent.horizontalCenter
-            anchors.bottom: parent.bottom
-            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 1.3
-            spacing: ScreenTools.defaultFontPixelWidth * 3.2
-            z: QGroundControl.zOrderWidgets + 10
+        //     }
 
-            Repeater {
-                model: [
-                    { label: qsTr("Relative to\nHome"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.altitudeRelative ? _activeVehicle.altitudeRelative.rawValue : 0), units: " m" },
-                    { label: qsTr("Speed"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.groundSpeed ? _activeVehicle.groundSpeed.rawValue : 0), units: " km/h" },
-                    { label: qsTr("Distance"), value: _formatTelemetryValue(_activeVehicle && _activeVehicle.distanceToHome ? _activeVehicle.distanceToHome.rawValue : 0), units: " m" },
-                    { label: qsTr("Flow"), value: "0.0", units: " L/min" }
-                ]
-
-                Column {
-                    spacing: 0
-                    QGCLabel { text: modelData.label; color: "white"; horizontalAlignment: Text.AlignHCenter }
-                    Row {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        QGCLabel { text: modelData.value; color: "white"; font.bold: true; font.pointSize: ScreenTools.largeFontPointSize }
-                        QGCLabel { text: modelData.units; color: "white"; anchors.bottom: parent.bottom }
-                    }
-                }
-            }
-        }
+        // }
 
         Column {
+            id: exitSaveColumn
             anchors.right: parent.right
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth
             anchors.bottom: parent.bottom
             anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.6
-            spacing: ScreenTools.defaultFontPixelHeight * 0.6
+            spacing: ScreenTools.defaultFontPixelHeight * 0.5
             z: QGroundControl.zOrderWidgets + 10
 
             Rectangle {
-                width: ScreenTools.defaultFontPixelWidth * 9
-                height: ScreenTools.defaultFontPixelHeight * 2.7
-                radius: ScreenTools.defaultFontPixelWidth * 0.45
+                width: exitRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6.5
+                height: ScreenTools.defaultFontPixelHeight * 2
+                radius: ScreenTools.defaultFontPixelWidth * 0.60
                 color: "white"
 
-                QGCLabel { anchors.centerIn: parent; text: qsTr("Exit"); color: "#303030"; font.bold: true }
+                Row {
+                    id: exitRow
+                    anchors.centerIn: parent
+                    spacing: ScreenTools.defaultFontPixelWidth * 0.6
+
+                    Image {
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: "/res/checkmark_forsave.png"
+                        width: ScreenTools.defaultFontPixelHeight * 1.1
+                        height: width
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    QGCLabel {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Exit")
+                        color: "#515151"
+                        font.bold: true
+                    }
+                }
+
                 QGCMouseArea { anchors.fill: parent; onClicked: mainWindow.showFlyView() }
             }
 
             Rectangle {
-                width: ScreenTools.defaultFontPixelWidth * 9
-                height: ScreenTools.defaultFontPixelHeight * 2.7
-                radius: ScreenTools.defaultFontPixelWidth * 0.45
+                width: saveRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
+                height: ScreenTools.defaultFontPixelHeight * 2
+                radius: ScreenTools.defaultFontPixelWidth * 0.60
                 color: "white"
 
-                QGCLabel { anchors.centerIn: parent; text: qsTr("Save"); color: "#303030"; font.bold: true }
+                Row {
+                    id: saveRow
+                    anchors.centerIn: parent
+                    spacing: ScreenTools.defaultFontPixelWidth * 0.5
+
+                    Image {
+                        anchors.verticalCenter: parent.verticalCenter
+                        source: "/res/exit.png"
+                        width: ScreenTools.defaultFontPixelHeight * 1.1
+                        height: width
+                        fillMode: Image.PreserveAspectFit
+                    }
+
+                    QGCLabel {
+                        anchors.verticalCenter: parent.verticalCenter
+                        text: qsTr("Save")
+                        color: "#515151"
+                        font.bold: true
+                    }
+                }
+
                 QGCMouseArea { anchors.fill: parent; onClicked: planMasterController.saveToSelectedFile() }
             }
         }
+    }
+
+    Item {
+        id: _guidedValueSliderStub
+        visible: false
+    }
+    Rectangle{
+        visible: true
+        height: ScreenTools.defaultFontPixelHeight * 10
+        radius: ScreenTools.defaultFontPixelWidth * 0.60
+        color: "pink"
+    }
+
+    FlyViewToolBar {
+        id: mainToolBar
+        z: QGroundControl.zOrderWidgets + 20
+        guidedValueSlider: _guidedValueSliderStub
+        utmspSliderTrigger: false
+        visible: !QGroundControl.videoManager.fullScreen && !mainWindow.modeSelectionVisible
     }
 }

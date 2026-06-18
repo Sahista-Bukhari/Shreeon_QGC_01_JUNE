@@ -34,7 +34,7 @@ Item {
                                             "routeMapping": "qrc:/ModeSelection/route_mapping.png",
                                             "customMission": "qrc:/ModeSelection/custom_mission.png"
                                         })
-    readonly property color _pageBackground: "#E3E3E3"
+    readonly property color _pageBackground: "white"
     readonly property color _pillGreen: "#008000"
     readonly property color _titleColor: "#1C1C1E"
     // Apple-like motion: fixed-duration curves (springs were too slow for toolbar handoff)
@@ -486,7 +486,7 @@ Item {
                         color: control._titleColor
                         height: ScreenTools.defaultFontPixelHeight * 1.35
                         opacity: settingsMouseArea.containsMouse ? 1.0 : 0.6
-                        source: "/res/gear-black.svg"
+                        source: "qrc:/qmlimages/HamburgerThin.svg"
                         width: height
 
                         Behavior on opacity {

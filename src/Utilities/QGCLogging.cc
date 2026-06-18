@@ -9,6 +9,8 @@
 #include <QtCore/QStringListModel>
 #include <QtCore/QTextStream>
 
+#include <cstdio>
+
 QGC_LOGGING_CATEGORY(QGCLoggingLog, "Utilities.QGCLogging")
 
 Q_GLOBAL_STATIC(QGCLogging, _qgcLogging)
@@ -28,6 +30,9 @@ static void msgHandler(QtMsgType type, const QMessageLogContext &context, const 
     // Call the previous handler if it exists
     if (defaultHandler) {
         defaultHandler(type, context, msg);
+    } else {
+        fprintf(stderr, "%s\n", qPrintable(message));
+        fflush(stderr);
     }
 }
 
