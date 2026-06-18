@@ -211,6 +211,7 @@ qt_add_qml_module(QGroundControlControlsModule
         RallyPointEditorHeader.qml
         RallyPointItemEditor.qml
         RallyPointMapVisuals.qml
+        RouteMappingView.qml
         SimpleItemEditor.qml
         SimpleItemMapVisual.qml
         StructureScanEditor.qml

@@ -17,7 +17,6 @@ Item {
 
     property var    _activeVehicle:     QGroundControl.multiVehicleManager.activeVehicle
     property bool   _communicationLost: _activeVehicle ? _activeVehicle.vehicleLinkManager.communicationLost : false
-    property color  _mainStatusBGColor: qgcPal.brandingPurple
     property real   _leftRightMargin:   ScreenTools.defaultFontPixelWidth * 0.75
     property var    _guidedController:  globals.guidedControllerFlyView
 
@@ -26,6 +25,18 @@ Item {
     }
 
     QGCPalette { id: qgcPal }
+
+    // Match FlyViewBottomBar HUD glass (no blur, light dark tint)
+    readonly property color _glassFill:   Qt.rgba(0.10, 0.10, 0.12, 0.28)
+    readonly property color _glassBorder: Qt.rgba(1.00, 1.00, 1.00, 0.28)
+
+    Rectangle {
+        anchors.fill:   parent
+        z:              -1
+        color:          control._glassFill
+        border.color:   control._glassBorder
+        border.width:   1
+    }
 
     QGCFlickable {
         anchors.fill:       parent
@@ -42,30 +53,26 @@ Item {
                 width:  leftPanelLayout.implicitWidth
                 height: parent.height
 
-                // Gradient background behind Q button and main status indicator
+                // Status color band (Ready / Comms Lost / Armed, etc.)
                 Rectangle {
-                    id:         gradientBackground
+                    id:         statusGradient
+                    z:          0
                     height:     parent.height
                     width:      mainStatusLayout.width
-                    opacity:    qgcPal.windowTransparent.a
+                    opacity:    0.92
 
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: _mainStatusBGColor }
-                        //GradientStop { position: qgcButton.x + qgcButton.width; color: _mainStatusBGColor }
-                        GradientStop { position: 1; color: qgcPal.window }
+                        GradientStop { position: 0; color: mainStatusIndicator._mainStatusBGColor }
+                        GradientStop {
+                            position: 1
+                            color:    Qt.rgba(control._glassFill.r, control._glassFill.g, control._glassFill.b, 0)
+                        }
                     }
                 }
 
-                // Standard toolbar background to the right of the gradient
-                Rectangle {
-                    anchors.left:   gradientBackground.right
-                    anchors.right:  parent.right
-                    height:         parent.height
-                    color:          qgcPal.windowTransparent
-                }
-
                 RowLayout {
+                    z:          1
                     id:         leftPanelLayout
                     height:     parent.height
                     spacing:    ScreenTools.defaultFontPixelWidth * 2
@@ -85,7 +92,6 @@ Item {
                                 mainWindow.showModeSelection(point)
                             }
                         }
-
                         MainStatusIndicator {
                             id:                 mainStatusIndicator
                             Layout.fillHeight:  true
@@ -110,22 +116,12 @@ Item {
                 // center panel takes up all remaining space in toolbar between left and right panels
                 width:  control.width - (leftPanel.width + rightPanel.width)
                 height: parent.height
-
-                Rectangle {
-                    anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
-                }
             }
 
             Item {
                 id:     rightPanel
                 width:  flyViewIndicators.width
                 height: parent.height
-
-                Rectangle {
-                    anchors.fill:   parent
-                    color:          qgcPal.windowTransparent
-                }
 
                 FlyViewToolBarIndicators {
                     id:     flyViewIndicators

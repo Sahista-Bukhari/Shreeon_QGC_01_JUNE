@@ -109,13 +109,22 @@ ApplicationWindow {
 
     function showPlanView() {
         flyView.visible = false
+        routeMappingView.visible = false
         planView.visible = true
+        toolDrawer.visible = false
+    }
+
+    function showRouteMappingView() {
+        flyView.visible = false
+        planView.visible = false
+        routeMappingView.visible = true
         toolDrawer.visible = false
     }
 
     function showFlyView() {
         flyView.visible = true
         planView.visible = false
+        routeMappingView.visible = false
         toolDrawer.visible = false
     }
 
@@ -267,6 +276,12 @@ ApplicationWindow {
 
     PlanView {
         id:             planView
+        anchors.fill:   parent
+        visible:        false
+    }
+
+    RouteMappingView {
+        id:             routeMappingView
         anchors.fill:   parent
         visible:        false
     }

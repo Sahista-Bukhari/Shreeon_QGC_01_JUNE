@@ -607,7 +607,7 @@ Item {
                             title: qsTr("Route Mapping")
                             width: centerContent.colRightW
 
-                            onClicked: control._selectMode(this, function() { mainWindow.showPlanView() })
+                            onClicked: control._selectMode(this, function() { mainWindow.showRouteMappingView() })
                         }
                         ModeCard {
                             animationIndex: 4
