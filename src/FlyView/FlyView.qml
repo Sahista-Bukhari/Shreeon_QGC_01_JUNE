@@ -215,6 +215,26 @@ Item {
         planEditMode = false
     }
 
+    function showLoadedRouteMappingPlan() {
+        planEditMode = true
+        _editingLayer = _layerMission
+        _missionController.setCurrentPlanViewSeqNum(0, true)
+        Qt.callLater(function() {
+            mapControl.fitMapViewportToMissionItems()
+        })
+    }
+
+    function tryUploadLoadedPlan() {
+        if (_planController.offline) {
+            return false
+        }
+        if (_planController.readyForSaveState() !== VisualMissionItem.ReadyForSave) {
+            return false
+        }
+        _planController.upload()
+        return true
+    }
+
     function _calcCenterViewPort() {
         var newToolInset = Qt.rect(0, 0, width, height)
         toolstrip.adjustToolInset(newToolInset)

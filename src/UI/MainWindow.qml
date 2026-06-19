@@ -15,7 +15,7 @@ import QGroundControl.Toolbar
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:         mainWindow
-    height: 400
+    height: 480
     width: 800
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
@@ -129,6 +129,39 @@ ApplicationWindow {
         planView.visible = false
         routeMappingView.visible = false
         toolDrawer.visible = false
+    }
+
+    function saveRouteMappingPlanToFlyView(sourcePlanMasterController) {
+        if (!sourcePlanMasterController) {
+            return { success: false, uploaded: false }
+        }
+
+        var savePath = QGroundControl.settingsManager.appSettings.missionSavePath
+        if (!savePath) {
+            showMessageDialog(
+                        qsTr("Save"),
+                        qsTr("Mission save path must be set in Application Settings."))
+            return { success: false, uploaded: false }
+        }
+
+        var separator = savePath.endsWith("/") ? "" : "/"
+        var transferPlanFile = savePath + separator + "route_mapping_transfer.plan"
+
+        sourcePlanMasterController.saveToFile(transferPlanFile)
+        flyView.planController.loadFromFile(transferPlanFile)
+
+        if (!flyView.planController.containsItems) {
+            showMessageDialog(
+                        qsTr("Save"),
+                        qsTr("Unable to load the route mapping plan on the Fly screen."))
+            return { success: false, uploaded: false }
+        }
+
+        planView._planMasterController.loadFromFile(transferPlanFile)
+        sourcePlanMasterController.dirty = false
+        showFlyView()
+        flyView.showLoadedRouteMappingPlan()
+        return { success: true, uploaded: flyView.tryUploadLoadedPlan() }
     }
 
     function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav) {
