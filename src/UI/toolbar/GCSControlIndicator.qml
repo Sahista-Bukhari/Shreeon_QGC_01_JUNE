@@ -364,8 +364,8 @@ Item {
             id:                     gcsInControlIndicator
             text:                   sysidInControl
             font.bold:              true
-            font.pointSize:         ScreenTools.smallFontPointSize * 1.1
-            color:                  isThisGCSinControl ? qgcPal.colorGreen : qgcPal.text
+            font.pointSize:         ScreenTools.mediumFontPointSize
+            color:                  "#4af200"
             anchors.bottom:         parent.bottom
             anchors.bottomMargin:   -margins * 0.7
             anchors.right:          parent.right

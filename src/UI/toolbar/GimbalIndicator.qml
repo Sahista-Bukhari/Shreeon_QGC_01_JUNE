@@ -59,9 +59,10 @@ Item {
             QGCLabel {
                 id:                     gimbalIdLabel
                 anchors.horizontalCenter: parent.horizontalCenter
-                font.pointSize:         ScreenTools.smallFontPointSize
+                font.pointSize:         ScreenTools.mediumFontPointSize
                 text:                   activeGimbal ? activeGimbal.deviceId.rawValue : ""
-                color:                  qgcPal.windowTransparentText
+                color:                  "#4af200"
+                font.bold:              true
                 visible:                multiGimbalSetup
             }
         }
@@ -76,29 +77,32 @@ Item {
 
             QGCLabel {
                 id:                     statusLabel
-                font.pointSize:         ScreenTools.smallFontPointSize
+                font.pointSize:         ScreenTools.mediumFontPointSize
                 text:                   activeGimbal && activeGimbal.retracted ?
                                             qsTr("Retracted") :
                                             (activeGimbal && activeGimbal.yawLock ? qsTr("Yaw locked") : qsTr("Yaw follow"))
-                color:                  qgcPal.windowTransparentText
+                color:                  "#4af200"
+                font.bold:              true
                 Layout.columnSpan:      2
                 Layout.alignment:       Qt.AlignHCenter
             }
             QGCLabel {
                 id:             pitchLabel
-                font.pointSize: ScreenTools.smallFontPointSize
+                font.pointSize: ScreenTools.mediumFontPointSize
                 text:           activeGimbal ? qsTr("P: ") + activeGimbal.absolutePitch.valueString : ""
-                color:          qgcPal.windowTransparentText
+                color:          "#4af200"
+                font.bold:      true
             }
             QGCLabel {
                 id:             panLabel
-                font.pointSize: ScreenTools.smallFontPointSize
+                font.pointSize: ScreenTools.mediumFontPointSize
                 text:           activeGimbal ?
                                     (showAzimuth ?
                                         (qsTr("Az: ") + activeGimbal.absoluteYaw.valueString) :
                                         (qsTr("Y: ") + activeGimbal.bodyYaw.valueString)) :
                                     ""
-                color:          qgcPal.windowTransparentText
+                color:          "#4af200"
+                font.bold:      true
             }
         }
     }

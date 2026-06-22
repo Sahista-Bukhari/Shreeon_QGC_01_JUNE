@@ -58,14 +58,18 @@ Item {
 
             QGCLabel {
                 anchors.horizontalCenter:   hdopValue.horizontalCenter
-                color:              qgcPal.windowTransparentText
+                color:              "#4af200"
                 text:               _activeVehicle ? _activeVehicle.gps.count.valueString : ""
+                font.pointSize:     ScreenTools.mediumFontPointSize
+                font.bold:          true
             }
 
             QGCLabel {
                 id:     hdopValue
-                color:  qgcPal.windowTransparentText
+                color:  "#4af200"
                 text:   _activeVehicle ? _activeVehicle.gps.hdop.value.toFixed(1) : ""
+                font.pointSize: ScreenTools.mediumFontPointSize
+                font.bold: true
             }
         }
     }

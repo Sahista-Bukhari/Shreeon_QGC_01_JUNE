@@ -19,14 +19,16 @@ Slider {
 
     property real _implicitBarLength: Math.round(ScreenTools.defaultFontPixelWidth * 20)
     property real _barHeight: Math.round(ScreenTools.defaultFontPixelHeight / 4) // Slimmer track
+    property color activeColor: qgcPal.colorGreen
+    property real barHeight: _barHeight
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
     background: Rectangle {
         x: control.horizontal ? control.leftPadding : control.leftPadding + control.availableWidth / 2 - width / 2
         y: control.horizontal ? control.topPadding + control.availableHeight / 2 - height / 2 : control.topPadding
-        implicitWidth: control.horizontal ? control._implicitBarLength : control._barHeight
-        implicitHeight: control.horizontal ? control._barHeight : control._implicitBarLength
+        implicitWidth: control.horizontal ? control._implicitBarLength : control.barHeight
+        implicitHeight: control.horizontal ? control.barHeight : control._implicitBarLength
         width: control.horizontal ? control.availableWidth : implicitWidth
         height: control.horizontal ? implicitHeight : control.availableHeight
         radius: height / 2
@@ -36,7 +38,7 @@ Slider {
         Rectangle {
             width: control.horizontal ? control.visualPosition * parent.width : parent.width
             height: control.horizontal ? parent.height : control.visualPosition * parent.height
-            color: qgcPal.colorGreen // Active color
+            color: control.activeColor
             radius: parent.radius
         }
     }

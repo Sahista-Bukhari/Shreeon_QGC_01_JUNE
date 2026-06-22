@@ -83,15 +83,17 @@ Item {
 
             QGCLabel {
                 anchors.horizontalCenter:   parent.horizontalCenter
-                color:                      qgcPal.windowTransparentText
+                color:                      "#4af200"
                 text:                       _onlineMotorCount.toString()
-                font.pointSize:             ScreenTools.smallFontPointSize
+                font.pointSize:             ScreenTools.mediumFontPointSize
+                font.bold:                  true
             }
 
             QGCLabel {
-                color:          getEscStatusColor()
+                color:          "#4af200"
                 text:           _escHealthy ? qsTr("OK") : qsTr("ERR")
-                font.pointSize: ScreenTools.smallFontPointSize
+                font.pointSize: ScreenTools.mediumFontPointSize
+                font.bold:      true
             }
         }
     }

@@ -15,6 +15,7 @@
         <file alias="buttonRight.svg">resources/buttonRight.svg</file>
         <file alias="BingNoTileBytes.dat">resources/BingNoTileBytes.dat</file>
         <file alias="cancel.svg">resources/cancel.svg</file>
+        <file alias="caret-left.png">resources/caret-left.png</file>
         <file alias="checkmark_forsave.png">resources/checkmark_forsave.png</file>
         <file alias="clockwise-arrow.svg">resources/clockwise-arrow.svg</file>
         <file alias="counter-clockwise-arrow.svg">resources/counter-clockwise-arrow.svg</file>
@@ -152,4 +153,3 @@
 
     </qresource>
 </RCC>
-

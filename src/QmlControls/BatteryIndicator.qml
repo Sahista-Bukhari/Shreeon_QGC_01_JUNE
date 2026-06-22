@@ -355,17 +355,17 @@ Item {
 
                     QGCLabel {
                         verticalAlignment:  Text.AlignVCenter
-                        color:              showBatteryPercentSymbol() ? getBatteryColor() : control.labelColor
+                        color:              showBatteryPercentSymbol() ? "#4af200" : control.labelColor
                         text:               getBatteryPercentageValue()
-                        font.pointSize:     _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.largeFontPointSize
+                        font.pointSize:     _showBoth ? ScreenTools.mediumFontPointSize : ScreenTools.largeFontPointSize * 1.15
                         font.bold:          true
                     }
 
                     QGCLabel {
                         verticalAlignment:  Text.AlignTop
-                        color:              getBatteryColor()
+                        color:              showBatteryPercentSymbol() ? "#4af200" : getBatteryColor()
                         text:               "%"
-                        font.pointSize:     _showBoth ? ScreenTools.smallFontPointSize : ScreenTools.defaultFontPointSize
+                        font.pointSize:     _showBoth ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
                         font.bold:          true
                         visible:            showBatteryPercentSymbol()
                         anchors.topMargin:  _showBoth ? 0 : ScreenTools.defaultFontPixelHeight * 0.12

@@ -258,10 +258,6 @@ FlightMap {
         planMasterController:       _planMasterController
     }
 
-    function fitMapViewportToMissionItems() {
-        mapFitFunctions.fitMapViewportToMissionItems()
-    }
-
     ObstacleDistanceOverlayMap {
         id: obstacleDistance
         showText: !pipMode
