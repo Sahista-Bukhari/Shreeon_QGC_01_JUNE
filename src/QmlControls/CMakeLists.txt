@@ -254,6 +254,7 @@ qt_add_qml_module(QGroundControlControlsModule
 
         ScreenTools.qml
     NO_PLUGIN
+    QML_FILES saveMappingTask.qml
 )
 
 # ----------------------------------------------------------------------------

@@ -21,6 +21,9 @@ Rectangle {
     property int routeMode:   0   // 0 = Area Route, 1 = Boundary Route
     property int resolution: 0   // 0 = Medium, 1 = High
     property var surveyItem:  null
+    // Temporary feature gate. Keep the Boundary Route UI and implementation
+    // in place so it can be re-enabled without restoring removed code.
+    property bool boundaryRouteEnabled: false
 
     property var  _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property Fact _speedFact:     _activeVehicle && speedParameterLoader.item
@@ -117,6 +120,7 @@ Rectangle {
             }
 
             Repeater {
+                id: boundarrate
                 model: [
                     {
                         title: qsTr("Area Route"),
@@ -131,6 +135,8 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth:   true
                     Layout.preferredHeight: routeModeCardLayout.implicitHeight + root._pad * 2.4
+                    enabled:            index === 0 || root.boundaryRouteEnabled
+                    opacity:            enabled ? 1.0 : 0.45
                     radius:             root._radius
                     color:              root.routeMode === index ? root._accentSoftGreen : "white"
                     border.width:       root.routeMode === index ? 2 : 1
@@ -196,6 +202,7 @@ Rectangle {
 
                     QGCMouseArea {
                         anchors.fill:   parent
+                        enabled:        index === 0 || root.boundaryRouteEnabled
                         onClicked: {
                             root.routeMode = index
                             if (index === 0) {

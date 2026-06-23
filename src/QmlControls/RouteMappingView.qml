@@ -6,6 +6,7 @@ import QtPositioning
 import QtQuick.Layouts
 import QtQuick.Window
 
+
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
@@ -65,15 +66,15 @@ Item {
     property bool _hasMissionPlanItems: false
 
     readonly property bool _hasCalculatedSurvey: _cachedSurveyItem
-                                                  && _cachedSurveyItem.surveyAreaPolygon
-                                                  && _cachedSurveyItem.surveyAreaPolygon.isValid
+                                                 && _cachedSurveyItem.surveyAreaPolygon
+                                                 && _cachedSurveyItem.surveyAreaPolygon.isValid
     readonly property bool _hasTerrainCollision: _hasCalculatedSurvey
-                                                  && _cachedSurveyItem.surveyAreaPolygon.showAltColor
+                                                 && _cachedSurveyItem.surveyAreaPolygon.showAltColor
     readonly property real _surveyStartHeading: _hasCalculatedSurvey
-                                                 && _cachedSurveyItem.visualTransectPoints.length >= 2
-                                                 ? _cachedSurveyItem.visualTransectPoints[0].azimuthTo(
-                                                       _cachedSurveyItem.visualTransectPoints[1])
-                                                 : 0
+                                                && _cachedSurveyItem.visualTransectPoints.length >= 2
+                                                ? _cachedSurveyItem.visualTransectPoints[0].azimuthTo(
+                                                      _cachedSurveyItem.visualTransectPoints[1])
+                                                : 0
 
     function _updateCachedSurveyItem() {
         var found = null
@@ -246,11 +247,25 @@ Item {
                     qsTr("Delete waypoint %1?").arg(pointIndex + 1),
                     Dialog.Ok | Dialog.Cancel,
                     function() {
+                        var pointCountBeforeDelete = fieldTracePointsModel.count
+                        // Use QGC's native polygon mutation whenever possible.
+                        // It emits pathChanged, which immediately rebuilds the
+                        // generated survey/transect pattern.
+                        var polygonUpdated = false
+                        if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
+                            var surveyPolygon = _cachedSurveyItem.surveyAreaPolygon
+                            if (surveyPolygon.count === pointCountBeforeDelete
+                                    && pointCountBeforeDelete > 3) {
+                                surveyPolygon.removeVertex(pointIndex)
+                                polygonUpdated = true
+                            }
+                        }
+
                         fieldTracePointsModel.remove(pointIndex)
                         _selectedWaypointIndex = -1
-                        if (fieldTracePointsModel.count >= 3) {
+                        if (!polygonUpdated && fieldTracePointsModel.count >= 3) {
                             _updateSurveyPolygonFromTrace(_cachedSurveyItem)
-                        } else {
+                        } else if (!polygonUpdated) {
                             _clearSurveyPolygon()
                         }
                     },
@@ -259,23 +274,36 @@ Item {
                     })
     }
 
+    function moveRouteMappingPoint(pointIndex, coordinate, updateSurvey) {
+        if (pointIndex < 0 || pointIndex >= fieldTracePointsModel.count
+                || !coordinate || !coordinate.isValid || _surveyFinished) {
+            return
+        }
+
+        fieldTracePointsModel.setProperty(pointIndex, "lat", coordinate.latitude)
+        fieldTracePointsModel.setProperty(pointIndex, "lon", coordinate.longitude)
+        if (updateSurvey && fieldTracePointsModel.count >= 3) {
+            _updateSurveyPolygonFromTrace(_cachedSurveyItem)
+        }
+    }
+
     function startAreaRouteSession() {
         if (taskSettingsPanel.routeMode !== 0) {
             return
         }
 
-        var coord = mapCenter()
-
-        if (_missionController.visualItems.count > 1) {
-            _runWithMissionVisualsSuspended(function() {
-                _clearMissionItemsIfNeeded()
-                resetAreaRouteState()
-                _beginAreaRouteAtCoordinate(coord)
-            })
-        } else {
-            resetAreaRouteState()
-            _beginAreaRouteAtCoordinate(coord)
+        // Never replace an existing route from the Add/settings controls.
+        // A route must be explicitly cleared before a new session can start.
+        if (_areaRouteActive || _surveyFinished
+                || fieldTracePointsModel.count > 0
+                || _hasMissionPlanItems
+                || _missionController.visualItems.count > 1) {
+            return
         }
+
+        var coord = mapCenter()
+        resetAreaRouteState()
+        _beginAreaRouteAtCoordinate(coord)
     }
 
     function finishAreaRoute() {
@@ -336,10 +364,16 @@ Item {
 
     function saveRouteMappingToFlyView() {
         if (!_surveyFinished) {
-            mainWindow.showMessageDialog(
-                        qsTr("Save"),
-                        qsTr("Please tap Finish to complete the field boundary before saving."))
-            return
+            // Saving is the user's indication that all boundary waypoints have
+            // been placed. Finalize the survey and add the return/land item
+            // automatically instead of requiring a separate Finish action.
+            finishAreaRoute()
+            if (!_surveyFinished) {
+                mainWindow.showMessageDialog(
+                            qsTr("Save"),
+                            qsTr("Add at least three waypoints before saving the route."))
+                return
+            }
         }
 
         if (!_hasMissionPlanItems) {
@@ -523,6 +557,7 @@ Item {
                 model: fieldTracePointsModel
 
                 delegate: MapQuickItem {
+                    id: fieldWaypointMapItem
                     property int waypointIndex: index
 
                     coordinate: QtPositioning.coordinate(model.lat, model.lon, model.alt)
@@ -556,25 +591,41 @@ Item {
                             height: width
                             enabled: !_root._surveyFinished
                             cursorShape: Qt.PointingHandCursor
+                            preventStealing: true
                             onClicked: _root._selectedWaypointIndex = waypointIndex
+                            onPositionChanged: (mouse) => {
+                                                   if (!pressed) {
+                                                       return
+                                                   }
+                                                   var mapPoint = fieldWaypointMarker.mapToItem(routeMap, mouse.x, mouse.y)
+                                                   var newCoordinate = routeMap.toCoordinate(mapPoint, false)
+                                                   _root.moveRouteMappingPoint(waypointIndex, newCoordinate, false)
+                                               }
+                            onReleased: {
+                                if (fieldTracePointsModel.count >= 3) {
+                                    _root._updateSurveyPolygonFromTrace(_root._cachedSurveyItem)
+                                }
+                            }
                         }
 
                         Rectangle {
                             anchors.left: waypointDot.right
                             anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.6
                             anchors.verticalCenter: waypointDot.verticalCenter
-                            width: deleteWaypointLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 2
-                            height: ScreenTools.defaultFontPixelHeight * 1.6
-                            radius: ScreenTools.defaultFontPixelWidth * 0.4
+                            width: ScreenTools.defaultFontPixelHeight * 1.35
+                            height: width
+                            radius: width / 2
                             color: "#d93025"
+                            border.color: "white"
+                            border.width: 1
                             visible: _root._selectedWaypointIndex === waypointIndex
 
                             QGCLabel {
-                                id: deleteWaypointLabel
                                 anchors.centerIn: parent
-                                text: qsTr("Delete")
+                                text: "\u2212"
                                 color: "white"
-                                font.weight: Font.DemiBold
+                                font.bold: true
+                                font.pixelSize: parent.height * 0.72
                             }
 
                             QGCMouseArea {
@@ -584,6 +635,7 @@ Item {
                             }
                         }
                     }
+
                 }
             }
 
@@ -878,7 +930,7 @@ Item {
             anchors.topMargin: ScreenTools.defaultFontPixelHeight * 2.0
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.8
             width: Math.min(ScreenTools.defaultFontPixelWidth * 22, parent.width * 0.30)
-            height: ScreenTools.defaultFontPixelHeight * 8.0
+            height: ScreenTools.defaultFontPixelHeight * 4.8
             radius: ScreenTools.defaultFontPixelWidth * 0.55
             color: Qt.rgba(0, 0, 0, 0.34)
             z: QGroundControl.zOrderWidgets + 11
@@ -902,33 +954,6 @@ Item {
                 text: qsTr("Fields")
                 color: "white"
                 font.bold: true
-            }
-
-            Rectangle {
-                id: finishButton
-                anchors.left: parent.left
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.0
-                anchors.right: parent.right
-                anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.75
-                anchors.bottom: plusButton.top
-                anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.4
-                height: plusButton.height
-                radius: _actionButtonRadius
-                color: "white"
-                border.color: "transparent"
-                border.width: 0
-                QGCLabel {
-                    anchors.centerIn: parent
-                    text: qsTr("Finish")
-                    color: _routeActionTextColor
-                    font.weight: Font.DemiBold
-                }
-
-                QGCMouseArea {
-                    anchors.fill: parent
-                    enabled: _canFinishRoute
-                    onClicked: _root.finishAreaRoute()
-                }
             }
 
             Rectangle {
@@ -1054,7 +1079,7 @@ Item {
 
                 QGCMouseArea {
                     anchors.fill: parent
-                    enabled: _surveyFinished
+                    enabled: _surveyFinished || _canFinishRoute
                     onClicked: _root.saveRouteMappingToFlyView()
                 }
             }

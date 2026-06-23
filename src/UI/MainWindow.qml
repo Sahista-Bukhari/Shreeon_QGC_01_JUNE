@@ -15,7 +15,7 @@ import QGroundControl.Toolbar
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:         mainWindow
-    height: 480
+    height: 350
     width: 800
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
@@ -35,8 +35,8 @@ ApplicationWindow {
     /// Saves main window position and size and re-opens it in the same position and size next time
     MainWindowSavedState {
         window: mainWindow
-    }
 
+    }
     QtObject {
         id: firstRunPromptManager
 

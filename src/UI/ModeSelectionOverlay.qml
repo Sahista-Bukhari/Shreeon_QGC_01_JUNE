@@ -9,6 +9,8 @@ import QGroundControl.Controls
 
 Item {
     id: control
+    height: 350
+    width: 800
 
     readonly property real _cardGap: ScreenTools.defaultFontPixelWidth * 1.4
     readonly property real _cardRadius: ScreenTools.defaultFontPixelHeight * 0.85
