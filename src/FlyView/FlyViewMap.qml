@@ -46,6 +46,12 @@ FlightMap {
     property var    missionController
     property var    geoFenceController
     property var    rallyPointController
+    property var    routeMappingBoundaryPath: []
+    property var    routeMappingTransectPath: []
+    property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
+    property var    routeMappingExitCoordinate: QtPositioning.coordinate()
+    property real   routeMappingEntryHeading: 0
+    property real   routeMappingExitHeading: 0
 
     readonly property int _layerMission:        1
     readonly property int _layerFence:          2
@@ -969,6 +975,148 @@ FlightMap {
         showSpecialVisual: missionController ? missionController.isROIBeginCurrentItem : false
         model: planEditMode ? missionController.simpleFlightPathSegments : undefined
         opacity: editingLayer == _layerMission ? 1 : 0.5
+    }
+
+    MapPolyline {
+        line.color: "white"
+        line.width: 2
+        path: routeMappingBoundaryPath
+        visible: !planEditMode && routeMappingBoundaryPath ? routeMappingBoundaryPath.length >= 4 : false
+        z: QGroundControl.zOrderWaypointLines + 3
+    }
+
+    MapPolyline {
+        line.color: Qt.rgba(1.0, 0.94, 0.38, 0.78)
+        line.width: 2
+        path: routeMappingTransectPath
+        visible: !planEditMode && routeMappingTransectPath ? routeMappingTransectPath.length >= 2 : false
+        z: QGroundControl.zOrderWaypointLines + 2
+    }
+
+    MapQuickItem {
+        coordinate: routeMappingEntryCoordinate
+        anchorPoint.x: routeMappingEntryMarker.dotCenter
+        anchorPoint.y: routeMappingEntryMarker.dotCenter
+        visible: !planEditMode && routeMappingEntryCoordinate ? routeMappingEntryCoordinate.isValid : false
+        z: QGroundControl.zOrderWaypointLines + 4
+
+        sourceItem: Item {
+            id: routeMappingEntryMarker
+            readonly property real markerSize: ScreenTools.defaultFontPixelHeight * 0.85
+            readonly property real dotCenter: markerSize / 2
+
+            width: markerSize * 2.25
+            height: markerSize
+
+            transform: Rotation {
+                origin.x: routeMappingEntryMarker.dotCenter
+                origin.y: routeMappingEntryMarker.dotCenter
+                angle: _root.routeMappingEntryHeading - _root.bearing - 90
+            }
+
+            Canvas {
+                anchors.fill: parent
+
+                onPaint: {
+                    var ctx = getContext("2d")
+                    var centerY = height / 2
+                    var shaftStart = routeMappingEntryMarker.markerSize * 0.55
+                    var arrowTip = width - 1
+                    var arrowBase = width - routeMappingEntryMarker.markerSize * 0.55
+                    var arrowHalfHeight = routeMappingEntryMarker.markerSize * 0.34
+
+                    function drawArrow(color, lineWidth) {
+                        ctx.strokeStyle = color
+                        ctx.lineWidth = lineWidth
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+                        ctx.beginPath()
+                        ctx.moveTo(shaftStart, centerY)
+                        ctx.lineTo(arrowTip, centerY)
+                        ctx.moveTo(arrowBase, centerY - arrowHalfHeight)
+                        ctx.lineTo(arrowTip, centerY)
+                        ctx.lineTo(arrowBase, centerY + arrowHalfHeight)
+                        ctx.stroke()
+                    }
+
+                    ctx.clearRect(0, 0, width, height)
+                    drawArrow("white", 5)
+                    drawArrow("#19d12f", 3)
+                }
+            }
+
+            Rectangle {
+                width: routeMappingEntryMarker.markerSize
+                height: width
+                radius: width / 2
+                color: "#19d12f"
+                border.color: "white"
+                border.width: 2
+            }
+        }
+    }
+
+    MapQuickItem {
+        coordinate: routeMappingExitCoordinate
+        anchorPoint.x: routeMappingExitMarker.dotCenter
+        anchorPoint.y: routeMappingExitMarker.dotCenter
+        visible: !planEditMode && routeMappingExitCoordinate ? routeMappingExitCoordinate.isValid : false
+        z: QGroundControl.zOrderWaypointLines + 4
+
+        sourceItem: Item {
+            id: routeMappingExitMarker
+            readonly property real markerSize: ScreenTools.defaultFontPixelHeight * 0.85
+            readonly property real dotCenter: markerSize / 2
+
+            width: markerSize * 2.25
+            height: markerSize
+
+            transform: Rotation {
+                origin.x: routeMappingExitMarker.dotCenter
+                origin.y: routeMappingExitMarker.dotCenter
+                angle: _root.routeMappingExitHeading - _root.bearing - 90
+            }
+
+            Canvas {
+                anchors.fill: parent
+
+                onPaint: {
+                    var ctx = getContext("2d")
+                    var centerY = height / 2
+                    var shaftStart = routeMappingExitMarker.markerSize * 0.55
+                    var arrowTip = width - 1
+                    var arrowBase = width - routeMappingExitMarker.markerSize * 0.55
+                    var arrowHalfHeight = routeMappingExitMarker.markerSize * 0.34
+
+                    function drawArrow(color, lineWidth) {
+                        ctx.strokeStyle = color
+                        ctx.lineWidth = lineWidth
+                        ctx.lineCap = "round"
+                        ctx.lineJoin = "round"
+                        ctx.beginPath()
+                        ctx.moveTo(shaftStart, centerY)
+                        ctx.lineTo(arrowTip, centerY)
+                        ctx.moveTo(arrowBase, centerY - arrowHalfHeight)
+                        ctx.lineTo(arrowTip, centerY)
+                        ctx.lineTo(arrowBase, centerY + arrowHalfHeight)
+                        ctx.stroke()
+                    }
+
+                    ctx.clearRect(0, 0, width, height)
+                    drawArrow("white", 5)
+                    drawArrow("#ffc400", 3)
+                }
+            }
+
+            Rectangle {
+                width: routeMappingExitMarker.markerSize
+                height: width
+                radius: width / 2
+                color: "#ffc400"
+                border.color: "white"
+                border.width: 2
+            }
+        }
     }
 
     // Direction arrows in waypoint lines (visible in plan edit mode)

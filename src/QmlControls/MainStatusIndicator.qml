@@ -31,6 +31,7 @@ RowLayout {
         id:                 mainStatusLabel
         Layout.fillHeight:  true
         Layout.preferredWidth: contentWidth + (vehicleMessagesIcon.visible ? vehicleMessagesIcon.width + control.spacing : 0)
+        leftPadding:        ScreenTools.defaultFontPixelWidth * 1.4
         verticalAlignment:  Text.AlignVCenter
         text:               mainStatusText()
         color:              qgcPal.windowTransparentText
@@ -52,7 +53,7 @@ RowLayout {
                     return mainStatusLabel._commLostText
                 }
                 if (_activeVehicle.armed) {
-                    _mainStatusBGColor = "green"
+                    _mainStatusBGColor = "#23a800"
 
                     if (_healthAndArmingChecksSupported) {
                         if (_activeVehicle.healthAndArmingCheckReport.canArm) {
@@ -74,11 +75,10 @@ RowLayout {
                 } else {
                     if (_healthAndArmingChecksSupported) {
                         if (_activeVehicle.healthAndArmingCheckReport.canArm) {
-                            if (_activeVehicle.healthAndArmingCheckReport.hasWarningsOrErrors) {
-                                _mainStatusBGColor = "yellow"
-                            } else {
-                                _mainStatusBGColor = "green"
-                            }
+                            // A vehicle which can arm is ready. Warnings remain
+                            // available in the status drawer/message indicator,
+                            // but should not turn a "Ready to go" band yellow.
+                            _mainStatusBGColor = "#23a800"
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "red"
@@ -86,7 +86,7 @@ RowLayout {
                         }
                     } else if (_activeVehicle.readyToFlyAvailable) {
                         if (_activeVehicle.readyToFly) {
-                            _mainStatusBGColor = "green"
+                            _mainStatusBGColor = "#23a800"
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "yellow"
@@ -95,7 +95,7 @@ RowLayout {
                     } else {
                         // Best we can do is determine readiness based on AutoPilot component setup and health indicators from SYS_STATUS
                         if (_activeVehicle.allSensorsHealthy && _activeVehicle.autopilotPlugin.setupComplete) {
-                            _mainStatusBGColor = "green"
+                            _mainStatusBGColor = "#23a800"
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "yellow"

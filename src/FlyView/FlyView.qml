@@ -31,6 +31,13 @@ Item {
     property int    _editingLayer:          _layerMission
     // Removed: _centerTargetMode - crosshair is now always visible in plan edit mode
     property bool   _showMissionStats:      false   // Show mission stats panel for Stats button
+    property bool   _startMissionPopupVisible: false
+    property var    routeMappingBoundaryPath: []
+    property var    routeMappingTransectPath: []
+    property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
+    property var    routeMappingExitCoordinate: QtPositioning.coordinate()
+    property real   routeMappingEntryHeading: 0
+    property real   routeMappingExitHeading: 0
 
     readonly property int _layerMission:    1
     readonly property int _layerFence:      2
@@ -38,6 +45,14 @@ Item {
     readonly property int _layerUTMSP:      4
 
     readonly property int   _decimalPlaces: 8
+
+    function showStartMissionPopup() {
+        _startMissionPopupVisible = true
+    }
+
+    function hideStartMissionPopup() {
+        _startMissionPopupVisible = false
+    }
 
     PlanMasterController {
         id:                     _planController
@@ -253,6 +268,12 @@ Item {
             missionController:      _root._missionController
             geoFenceController:     _root._geoFenceController
             rallyPointController:   _root._rallyPointController
+            routeMappingBoundaryPath: _root.routeMappingBoundaryPath
+            routeMappingTransectPath: _root.routeMappingTransectPath
+            routeMappingEntryCoordinate: _root.routeMappingEntryCoordinate
+            routeMappingExitCoordinate: _root.routeMappingExitCoordinate
+            routeMappingEntryHeading: _root.routeMappingEntryHeading
+            routeMappingExitHeading: _root.routeMappingExitHeading
 
             onWaypointAdded: function(coordinate) {
                 _root.insertSimpleItemAfterCurrent(coordinate)
@@ -591,30 +612,15 @@ Item {
         property bool _missionRunning: _root._activeVehicle ? _root._activeVehicle.flying && _root._activeVehicle.flightMode === _root._activeVehicle.missionFlightMode : false
         property bool _hasPlan: _root._missionController ? _root._missionController.visualItems.count > 1 : false
         
-        // Consistent height for touch targets - rounded to integer to avoid blur
-        height: Math.round(ScreenTools.defaultFontPixelHeight * 2.5)
-        width: Math.round(contentRow.width + (ScreenTools.defaultFontPixelWidth * 5)) // Increased padding
-        
-        // Modern "Squircle" look
-        radius: height * 0.25
-        
-        color: _missionRunning ? "#2E9B54" : qgcPal.window
-        border.color: _missionRunning ? "#258045" : qgcPal.buttonBorder
-        border.width: 1
+        // Match the Route Mapping Save button.
+        height: ScreenTools.defaultFontPixelHeight * 2
+        width: contentRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
+        radius: ScreenTools.defaultFontPixelWidth * 0.45
+        color: addButtonMouseArea.pressed ? "#f1f1f1" : "white"
+        border.width: 0
         
         z: QGroundControl.zOrderTopMost
         visible: !_root.planEditMode && !QGroundControl.videoManager.fullScreen && _root._mainWindowIsMap
-        
-        // Shadow for depth
-        layer.enabled: true
-        layer.effect: DropShadow {
-            horizontalOffset: 0
-            verticalOffset: 2
-            radius: 8.0
-            samples: 17
-            color: "#40000000"
-            source: addButton
-        }
         
         anchors.right: parent.right
         anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 2
@@ -623,44 +629,43 @@ Item {
         Row {
             id: contentRow
             anchors.centerIn: parent
-            spacing: ScreenTools.defaultFontPixelWidth  
+            spacing: ScreenTools.defaultFontPixelWidth * 0.5
             
             // Icon
             QGCColoredImage {
-                width: ScreenTools.mediumFontPixelHeight
+                width: ScreenTools.defaultFontPixelHeight * 1.1
                 height: width
                 source: {
                     if (addButton._missionRunning) return "/res/modern-icons/MaterialSymbolsLock.svg"
                     if (addButton._hasPlan) return "/res/modern-icons/MaterialSymbolsEditLocationAlt.svg"
                     return "/res/modern-icons/MaterialSymbolsAddLocationAlt.svg"
                 }
-                color: addButton._missionRunning ? "white" : qgcPal.text
+                color: "#6a6a6a"
                 anchors.verticalCenter: parent.verticalCenter
                 smooth: true
                 mipmap: true
             }
             
             // Text Label
-            Text {
+            QGCLabel {
                 text: {
                     if (addButton._missionRunning) return qsTr("Course Lock")
                     if (addButton._hasPlan) return qsTr("Edit")
                     return qsTr("Add")
                 }
-                renderType: Text.NativeRendering
-                font.pixelSize: ScreenTools.defaultFontPixelHeight
                 font.weight: Font.DemiBold
-                color: addButton._missionRunning ? "white" : qgcPal.text
+                color: "#6a6a6a"
                 anchors.verticalCenter: parent.verticalCenter
                 verticalAlignment: Text.AlignVCenter
             }
         }
         
-        MouseArea {
+        QGCMouseArea {
+            id: addButtonMouseArea
             anchors.fill: parent
             cursorShape: addButton._missionRunning ? Qt.ForbiddenCursor : Qt.PointingHandCursor
             enabled: !addButton._missionRunning
-            onClicked: _root.planEditMode = true
+            onClicked: mainWindow.showRouteMappingView()
             onPressed: addButton.scale = 0.96
             onReleased: addButton.scale = 1.0
         }
@@ -692,46 +697,33 @@ Item {
         // Exit Button
         Rectangle {
             id: exitButton
-            height: Math.round(ScreenTools.defaultFontPixelHeight * 2.5)
-            width: Math.round(exitRow.width + (ScreenTools.defaultFontPixelWidth * 4))
-            radius: height * 0.25
-            color: qgcPal.window
-            
-            // Shadow
-            layer.enabled: true
-            layer.effect: DropShadow {
-                horizontalOffset: 0
-                verticalOffset: 2
-                radius: 8.0
-                samples: 17
-                color: "#40000000"
-            }
+            height: ScreenTools.defaultFontPixelHeight * 2
+            width: exitRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6.5
+            radius: ScreenTools.defaultFontPixelWidth * 0.45
+            color: "white"
 
             Row {
                 id: exitRow
                 anchors.centerIn: parent
                 spacing: ScreenTools.defaultFontPixelWidth * 0.5
 
-                QGCColoredImage {
-                    width: ScreenTools.defaultFontPixelHeight
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: ScreenTools.defaultFontPixelHeight * 1.1
                     height: width
-                    source: "/res/modern-icons/MaterialSymbolsExitToAppRounded.svg"
-                    color: qgcPal.text
-                    smooth: true
-                    mipmap: true
+                    source: "/res/exit.png"
+                    fillMode: Image.PreserveAspectFit
                 }
 
-                Text {
+                QGCLabel {
                     text: qsTr("Exit")
-                    renderType: Text.NativeRendering
-                    font.pixelSize: ScreenTools.defaultFontPixelHeight
                     font.weight: Font.DemiBold
-                    color: qgcPal.text
+                    color: "#6a6a6a"
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
-            MouseArea {
+            QGCMouseArea {
                 anchors.fill: parent
                 onClicked: _root.planEditMode = false
                 onPressed: parent.scale = 0.96
@@ -747,48 +739,35 @@ Item {
             property var planController: _root.planController
             property bool buttonEnabled: planController ? (!planController.syncInProgress && planController.containsItems) : false
             
-            height: Math.round(ScreenTools.defaultFontPixelHeight * 2.5)
-            width: Math.round(useRow.width + (ScreenTools.defaultFontPixelWidth * 4))
-            radius: height * 0.25
-            color: qgcPal.window
+            height: ScreenTools.defaultFontPixelHeight * 2
+            width: useRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
+            radius: ScreenTools.defaultFontPixelWidth * 0.45
+            color: "white"
             opacity: buttonEnabled ? 1.0 : 0.5
             enabled: buttonEnabled
-            
-            // Shadow
-            layer.enabled: true
-            layer.effect: DropShadow {
-                horizontalOffset: 0
-                verticalOffset: 2
-                radius: 8.0
-                samples: 17
-                color: "#40000000"
-            }
 
             Row {
                 id: useRow
                 anchors.centerIn: parent
                 spacing: ScreenTools.defaultFontPixelWidth * 0.5
 
-                QGCColoredImage {
-                    width: ScreenTools.defaultFontPixelHeight
+                Image {
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: ScreenTools.defaultFontPixelHeight * 1.1
                     height: width
-                    source: "/res/modern-icons/MaterialSymbolsCheckRounded.svg"
-                    color: qgcPal.text
-                    smooth: true
-                    mipmap: true
+                    source: "/res/checkmark_forsave.png"
+                    fillMode: Image.PreserveAspectFit
                 }
 
-                Text {
-                    text: qsTr("Use")
-                    renderType: Text.NativeRendering
-                    font.pixelSize: ScreenTools.defaultFontPixelHeight
+                QGCLabel {
+                    text: qsTr("Save")
                     font.weight: Font.DemiBold
-                    color: qgcPal.text
+                    color: "#6a6a6a"
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
 
-            MouseArea {
+            QGCMouseArea {
                 anchors.fill: parent
                 onClicked: _root.planController.upload()
                 onPressed: parent.scale = 0.96
@@ -796,6 +775,40 @@ Item {
             }
             
             Behavior on scale { NumberAnimation { duration: 50 } }
+        }
+    }
+
+    Item {
+        id: startMissionPopupOverlay
+        anchors.fill: parent
+        visible: _root._startMissionPopupVisible
+        z: QGroundControl.zOrderTopMost + 1000
+
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(0, 0, 0, 0.42)
+        }
+
+        Loader {
+            id: startMissionPopupLoader
+            active: startMissionPopupOverlay.visible
+            source: "qrc:/qml/QGroundControl/FlyView/startMission.qml"
+            anchors.centerIn: parent
+            width: Math.min(parent.width - ScreenTools.defaultFontPixelWidth * 2,
+                            ScreenTools.defaultFontPixelWidth * 48)
+        }
+
+        Connections {
+            target: startMissionPopupLoader.item
+
+            function onCollapsed() {
+                _root.hideStartMissionPopup()
+            }
+
+            function onExecuteRequested() {
+                _root.hideStartMissionPopup()
+                _guidedController.executeAction(_guidedController.actionStartMission, null, 0, false)
+            }
         }
     }
 }

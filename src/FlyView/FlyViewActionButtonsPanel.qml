@@ -17,8 +17,8 @@ Item {
 
     property var actionModel: null
     property real maxVisibleWidth: ScreenTools.defaultFontPixelWidth * 50
-    property real _buttonHeight: ScreenTools.defaultFontPixelHeight * 2.3
-    property real _buttonSpacing: ScreenTools.defaultFontPixelWidth * 1.5
+    property real _buttonHeight: ScreenTools.defaultFontPixelHeight * 1.85
+    property real _buttonSpacing: ScreenTools.defaultFontPixelWidth
 
     implicitHeight: _buttonHeight
     width: needsScroll ? maxVisibleWidth : Math.min(maxVisibleWidth, buttonRow.width)
@@ -130,9 +130,9 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            color: "#00ff88"
-            font.bold: true
-            font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.8
+            color: "#6beb17"
+            font.weight: Font.Light
+            font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.65
             text: "‹"
             style: Text.Outline; styleColor: "black"
             
@@ -164,9 +164,9 @@ Item {
 
         Text {
             anchors.centerIn: parent
-            color: "white"
-            font.bold: true
-            font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.8
+            color: "#6beb17"
+            font.weight: Font.Light
+            font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.65
             text: "›"
             style: Text.Outline; styleColor: "black"
         }
@@ -253,137 +253,26 @@ Item {
                             var txt = modelData.obj && modelData.obj.text ? modelData.obj.text.toLowerCase() : "";
                             return txt.includes("actions");
                         }
+                        readonly property color contentColor: {
+                            if (!actionObject || !actionObject.enabled) {
+                                return "white"
+                            }
+                            var txt = actionObject.text ? actionObject.text.toLowerCase() : ""
+                            return "white"
+                        }
 
                         anchors.verticalCenter: parent ? parent.verticalCenter : undefined
                         height: root._buttonHeight
                         visible: modelData.obj.visible
-                        width: Math.max(buttonContent.width + ScreenTools.defaultFontPixelWidth * 4.0, height * 2.2)
+                        width: Math.max(buttonContent.width + ScreenTools.defaultFontPixelWidth * 3.0, height * 2.1)
 
-                        // --- BUTTON SHAPE DRAWING (PERFECT CONCENTRIC LEAF) ---
-                        Canvas {
-                            id: buttonShape
+                        // Transparent overlay style to match the Fly View layout.
+                        Rectangle {
                             anchors.fill: parent
-                            antialiasing: true
-                            smooth: true
-                            renderTarget: Canvas.FramebufferObject
-
-                            property color baseColor: {
-                                var txt = modelData.obj && modelData.obj.text ? modelData.obj.text.toLowerCase() : "";
-                                if (txt.includes("takeoff") || txt.includes("start")) return Qt.rgba(0.04, 0.22, 0.08, 1.0);
-                                if (txt.includes("land") || txt.includes("end")) return Qt.rgba(0.3, 0.04, 0.04, 1.0);
-                                return qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0.97, 0.97, 0.97, 0.95) : Qt.rgba(0.04, 0.05, 0.04, 1.0);
-                            }
-                            property bool isDefaultButton: {
-                                var txt = modelData.obj && modelData.obj.text ? modelData.obj.text.toLowerCase() : "";
-                                return !(txt.includes("takeoff") || txt.includes("start") || txt.includes("land") || txt.includes("end"));
-                            }
-                            property color accentColor: {
-                                var txt = modelData.obj && modelData.obj.text ? modelData.obj.text.toLowerCase() : "";
-                                if (txt.includes("land") || txt.includes("end")) return "#ff4444";
-                                if (txt.includes("takeoff") || txt.includes("start") || txt.includes("rtl") || txt.includes("return")) return "#00ff88";
-                                if (txt.includes("pause")) return "#ffaa00";
-                                return "#00ff88";
-                            }
-                            property real accentOpacity: {
-                                var txt = modelData.obj && modelData.obj.text ? modelData.obj.text.toLowerCase() : "";
-                                if (txt.includes("takeoff") || txt.includes("start")) return 0.25;
-                                return mouseArea.containsMouse ? 0.35 : 0.05;
-                            }
-
-                            onAccentOpacityChanged: requestPaint()
-                            onBaseColorChanged: requestPaint()
-                            Component.onCompleted: requestPaint()
-
-                            Connections {
-                                function onPaletteChanged() { buttonShape.requestPaint(); }
-                                target: qgcPal
-                            }
-
-                            onPaint: {
-                                var ctx = getContext("2d");
-                                ctx.reset();
-                                ctx.lineJoin = "round";
-                                ctx.lineCap = "round";
-
-                                var w = width;
-                                var h = height;
-                                var r = h * 0.45; 
-                                var k = 0.65; 
-                                var rw = 2; // Sharp corner safety radius
-
-                                function drawLeaf(c, inset) {
-                                    var iw = w - inset * 2;
-                                    var ih = h - inset * 2;
-                                    var ir = Math.max(0, r - inset);
-                                    var irw = Math.max(0, rw - inset);
-                                    
-                                    c.beginPath();
-                                    c.moveTo(inset + ir, inset);
-                                    c.lineTo(inset + iw - irw, inset);
-                                    c.quadraticCurveTo(inset + iw, inset, inset + iw, inset + irw);
-                                    c.lineTo(inset + iw, inset + ih - ir);
-                                    
-                                    // Bottom-Right aggressive curve
-                                    var brRadius = Math.max(0, (r * 1.5) - inset);
-                                    c.bezierCurveTo(inset + iw, inset + ih - brRadius * (1 - k), 
-                                                   inset + iw - brRadius * (1 - k), inset + ih, 
-                                                   inset + iw - brRadius, inset + ih);
-                                    
-                                    c.lineTo(inset + irw, inset + ih);
-                                    c.quadraticCurveTo(inset, inset + ih, inset, inset + ih - irw);
-                                    c.lineTo(inset, inset + ir);
-                                    c.bezierCurveTo(inset, inset + ir * (1 - k), 
-                                                   inset + ir * (1 - k), inset, 
-                                                   inset + ir, inset);
-                                    c.closePath();
-                                }
-
-                                // 1. Base Background (No inset)
-                                drawLeaf(ctx, 0);
-                                ctx.fillStyle = baseColor;
-                                ctx.fill();
-
-                                // 2. Accent Glow (2px inset for better "inner" appearance)
-                                drawLeaf(ctx, 2);
-                                if (qgcPal.globalTheme === QGCPalette.Light && buttonShape.isDefaultButton) {
-                                    ctx.fillStyle = Qt.rgba(0, 0.5, 0.27, 1.0);
-                                    ctx.globalAlpha = accentOpacity * 0.3;
-                                } else {
-                                    ctx.fillStyle = accentColor;
-                                    ctx.globalAlpha = accentOpacity;
-                                }
-                                ctx.fill();
-                                ctx.globalAlpha = 1.0;
-
-                                // 3. Inner Stroke (0.5px inset to stay purely internal)
-                                drawLeaf(ctx, 0.5);
-                                ctx.strokeStyle = accentColor;
-                                ctx.lineWidth = 1.0;
-                                ctx.globalAlpha = 0.18;
-                                ctx.stroke();
-
-                                // 4. Edge Stroke
-                                ctx.strokeStyle = (qgcPal.globalTheme === QGCPalette.Light && buttonShape.isDefaultButton) ? Qt.rgba(0, 0.76, 0.44, 0.4) : Qt.rgba(1, 1, 1, 0.25);
-                                ctx.lineWidth = 1.0;
-                                ctx.globalAlpha = 1.0;
-                                ctx.stroke();
-
-                                // 5. Disabled State
-                                if (actionButton.actionObject && !actionButton.actionObject.enabled) {
-                                    drawLeaf(ctx, 0);
-                                    if (qgcPal.globalTheme === QGCPalette.Light && buttonShape.isDefaultButton) {
-                                        ctx.fillStyle = Qt.rgba(1, 1, 1, 0.7);
-                                    } else {
-                                        ctx.fillStyle = Qt.rgba(0, 0, 0, 0.75);
-                                    }
-                                    ctx.fill();
-                                }
-                            }
-
-                            Connections {
-                                target: actionButton.actionObject
-                                function onEnabledChanged() { buttonShape.requestPaint(); }
-                            }
+                            radius: ScreenTools.defaultFontPixelWidth * 0.45
+                            color: mouseArea.pressed ? Qt.rgba(0, 0, 0, 0.46) : Qt.rgba(0, 0, 0, 0.28)
+                            border.color: Qt.rgba(1, 1, 1, 0.18)
+                            border.width: 1
                         }
 
                         scale: mouseArea.pressed ? 0.97 : (mouseArea.containsMouse ? 1.03 : 1.0)
@@ -392,15 +281,15 @@ Item {
                         Row {
                             id: buttonContent
                             anchors.centerIn: parent
-                            spacing: ScreenTools.defaultFontPixelWidth * 0.8
+                            spacing: ScreenTools.defaultFontPixelWidth * 0.55
 
                             QGCColoredImage {
                                 anchors.verticalCenter: parent.verticalCenter
                                 visible: source.toString() !== ""
                                 source: actionButton.actionObject ? actionButton.actionObject.iconSource : ""
-                                width: ScreenTools.defaultFontPixelHeight * 1.2 
+                                width: ScreenTools.defaultFontPixelHeight * 0.92
                                 height: width
-                                color: (qgcPal.globalTheme === QGCPalette.Light && buttonShape.isDefaultButton) ? "#1a1a1a" : "white"
+                                color: actionButton.contentColor
                                 fillMode: Image.PreserveAspectFit
                                 smooth: true
                             }
@@ -409,11 +298,13 @@ Item {
                                 id: labelText
                                 anchors.verticalCenter: parent.verticalCenter
                                 text: actionButton.actionObject ? actionButton.actionObject.text : ""
-                                color: (actionButton.actionObject && actionButton.actionObject.enabled) ? ((qgcPal.globalTheme === QGCPalette.Light && buttonShape.isDefaultButton) ? "#1a1a1a" : "white") : Qt.rgba(0.6, 0.6, 0.6, 1.0)
-                                font.bold: true
-                                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.8
-                                font.capitalization: Font.AllUppercase
+                                color: actionButton.contentColor
+                                font.weight: Font.Black
+                                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.56
+                                font.capitalization: Font.MixedCase
                                 font.family: "Noto Sans"
+                                style: Text.Outline
+                                styleColor: Qt.rgba(0, 0, 0, 0.45)
                             }
 
                             Text {
@@ -421,7 +312,7 @@ Item {
                                 visible: actionButton.isActionsButton
                                 text: "▾"
                                 color: labelText.color
-                                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.7
+                                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.52
                             }
                         }
 

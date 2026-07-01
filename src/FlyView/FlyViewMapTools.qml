@@ -180,6 +180,21 @@ Item {
                 }
             }
 
+            Item {
+                width: flightModePill.implicitWidth + ScreenTools.defaultFontPixelWidth * 5.4
+                height: buttonRow.height
+                visible: QGroundControl.multiVehicleManager.activeVehicle
+
+                FlightModeIndicator {
+                    id: flightModePill
+                    anchors.centerIn: parent
+                    fontPointSize: ScreenTools.defaultFontPointSize
+                    iconRotation: 90
+                    showText: false
+                    visible: parent.visible
+                }
+            }
+
 
             // Open
             IconButton {

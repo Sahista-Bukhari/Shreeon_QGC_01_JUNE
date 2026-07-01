@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
+import Qt5Compat.GraphicalEffects
 
 import QGroundControl
 import QGroundControl.Controls
@@ -10,6 +11,7 @@ Item {
     id: root
 
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
+    property var blurSourceItem: null
     property real _altitude: _activeVehicle && _activeVehicle.altitudeRelative ? _activeVehicle.altitudeRelative.rawValue : 0
     property real _distanceToHome: _activeVehicle && _activeVehicle.distanceToHome ? _activeVehicle.distanceToHome.rawValue : 0
 
@@ -20,9 +22,11 @@ Item {
     property real _margins: ScreenTools.defaultFontPixelWidth
     property Fact _mpcAltModeFact: paramLoader.item ? paramLoader.item.fact : null
     property bool _obstacleAvoidanceActive: false
+    property bool _terrainFlowIconActive: false
     property bool _paramExists: paramLoader.item ? paramLoader.item.paramExists : false
     property real _pitch: _activeVehicle && _activeVehicle.pitch ? _activeVehicle.pitch.rawValue : 0
     property real _roll: _activeVehicle && _activeVehicle.roll ? _activeVehicle.roll.rawValue : 0
+    property bool _greenLoopRunning: root.visible && root._activeVehicle && root._activeVehicle.flying
 
     // Tank capacity (Litres)
     property real _tankCapacityMax: 16.0
@@ -50,9 +54,11 @@ Item {
     }
     function toggleTerrainFlow() {
         if (_mpcAltModeFact) {
-            var newValue = _terrainFlowActive ? 2 : 1;
+            var requestedActive = !_terrainFlowIconActive;
+            var newValue = requestedActive ? 1 : 2;
             console.log("Terrain Flow toggle: current=" + _mpcAltModeFact.rawValue + " setting to=" + newValue);
             _mpcAltModeFact.value = newValue;
+            _terrainFlowIconActive = requestedActive;
             console.log("Terrain Flow toggle: after set, rawValue=" + _mpcAltModeFact.rawValue);
         } else {
             console.log("Terrain Flow toggle FAILED:");
@@ -82,6 +88,8 @@ Item {
     // Reload controller when vehicle changes
     on_ActiveVehicleChanged: {
         console.log("TerrainFlow: Active vehicle changed, reloading controller...");
+        _terrainFlowIconActive = false;
+        _obstacleAvoidanceActive = false;
         paramLoader.active = false;
         paramLoader.active = true;
     }
@@ -161,12 +169,28 @@ Item {
     Canvas {
         id: bgCanvas
 
+        property real greenLoopPhase: 0
         property var mainItem: mainContainer
 
         // Redraw when layout changes
         property var telemetryItem: telemetryContainer
 
         anchors.fill: parent
+
+        Timer {
+            interval: 50
+            repeat: true
+            running: root._greenLoopRunning
+            onTriggered: bgCanvas.greenLoopPhase = (bgCanvas.greenLoopPhase + interval / 9800) % 1
+        }
+
+        onGreenLoopPhaseChanged: requestPaint()
+        Connections {
+            function on_GreenLoopRunningChanged() {
+                bgCanvas.requestPaint()
+            }
+            target: root
+        }
 
         onPaint: {
             var ctx = getContext("2d");
@@ -193,7 +217,7 @@ Item {
             var lw = telemetryItem.width + (padding * 2.4);
 
             // Calculate natural height of telemetry based on content
-            var naturalLh = telemetryItem.height + (ScreenTools.defaultFontPixelHeight * 1.1) + paddingBottom;
+            var naturalLh = telemetryItem.height + (ScreenTools.defaultFontPixelHeight * 0.65) + paddingBottom;
 
             // Enforce MINIMUM height (25% of Main) to prevent shrinking too much
             // Enforce MAXIMUM height (Main height) to keep it a "cutout" (step down)
@@ -203,53 +227,94 @@ Item {
             var bottomY = ry + rh;
             var ly = bottomY - lh; // Calculate top Y based on height diff
 
-            // Left edge radius for corners
-            var topLeftRadius = ScreenTools.defaultFontPixelHeight * 1.8; // Large radius for top-left
-            var leftBottomRadius = ScreenTools.defaultFontPixelHeight * 0.8; // Small radius for bottom-left
-
-            // Radii
             var rightRadius = rh / 2;
+            var leftRadius = Math.min(ScreenTools.defaultFontPixelHeight * 0.45, lh / 2);
 
             ctx.fillStyle = Qt.rgba(root._glassFill.r, root._glassFill.g, root._glassFill.b, root._glassFill.a);
             ctx.strokeStyle = Qt.rgba(root._glassBorder.r, root._glassBorder.g, root._glassBorder.b, root._glassBorder.a);
             ctx.lineWidth = 1;
 
-            ctx.beginPath();
-
-            // 1. Start at top-left with LARGE radius for professional look
-            ctx.moveTo(lx, ly + topLeftRadius);
-            ctx.arc(lx + topLeftRadius, ly + topLeftRadius, topLeftRadius, Math.PI, 1.5 * Math.PI, false);
-
-            // 2. Top Edge (Continuous straight line to Right S-Curve start)
-            ctx.lineTo(lx + lw, ly);
-
-            // 3. S-Curve transition (Step UP to Right Section)
             var startX = lx + lw;
             var startY = ly;
             var endX = rx;
             var endY = ry;
-            var dx = endX - startX;
-            // Use 0.65 pull for a matching professional flare
-            ctx.bezierCurveTo(startX + dx * 0.65, startY, endX - dx * 0.65, endY, endX, endY);
-
-            // 4. Top Edge of Main & Right Pill
+            var stepRadius = Math.min(ScreenTools.defaultFontPixelHeight * 0.35,
+                                      Math.abs(startY - endY) / 2);
             var rightCenterX = rx + rw - rightRadius;
             var rightCenterY = ry + rightRadius;
-            ctx.lineTo(rightCenterX, ry);
-            ctx.arc(rightCenterX, rightCenterY, rightRadius, 1.5 * Math.PI, 0.5 * Math.PI, false);
 
-            // 5. Bottom Edge back to Left with small radius
-            ctx.lineTo(lx + leftBottomRadius, bottomY);
+            function drawHudShape() {
+                ctx.beginPath();
 
-            // 6. Left Bottom Corner - Small rounded radius
-            ctx.arc(lx + leftBottomRadius, bottomY - leftBottomRadius, leftBottomRadius, 0.5 * Math.PI, 1.0 * Math.PI, false);
+                // 1. Small rounded corners beside the altitude metric.
+                ctx.moveTo(lx, ly + leftRadius);
+                ctx.quadraticCurveTo(lx, ly, lx + leftRadius, ly);
 
-            // 7. Left Edge up to start (connecting to the large top-left radius)
-            ctx.lineTo(lx, ly + topLeftRadius);
+                // 2. Top Edge (Continuous straight line to Right S-Curve start)
+                ctx.lineTo(lx + lw, ly);
 
-            ctx.closePath();
+                // 3. Straight right-angle transition up to the tank/compass section.
+                ctx.lineTo(endX - stepRadius, startY);
+                ctx.quadraticCurveTo(endX, startY,
+                                     endX, startY - stepRadius);
+                ctx.lineTo(endX, endY + stepRadius);
+                ctx.quadraticCurveTo(endX, endY,
+                                     endX + stepRadius, endY);
+
+                // 4. Straight top above the tank, with only the compass-side end rounded.
+                ctx.lineTo(rightCenterX, ry);
+                ctx.arc(rightCenterX, rightCenterY, rightRadius,
+                        1.5 * Math.PI, 0.5 * Math.PI, false);
+
+                // 5. Straight bottom with a small rounded altitude-side corner.
+                ctx.lineTo(lx + leftRadius, bottomY);
+                ctx.quadraticCurveTo(lx, bottomY,
+                                     lx, bottomY - leftRadius);
+                ctx.lineTo(lx, ly + leftRadius);
+
+                ctx.closePath();
+            }
+
+            drawHudShape();
             ctx.fill();
             ctx.stroke();
+
+            if (root._greenLoopRunning && ctx.setLineDash) {
+                var shapeLength = (lw + Math.abs(endX - startX) + Math.abs(startY - endY) +
+                                   (rightCenterX - endX) + Math.PI * rightRadius +
+                                   (rightCenterX - lx) + lh);
+                var runnerOffset = -bgCanvas.greenLoopPhase * shapeLength;
+
+                ctx.save();
+                drawHudShape();
+                ctx.strokeStyle = Qt.rgba(0.42, 0.92, 0.09, 0.22);
+                ctx.lineWidth = Math.max(1, ScreenTools.defaultFontPixelHeight * 0.09);
+                ctx.lineCap = "round";
+                ctx.shadowColor = "#6beb17";
+                ctx.shadowBlur = ScreenTools.defaultFontPixelHeight * 0.18;
+                ctx.setLineDash([
+                    ScreenTools.defaultFontPixelWidth * 14,
+                    shapeLength
+                ]);
+                ctx.lineDashOffset = runnerOffset + ScreenTools.defaultFontPixelWidth * 5;
+                ctx.stroke();
+                ctx.restore();
+
+                ctx.save();
+                drawHudShape();
+                ctx.strokeStyle = "#6beb17";
+                ctx.lineWidth = Math.max(0.8, ScreenTools.defaultFontPixelHeight * 0.035);
+                ctx.lineCap = "round";
+                ctx.shadowColor = "#6beb17";
+                ctx.shadowBlur = ScreenTools.defaultFontPixelHeight * 0.08;
+                ctx.setLineDash([
+                    ScreenTools.defaultFontPixelWidth * 8,
+                    shapeLength
+                ]);
+                ctx.lineDashOffset = runnerOffset;
+                ctx.stroke();
+                ctx.restore();
+            }
         }
 
         // Triggers for repaint
@@ -325,7 +390,7 @@ Item {
         anchors.right: parent.right
         anchors.rightMargin: root._margins
         // Balanced spacing to allow for a large-radius, circular S-Curve transition
-        spacing: ScreenTools.defaultFontPixelWidth * 9
+        spacing: ScreenTools.defaultFontPixelWidth * 6
 
         // === TELEMETRY GROUP ===
         Item {
@@ -340,8 +405,8 @@ Item {
 
                 anchors.bottom: parent.bottom // Re-align to bottom
                 anchors.left: parent.left
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 2.5 // Add left padding to clear the rounded corner
-                spacing: ScreenTools.defaultFontPixelWidth * 4
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.7
+                spacing: ScreenTools.defaultFontPixelWidth * 2.4
 
                 // Reusable Stat Component
                 Component {
@@ -367,7 +432,7 @@ Item {
                             anchors.bottom: parent.bottom
                             anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.1
                             anchors.horizontalCenter: parent.horizontalCenter
-                            spacing: -ScreenTools.defaultFontPixelHeight * 1
+                            spacing: -ScreenTools.defaultFontPixelHeight * 0.58
 
                             // Top Row: Value + Unit (Now Top)
                             Row {
@@ -379,14 +444,14 @@ Item {
                                     color: qgcPal.text
                                     font.bold: true
                                     font.family: "Noto Sans"
-                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.6
+                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.08
                                     text: statRoot.value
                                 }
                                 Text {
                                     id: unitText
 
                                     color: qgcPal.buttonText
-                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.65
+                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.48
                                     text: statRoot.unit
                                 }
                             }
@@ -401,8 +466,8 @@ Item {
                                     anchors.verticalCenter: parent.verticalCenter
                                     color: statRoot.iconColor === "drop" ? statRoot.dropColor : statRoot.iconColor
                                     font.bold: true
-                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.75
-                                    height: ScreenTools.defaultFontPixelHeight // Fixed height to prevent row shifting
+                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.52
+                                    height: ScreenTools.defaultFontPixelHeight * 0.72
                                     horizontalAlignment: Text.AlignHCenter
                                     text: statRoot.icon
                                     verticalAlignment: Text.AlignVCenter // Ensure glyph centers in its box
@@ -413,8 +478,8 @@ Item {
                                     color: qgcPal.buttonText
                                     font.bold: true
                                     font.capitalization: Font.AllUppercase
-                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.42
-                                    height: ScreenTools.defaultFontPixelHeight // Fixed height match
+                                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.32
+                                    height: ScreenTools.defaultFontPixelHeight * 0.72
                                     text: statRoot.label
                                     verticalAlignment: Text.AlignVCenter
                                 }
@@ -501,7 +566,7 @@ Item {
                 id: mainRow
 
                 anchors.bottom: parent.bottom
-                spacing: root._margins * 2
+                spacing: root._margins * 1.35
 
                 // Separator between Telemetry and Main is handled by the gap/curve,
                 // but we might want a separator inside if desired.
@@ -509,150 +574,15 @@ Item {
                 // Users reference image shows they are visually separated by the cut.
                 // So we start with Toggles directly.
 
-                // === TOGGLES ===
-                Rectangle {
-                    id: togglesContainer
-
-                    Layout.preferredHeight: togglesCol.height + root._margins * 2
-                    Layout.preferredWidth: togglesCol.width + root._margins * 3
-                    border.color: root._togglePanelBorder
-                    border.width: 1
-                    color: root._togglePanelFill
-                    radius: root._glassPanelRadius
-
-                    Column {
-                        id: togglesCol
-
-                        anchors.centerIn: parent
-                        spacing: root._margins * 0.6
-
-                        // TERRAIN FLOW
-                        MouseArea {
-                            cursorShape: Qt.PointingHandCursor
-                            height: tfRow.height
-                            width: tfRow.width
-
-                            onClicked: root.toggleTerrainFlow()
-
-                            Row {
-                                id: tfRow
-
-                                spacing: root._margins
-
-                                Column {
-                                    spacing: 1
-
-                                    Text {
-                                        color: root._terrainFlowActive ? "#00ff88" : root._hudGrayWhite
-                                        font.bold: true
-                                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.55
-                                        text: "TERRAIN FLOW"
-                                    }
-                                    Row {
-                                        spacing: 4
-
-                                        Text {
-                                            color: root._terrainFlowActive ? "#00ff88" : root._hudGrayWhite
-                                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.6
-                                            text: "▲"
-                                        }
-                                        Text {
-                                            color: root._terrainFlowActive ? "#00ff88" : root._hudGrayWhite
-                                            font.bold: true
-                                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.55
-                                            text: root._terrainFlowActive ? "ACTIVE" : "OFF"
-                                        }
-                                        Item {
-                                            height: 1
-                                            width: 2
-                                        } // Spacer
-                                        Rectangle {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: root._terrainFlowActive ? "#00ff88" : root._hudGrayWhite
-                                            height: ScreenTools.defaultFontPixelHeight * 0.4
-                                            radius: width / 2
-                                            width: height
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Rectangle {
-                            color: root._compassSeparator
-                            height: 1
-                            width: parent.width
-                        }
-
-                        // OBSTACLE AVOID
-                        MouseArea {
-                            cursorShape: Qt.PointingHandCursor
-                            height: oaRow.height
-                            width: oaRow.width
-
-                            onClicked: root.toggleObstacleAvoidance()
-
-                            Row {
-                                id: oaRow
-
-                                spacing: root._margins
-
-                                Column {
-                                    spacing: 1
-
-                                    Text {
-                                        color: root._obstacleAvoidanceActive ? "#ff6666" : root._hudGrayWhite
-                                        font.bold: true
-                                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.55
-                                        text: "OBSTACLE AVOID"
-                                    }
-                                    Row {
-                                        spacing: 4
-
-                                        Text {
-                                            color: root._obstacleAvoidanceActive ? "#ff6666" : root._hudGrayWhite
-                                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.6
-                                            text: "▲"
-                                        }
-                                        Text {
-                                            color: root._obstacleAvoidanceActive ? "#ff6666" : root._hudGrayWhite
-                                            font.bold: true
-                                            font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.55
-                                            text: root._obstacleAvoidanceActive ? "ACTIVE" : "OFF"
-                                        }
-                                        Item {
-                                            height: 1
-                                            width: 2
-                                        } // Spacer
-                                        Rectangle {
-                                            anchors.verticalCenter: parent.verticalCenter
-                                            color: root._obstacleAvoidanceActive ? "#ff6666" : root._hudGrayWhite
-                                            height: ScreenTools.defaultFontPixelHeight * 0.4
-                                            radius: width / 2
-                                            width: height
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Separator
-                Rectangle {
-                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 4.5
-                    Layout.preferredWidth: 1
-                    color: root._compassSeparator
-                }
-
                 // === TANK ===
                 Column {
-                    Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2
+                    Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.7
                     spacing: 2
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.4
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.32
                         text: root._tankCapacityMax.toFixed(0) + "L"
                     }
                     Rectangle {
@@ -660,9 +590,9 @@ Item {
                         border.color: root._glassPanelBorder
                         border.width: 1
                         color: root._glassPanelFill
-                        height: ScreenTools.defaultFontPixelHeight * 3.5
+                        height: ScreenTools.defaultFontPixelHeight * 2.8
                         radius: root._glassPanelRadius * 0.6
-                        width: ScreenTools.defaultFontPixelHeight * 1.2
+                        width: ScreenTools.defaultFontPixelHeight
 
                         Rectangle {
                             anchors.bottom: parent.bottom
@@ -692,20 +622,20 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.colorBlue
                         font.bold: true
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.45
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.34
                         text: root._tankCurrentLevel.toFixed(1) + "L"
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.35
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.28
                         text: "0L"
                     }
                 }
 
                 // Separator
                 Rectangle {
-                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 4.5
+                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3.8
                     Layout.preferredWidth: 1
                     color: root._compassSeparator
                 }
@@ -719,13 +649,174 @@ Item {
                     property real _maxRadians: _maxAngleDegrees * Math.PI / 180
                     property real _pitchPercent: Math.min(Math.max(root._pitch, -_maxAngleDegrees), _maxAngleDegrees) / _maxAngleDegrees
                     property real _rollPercent: Math.min(Math.max(root._roll, -_maxAngleDegrees), _maxAngleDegrees) / _maxAngleDegrees
-                    property real attitudeArcWidth: ScreenTools.defaultFontPixelHeight * 0.5
-                    property real attitudeSpacing: ScreenTools.defaultFontPixelHeight * 0.15
-                    property real compassSize: ScreenTools.defaultFontPixelHeight * 5
+                    property real attitudeArcWidth: ScreenTools.defaultFontPixelHeight * 0.38
+                    property real attitudeSpacing: ScreenTools.defaultFontPixelHeight * 0.10
+                    property real compassSize: ScreenTools.defaultFontPixelHeight * 4.25
+                    property real sideIconSize: ScreenTools.defaultFontPixelHeight
                     property real totalSize: compassSize + (attitudeArcWidth + attitudeSpacing) * 2
 
                     Layout.preferredHeight: totalSize
                     Layout.preferredWidth: totalSize
+                    Layout.leftMargin: sideIconSize * 0.75
+
+                    ShaderEffectSource {
+                        id: compassBackdropSource
+                        anchors.centerIn: parent
+                        width: compassContainer.compassSize
+                        height: width
+                        sourceItem: root.blurSourceItem
+                        live: true
+                        recursive: false
+                        visible: false
+                        sourceRect: {
+                            if (!root.blurSourceItem) {
+                                return Qt.rect(0, 0, width, height)
+                            }
+                            var topLeft = compassContainer.mapToItem(
+                                        root.blurSourceItem,
+                                        (compassContainer.width - width) / 2,
+                                        (compassContainer.height - height) / 2)
+                            return Qt.rect(topLeft.x, topLeft.y, width, height)
+                        }
+                    }
+
+                    FastBlur {
+                        id: compassBackdropBlur
+                        anchors.fill: compassBackdropSource
+                        source: compassBackdropSource
+                        radius: 5
+                        transparentBorder: true
+                        visible: false
+                    }
+
+                    OpacityMask {
+                        anchors.fill: compassBackdropSource
+                        source: compassBackdropBlur
+                        visible: root.blurSourceItem !== null
+                        opacity: 0.62
+                        z: -1
+                        maskSource: Rectangle {
+                            width: compassBackdropSource.width
+                            height: compassBackdropSource.height
+                            radius: width / 2
+                        }
+                    }
+
+                    // Terrain Follow control, positioned outside the upper-left
+                    // edge of the compass while retaining the MPC_ALT_MODE logic.
+                    Item {
+                        id: terrainFlowCompassButton
+                        x: -width * 0.78
+                        y: ScreenTools.defaultFontPixelHeight * 0.15
+                        width: compassContainer.sideIconSize
+                        height: width
+                        z: 10
+
+                        Canvas {
+                            anchors.fill: parent
+                            property bool active: root._terrainFlowIconActive
+
+                            onActiveChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                var color = active ? "#00ff88" : "#ffffff"
+                                var cx = width / 2
+                                var cy = height / 2
+                                var radius = width * 0.29
+
+                                ctx.strokeStyle = color
+                                ctx.fillStyle = color
+                                ctx.lineWidth = Math.max(1.5, width * 0.075)
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, radius, 0, Math.PI * 2)
+                                ctx.stroke()
+
+                                ctx.beginPath()
+                                ctx.arc(cx, cy, width * 0.075, 0, Math.PI * 2)
+                                ctx.fill()
+
+                                var tickInner = width * 0.36
+                                var tickOuter = width * 0.46
+                                ctx.beginPath()
+                                ctx.moveTo(cx, cy - tickOuter)
+                                ctx.lineTo(cx, cy - tickInner)
+                                ctx.moveTo(cx + tickInner, cy)
+                                ctx.lineTo(cx + tickOuter, cy)
+                                ctx.moveTo(cx, cy + tickInner)
+                                ctx.lineTo(cx, cy + tickOuter)
+                                ctx.moveTo(cx - tickOuter, cy)
+                                ctx.lineTo(cx - tickInner, cy)
+                                ctx.stroke()
+                            }
+                        }
+
+                        QGCMouseArea {
+                            id: terrainFlowCompassMouseArea
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: root.toggleTerrainFlow()
+
+                            ToolTip.visible: containsMouse
+                            ToolTip.text: root._terrainFlowIconActive
+                                          ? qsTr("Terrain Follow: Active")
+                                          : qsTr("Terrain Follow: Off")
+                        }
+                    }
+
+                    // Obstacle Avoidance control, positioned outside the
+                    // lower-left edge of the compass.
+                    Item {
+                        id: obstacleAvoidCompassButton
+                        x: -width * 0.78
+                        y: compassContainer.height - height - ScreenTools.defaultFontPixelHeight * 0.15
+                        width: compassContainer.sideIconSize
+                        height: width
+                        z: 10
+
+                        Canvas {
+                            anchors.fill: parent
+                            property bool active: root._obstacleAvoidanceActive
+
+                            onActiveChanged: requestPaint()
+                            onPaint: {
+                                var ctx = getContext("2d")
+                                ctx.reset()
+                                var color = active ? "#00ff88" : "#ffffff"
+                                var cx = width / 2
+
+                                ctx.strokeStyle = color
+                                ctx.fillStyle = color
+                                ctx.lineWidth = Math.max(1.5, width * 0.075)
+                                ctx.lineCap = "round"
+
+                                ctx.beginPath()
+                                ctx.arc(cx, height * 0.64, width * 0.20, Math.PI * 0.18, Math.PI * 0.82)
+                                ctx.stroke()
+                                ctx.beginPath()
+                                ctx.arc(cx, height * 0.62, width * 0.34, Math.PI * 0.18, Math.PI * 0.82)
+                                ctx.stroke()
+
+                                ctx.beginPath()
+                                ctx.arc(cx, height * 0.72, width * 0.07, 0, Math.PI * 2)
+                                ctx.fill()
+                            }
+                        }
+
+                        QGCMouseArea {
+                            id: obstacleAvoidCompassMouseArea
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            hoverEnabled: true
+                            onClicked: root.toggleObstacleAvoidance()
+
+                            ToolTip.visible: containsMouse
+                            ToolTip.text: root._obstacleAvoidanceActive
+                                          ? qsTr("Obstacle Avoidance: Active")
+                                          : qsTr("Obstacle Avoidance: Off")
+                        }
+                    }
 
                     // Repaint compass canvases when theme changes
                     Connections {
@@ -891,7 +982,9 @@ Item {
                         anchors.centerIn: parent
                         border.color: root._togglePanelBorder
                         border.width: 1
-                        color: root._togglePanelFill
+                        color: Qt.rgba(root._togglePanelFill.r,
+                                       root._togglePanelFill.g,
+                                       root._togglePanelFill.b, 0.48)
                         height: compassContainer.compassSize
                         radius: width / 2
                         width: compassContainer.compassSize

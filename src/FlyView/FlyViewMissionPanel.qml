@@ -141,15 +141,7 @@ Item {
                 ToolStripAction {
                     text: qsTr("Add")
                     iconSource: "/res/target-crosshair.svg"
-                    onTriggered: {
-                        if (root._isInTraceMode) {
-                            // In survey trace mode, add polygon vertex
-                            root.addPolygonPoint()
-                        } else {
-                            // Normal mode, add waypoint at center
-                            root.addWaypointAtCenter()
-                        }
-                    }
+                    onTriggered: mainWindow.showRouteMappingView()
                 },
                 ToolStripAction {
                     id: statsAction

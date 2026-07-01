@@ -104,6 +104,7 @@ Item {
         id: bottomBar
 
         actionButtonsModel: flyViewToolStripActionList.model
+        blurSourceItem: mapControl
         anchors.bottom: parent.bottom
         anchors.bottomMargin: _toolsMargin * 0.4
         anchors.right: parent.right

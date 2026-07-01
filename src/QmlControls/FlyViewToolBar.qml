@@ -29,6 +29,7 @@ Item {
     // Match FlyViewBottomBar HUD glass (no blur, light dark tint)
     readonly property color _glassFill:   Qt.rgba(0.10, 0.10, 0.12, 0.28)
     readonly property color _glassBorder: Qt.rgba(1.00, 1.00, 1.00, 0.28)
+    readonly property real  _statusBandExtra: ScreenTools.defaultFontPixelWidth * 34
 
     Rectangle {
         anchors.fill:   parent
@@ -50,24 +51,24 @@ Item {
 
             Item {
                 id:     leftPanel
-                width:  leftPanelLayout.implicitWidth
+                width:  leftPanelLayout.implicitWidth + control._statusBandExtra
                 height: parent.height
 
                 // Status color band (Ready / Comms Lost / Armed, etc.)
                 Rectangle {
                     id:         statusGradient
                     z:          0
+                    x:          qgcButton.width
                     height:     parent.height
-                    width:      mainStatusLayout.width
+                    width:      mainStatusIndicator.width + control._statusBandExtra
                     opacity:    0.92
 
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: mainStatusIndicator._mainStatusBGColor }
-                        GradientStop {
-                            position: 1
-                            color:    Qt.rgba(control._glassFill.r, control._glassFill.g, control._glassFill.b, 0)
-                        }
+                        GradientStop { position: 0.00; color: "#28a600" }
+                        GradientStop { position: 0.28; color: "#126200" }
+                        GradientStop { position: 0.64; color: Qt.rgba(0.26, 0.42, 0.18, 0.56) }
+                        GradientStop { position: 1.00; color: Qt.rgba(0.26, 0.42, 0.18, 0.0) }
                     }
                 }
 
@@ -103,11 +104,6 @@ Item {
                         text:       qsTr("Disconnect")
                         onClicked:  _activeVehicle.closeVehicle()
                         visible:    _activeVehicle && _communicationLost
-                    }
-
-                    FlightModeIndicator {
-                        Layout.fillHeight:  true
-                        visible:            _activeVehicle
                     }
                 }
             }

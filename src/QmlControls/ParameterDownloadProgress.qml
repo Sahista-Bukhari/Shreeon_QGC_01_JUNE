@@ -14,9 +14,10 @@ Item {
     // Small parameter download progress bar
     Rectangle {
         anchors.bottom: parent.bottom
-        height:         control.height * 0.05
+        height:         Math.max(1, control.height * 0.025)
         width:          _activeVehicle ? _activeVehicle.loadProgress * parent.width : 0
-        color:          QGroundControl.globalPalette.colorGreen
+        color:          "#6beb17"
+        opacity:        0.38
         visible:        !largeProgressBar.visible
     }
 
@@ -43,7 +44,8 @@ Item {
             anchors.top:    parent.top
             anchors.bottom: parent.bottom
             width:          _activeVehicle ? _activeVehicle.loadProgress * parent.width : 0
-            color:          QGroundControl.globalPalette.colorGreen
+            color:          "#6beb17"
+            opacity:        0.38
         }
 
         QGCLabel {

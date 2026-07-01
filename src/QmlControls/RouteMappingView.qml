@@ -54,8 +54,39 @@ Item {
     property bool _areaRouteActive: false
     property bool _surveyFinished: false
     property int  _selectedWaypointIndex: -1
+    property string _pendingMappingTaskName: ""
+    property string _savedMappingTaskName: ""
+    property bool _showSavedMappingOverlay: false
 
     readonly property bool _canFinishRoute: _areaRouteActive && !_surveyFinished && fieldTracePointsModel.count >= 3
+    readonly property var _routeSegmentInsertPoints: {
+        var insertPoints = []
+        if (!_areaRouteActive || _surveyFinished || fieldTracePointsModel.count < 2) {
+            return insertPoints
+        }
+
+        var segmentCount = fieldTracePointsModel.count - 1
+        if (fieldTracePointsModel.count >= 3) {
+            segmentCount++
+        }
+
+        for (var i = 0; i < segmentCount; i++) {
+            var nextIndex = (i + 1) % fieldTracePointsModel.count
+            var startPoint = fieldTracePointsModel.get(i)
+            var endPoint = fieldTracePointsModel.get(nextIndex)
+            var startCoordinate = QtPositioning.coordinate(startPoint.lat, startPoint.lon, startPoint.alt)
+            var endCoordinate = QtPositioning.coordinate(endPoint.lat, endPoint.lon, endPoint.alt)
+            var midpoint = startCoordinate.atDistanceAndAzimuth(
+                        startCoordinate.distanceTo(endCoordinate) / 2,
+                        startCoordinate.azimuthTo(endCoordinate))
+            midpoint.altitude = (startPoint.alt + endPoint.alt) / 2
+            insertPoints.push({
+                                  coordinate: midpoint,
+                                  insertIndex: i + 1
+                              })
+        }
+        return insertPoints
+    }
 
     ListModel {
         id: fieldTracePointsModel
@@ -75,6 +106,13 @@ Item {
                                                 ? _cachedSurveyItem.visualTransectPoints[0].azimuthTo(
                                                       _cachedSurveyItem.visualTransectPoints[1])
                                                 : 0
+    readonly property real _surveyEndHeading: _hasCalculatedSurvey
+                                              && _cachedSurveyItem.visualTransectPoints.length >= 2
+                                              ? _cachedSurveyItem.visualTransectPoints[
+                                                    _cachedSurveyItem.visualTransectPoints.length - 2].azimuthTo(
+                                                    _cachedSurveyItem.visualTransectPoints[
+                                                        _cachedSurveyItem.visualTransectPoints.length - 1])
+                                              : 0
 
     function _updateCachedSurveyItem() {
         var found = null
@@ -136,6 +174,17 @@ Item {
         return coordinate
     }
 
+    function routeStartCoordinate() {
+        if (_activeVehicle && _activeVehicle.coordinate && _activeVehicle.coordinate.isValid) {
+            return QtPositioning.coordinate(
+                        Number(_activeVehicle.coordinate.latitude.toFixed(_decimalPlaces)),
+                        Number(_activeVehicle.coordinate.longitude.toFixed(_decimalPlaces)),
+                        Number(_activeVehicle.coordinate.altitude.toFixed(_decimalPlaces)))
+        }
+
+        return mapCenter()
+    }
+
     function resetAreaRouteState() {
         _areaRouteActive = false
         _surveyFinished = false
@@ -144,6 +193,9 @@ Item {
         _cachedSurveyItem = null
         _taskSettingsSurveyItem = null
         _selectedWaypointIndex = -1
+        _pendingMappingTaskName = ""
+        _savedMappingTaskName = ""
+        _showSavedMappingOverlay = false
         _hasMissionPlanItems = _missionController.visualItems.count > 1
     }
 
@@ -188,6 +240,17 @@ Item {
 
     function _beginAreaRouteAtCoordinate(coord) {
         _missionController.insertTakeoffItem(coord, -1, false)
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var takeoffItem = _missionController.visualItems.get(i)
+            if (takeoffItem && takeoffItem.isTakeoffItem) {
+                if (takeoffItem.specifiesCoordinate) {
+                    takeoffItem.coordinate = coord
+                }
+                takeoffItem.launchCoordinate = coord
+                takeoffItem.launchTakeoffAtSameLocation = true
+                break
+            }
+        }
 
         var surveyItem = _missionController.insertComplexMissionItem(_surveyItemName(), coord, -1, true)
         if (!surveyItem || !surveyItem.surveyAreaPolygon) {
@@ -283,7 +346,16 @@ Item {
         fieldTracePointsModel.setProperty(pointIndex, "lat", coordinate.latitude)
         fieldTracePointsModel.setProperty(pointIndex, "lon", coordinate.longitude)
         if (updateSurvey && fieldTracePointsModel.count >= 3) {
-            _updateSurveyPolygonFromTrace(_cachedSurveyItem)
+            var surveyPolygon = _cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon
+                    ? _cachedSurveyItem.surveyAreaPolygon
+                    : null
+            if (surveyPolygon && surveyPolygon.count === fieldTracePointsModel.count) {
+                surveyPolygon.adjustVertex(pointIndex, coordinate)
+                surveyPolygon.traceMode = false
+                surveyPolygon.interactive = false
+            } else {
+                _updateSurveyPolygonFromTrace(_cachedSurveyItem)
+            }
         }
     }
 
@@ -301,7 +373,7 @@ Item {
             return
         }
 
-        var coord = mapCenter()
+        var coord = routeStartCoordinate()
         resetAreaRouteState()
         _beginAreaRouteAtCoordinate(coord)
     }
@@ -362,11 +434,55 @@ Item {
                     })
     }
 
-    function saveRouteMappingToFlyView() {
+    function openRouteMappingImportDialog() {
+        function openFilePicker() {
+            fileDialog.title = qsTr("Import Route Mapping Plan")
+            fileDialog.planFiles = true
+            fileDialog.nameFilters = _planMasterController.loadNameFilters
+            fileDialog.openForLoad()
+        }
+
+        if (_hasMissionPlanItems) {
+            mainWindow.showMessageDialog(
+                        qsTr("Import Route Mapping Plan"),
+                        qsTr("Importing a plan will replace the current route mapping plan. Continue?"),
+                        Dialog.Yes | Dialog.Cancel,
+                        openFilePicker)
+        } else {
+            openFilePicker()
+        }
+    }
+
+    function loadRouteMappingPlan(file) {
+        hideTaskSettings()
+        resetAreaRouteState()
+        _planMasterController.loadFromFile(file)
+
+        _missionMapVisualsEnabled = true
+        _updateCachedSurveyItem()
+
+        if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
+            var polygon = _cachedSurveyItem.surveyAreaPolygon
+            for (var i = 0; i < polygon.count; i++) {
+                var coordinate = polygon.vertexCoordinate(i)
+                fieldTracePointsModel.append({
+                                                 lat: coordinate.latitude,
+                                                 lon: coordinate.longitude,
+                                                 alt: coordinate.altitude
+                                             })
+            }
+            _areaRouteActive = true
+            _surveyFinished = polygon.count >= 3
+            _taskSettingsSurveyItem = _cachedSurveyItem
+            _missionController.setCurrentPlanViewSeqNum(_cachedSurveyItem.sequenceNumber, true)
+        }
+
+        _hasMissionPlanItems = _missionController.visualItems.count > 1
+        missionPlanRestoreTimer.restart()
+    }
+
+    function openSaveMappingTaskDialog() {
         if (!_surveyFinished) {
-            // Saving is the user's indication that all boundary waypoints have
-            // been placed. Finalize the survey and add the return/land item
-            // automatically instead of requiring a separate Finish action.
             finishAreaRoute()
             if (!_surveyFinished) {
                 mainWindow.showMessageDialog(
@@ -389,26 +505,42 @@ Item {
             return
         }
 
-        hideTaskSettings()
+        if (taskbar.item) {
+            taskbar.item.open()
+        } else {
+            taskbar.active = true
+        }
+    }
 
-        var saveResult = _transferPlanToFlyView()
-        if (!saveResult.success) {
+    function saveMappingTask(taskName) {
+        var safeTaskName = taskName.trim().replace(/[\\\/:*?\"<>|]/g, "_")
+        _pendingMappingTaskName = taskName.trim()
+        fileDialog.title = qsTr("Choose Where to Save Mapping Task")
+        fileDialog.nameFilters = _planMasterController.saveNameFilters
+        fileDialog.defaultSuffix = "plan"
+        fileDialog.suggestedFileName = safeTaskName + ".plan"
+        fileDialog.openForSave()
+    }
+
+    function exitRouteMappingPage() {
+        if (_showSavedMappingOverlay && _savedMappingTaskName !== "") {
+            var transferResult = _transferPlanToFlyView()
+            if (!transferResult.success) {
+                return
+            }
             return
         }
 
-        var uploaded = saveResult.uploaded
-        var terrainPending = readyState === VisualMissionItem.NotReadyForSaveTerrain
-        var vehicleConnected = !flyView.planController.offline
-        mainWindow.showMessageDialog(
-                    qsTr("Plan Ready"),
-                    uploaded ?
-                        qsTr("Your route mapping plan is shown on the Fly screen and uploaded to the vehicle. Start the mission when ready.") :
-                        (vehicleConnected && terrainPending ?
-                             qsTr("Your route mapping plan is shown on the Fly screen. Terrain data is still loading — tap Use to upload when ready, then start the mission.") :
-                             (vehicleConnected ?
-                                  qsTr("Your route mapping plan is shown on the Fly screen. Tap Use to upload it to the vehicle, then start the mission.") :
-                                  qsTr("Your route mapping plan is shown on the Fly screen. Connect a vehicle, tap Use to upload, then start the mission."))))
+        if (_hasMissionPlanItems || _areaRouteActive || fieldTracePointsModel.count > 0) {
+            mainWindow.showMessageDialog(
+                        qsTr("Exit"),
+                        qsTr("Save the route mapping plan before exiting to show the same plan on the Fly screen."))
+            return
+        }
+
+        mainWindow.showFlyView()
     }
+
 
     // Demo-only helpers (logic copied from QGC MainWindow / FlyView — kept here so core QGC files stay unchanged)
     function _transferPlanToFlyView() {
@@ -438,17 +570,57 @@ Item {
         planView._planMasterController.loadFromFile(transferPlanFile)
         _planMasterController.dirty = false
 
-        _showPlanOnFlyView()
+        var routeMappingOverlayData = _routeMappingOverlayData()
         mainWindow.showFlyView()
+        _showPlanOnFlyView(routeMappingOverlayData)
+        flyView.showStartMissionPopup()
 
         return { success: true, uploaded: _tryUploadFlyViewPlan(flyPlanController) }
     }
 
-    function _showPlanOnFlyView() {
-        // Copied from FlyView.showLoadedRouteMappingPlan (plan edit mode so mission is visible)
-        flyView.planEditMode = true
+    function _routeMappingOverlayData() {
+        if (!_hasCalculatedSurvey) {
+            return null
+        }
+
+        var boundary = []
+        var polygonPath = _cachedSurveyItem.surveyAreaPolygon.path
+        for (var i = 0; i < polygonPath.length; i++) {
+            boundary.push(polygonPath[i])
+        }
+        if (boundary.length >= 3) {
+            boundary.push(boundary[0])
+        }
+
+        var transectPath = []
+        var visualTransectPoints = _cachedSurveyItem.visualTransectPoints
+        for (var j = 0; j < visualTransectPoints.length; j++) {
+            transectPath.push(visualTransectPoints[j])
+        }
+
+        return {
+            boundaryPath: boundary,
+            transectPath: transectPath,
+            entryCoordinate: _cachedSurveyItem.coordinate,
+            exitCoordinate: _cachedSurveyItem.exitCoordinate,
+            entryHeading: _surveyStartHeading,
+            exitHeading: _surveyEndHeading
+        }
+    }
+
+    function _showPlanOnFlyView(routeMappingOverlayData) {
+        flyView.planEditMode = false
         flyView._editingLayer = flyView._layerMission
         flyView._missionController.setCurrentPlanViewSeqNum(0, true)
+
+        if (routeMappingOverlayData) {
+            flyView.routeMappingBoundaryPath = routeMappingOverlayData.boundaryPath
+            flyView.routeMappingTransectPath = routeMappingOverlayData.transectPath
+            flyView.routeMappingEntryCoordinate = routeMappingOverlayData.entryCoordinate
+            flyView.routeMappingExitCoordinate = routeMappingOverlayData.exitCoordinate
+            flyView.routeMappingEntryHeading = routeMappingOverlayData.entryHeading
+            flyView.routeMappingExitHeading = routeMappingOverlayData.exitHeading
+        }
     }
 
     function _tryUploadFlyViewPlan(flyPlanController) {
@@ -479,6 +651,23 @@ Item {
         }
     }
 
+    function insertRouteMappingPoint(insertIndex, coordinate) {
+        if (!_areaRouteActive || _surveyFinished || !coordinate || !coordinate.isValid) {
+            return
+        }
+
+        var boundedIndex = Math.max(0, Math.min(insertIndex, fieldTracePointsModel.count))
+        fieldTracePointsModel.insert(boundedIndex, {
+                                         lat: coordinate.latitude,
+                                         lon: coordinate.longitude,
+                                         alt: coordinate.altitude
+                                     })
+        _selectedWaypointIndex = -1
+        if (fieldTracePointsModel.count >= 3) {
+            _updateSurveyPolygonFromTrace(_cachedSurveyItem)
+        }
+    }
+
     PlanMasterController {
         id: planMasterController
         flyView: false
@@ -504,8 +693,16 @@ Item {
         property bool planFiles: true
         property var _appSettings: QGroundControl.settingsManager.appSettings
 
+        onAcceptedForLoad: (file) => {
+                               _root.loadRouteMappingPlan(file)
+                               close()
+                           }
+
         onAcceptedForSave: (file) => {
                                _planMasterController.saveToFile(file)
+                               hideTaskSettings()
+                               _savedMappingTaskName = _pendingMappingTaskName
+                               _showSavedMappingOverlay = true
                                close()
                            }
     }
@@ -603,7 +800,11 @@ Item {
                                                }
                             onReleased: {
                                 if (fieldTracePointsModel.count >= 3) {
-                                    _root._updateSurveyPolygonFromTrace(_root._cachedSurveyItem)
+                                    var point = fieldTracePointsModel.get(waypointIndex)
+                                    _root.moveRouteMappingPoint(
+                                                waypointIndex,
+                                                QtPositioning.coordinate(point.lat, point.lon, point.alt),
+                                                true)
                                 }
                             }
                         }
@@ -640,8 +841,10 @@ Item {
             }
 
             MapPolyline {
-                line.color: "white"
-                line.width: 2
+                line.color: _root._showSavedMappingOverlay
+                            ? Qt.rgba(1.0, 0.94, 0.38, 0.78)
+                            : "white"
+                line.width: _root._showSavedMappingOverlay ? 1.5 : 2
                 path: {
                     var boundaryPoints = []
                     for (var i = 0; i < fieldTracePointsModel.count; i++) {
@@ -657,9 +860,56 @@ Item {
                 z: QGroundControl.zOrderMapItems + 1
             }
 
+            MapItemView {
+                model: _root._routeSegmentInsertPoints
+
+                delegate: MapQuickItem {
+                    coordinate: modelData.coordinate
+                    anchorPoint.x: segmentAddMarker.width / 2
+                    anchorPoint.y: segmentAddMarker.height / 2
+                    z: QGroundControl.zOrderMapItems + 5
+
+                    sourceItem: Rectangle {
+                        id: segmentAddMarker
+                        width: ScreenTools.defaultFontPixelHeight * 1.75
+                        height: width
+                        radius: width / 2
+                        color: Qt.rgba(0, 0, 0, 0.22)
+                        border.color: Qt.rgba(1, 1, 1, 0.92)
+                        border.width: 1
+
+                        QGCLabel {
+                            anchors.centerIn: parent
+                            text: "+"
+                            color: "white"
+                            font.pixelSize: parent.height * 0.76
+                            font.weight: Font.Light
+                        }
+
+                        QGCMouseArea {
+                            anchors.fill: parent
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: _root.insertRouteMappingPoint(
+                                           modelData.insertIndex,
+                                           modelData.coordinate)
+                        }
+                    }
+                }
+            }
+
+            MapPolygon {
+                path: _root._hasCalculatedSurvey && _root._cachedSurveyItem
+                      ? _root._cachedSurveyItem.surveyAreaPolygon.path
+                      : []
+                color: Qt.rgba(1.0, 0.72, 0.0, 0.20)
+                border.width: 0
+                visible: _root._showSavedMappingOverlay && _root._hasCalculatedSurvey
+                z: QGroundControl.zOrderMapItems
+            }
+
             MapPolyline {
-                line.color: "#ffea00"
-                line.width: 3
+                line.color: Qt.rgba(1.0, 0.94, 0.38, 0.78)
+                line.width: 2
                 path: _root._hasCalculatedSurvey && _root._cachedSurveyItem
                       ? _root._cachedSurveyItem.visualTransectPoints
                       : []
@@ -734,23 +984,121 @@ Item {
             }
 
             MapQuickItem {
+                coordinate: _root._hasCalculatedSurvey
+                            ? _root._cachedSurveyItem.surveyAreaPolygon.center
+                            : QtPositioning.coordinate()
+                anchorPoint.x: savedTaskMarker.width / 2
+                anchorPoint.y: savedTaskMarker.height / 2
+                visible: _root._showSavedMappingOverlay
+                         && _root._savedMappingTaskName !== ""
+                         && coordinate.isValid
+                z: QGroundControl.zOrderMapItems + 6
+
+                sourceItem: Item {
+                    id: savedTaskMarker
+                    width: ScreenTools.defaultFontPixelWidth * 16
+                    height: ScreenTools.defaultFontPixelHeight * 2.8
+
+                    QGCLabel {
+                        anchors.bottom: savedCheckMarker.top
+                        anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.08
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: parent.width
+                        text: _root._savedMappingTaskName
+                        color: "white"
+                        font.pointSize: ScreenTools.smallFontPointSize
+                        font.weight: Font.DemiBold
+                        horizontalAlignment: Text.AlignHCenter
+                        elide: Text.ElideRight
+                        style: Text.Outline
+                        styleColor: Qt.rgba(0, 0, 0, 0.55)
+                    }
+
+                    Rectangle {
+                        id: savedCheckMarker
+                        anchors.bottom: parent.bottom
+                        anchors.horizontalCenter: parent.horizontalCenter
+                        width: ScreenTools.defaultFontPixelHeight * 1.65
+                        height: width
+                        radius: width / 2
+                        color: "#16c943"
+                        border.width: 2
+                        border.color: "#202020"
+
+                        QGCLabel {
+                            anchors.centerIn: parent
+                            text: "\u2713"
+                            color: "white"
+                            font.bold: true
+                            font.pixelSize: parent.height * 0.58
+                        }
+                    }
+                }
+            }
+
+            MapQuickItem {
                 coordinate: _root._cachedSurveyItem
                             ? _root._cachedSurveyItem.exitCoordinate
                             : QtPositioning.coordinate()
-                anchorPoint.x: surveyEndMarker.width / 2
-                anchorPoint.y: surveyEndMarker.height / 2
+                anchorPoint.x: surveyEndMarker.dotCenter
+                anchorPoint.y: surveyEndMarker.dotCenter
                 visible: _root._hasCalculatedSurvey
                          && _root._cachedSurveyItem.exitCoordinate.isValid
                 z: QGroundControl.zOrderMapItems + 4
 
-                sourceItem: Rectangle {
+                sourceItem: Item {
                     id: surveyEndMarker
-                    width: ScreenTools.defaultFontPixelHeight * 0.85
-                    height: width
-                    radius: width / 2
-                    color: "#ffc400"
-                    border.color: "white"
-                    border.width: 2
+                    readonly property real markerSize: ScreenTools.defaultFontPixelHeight * 0.85
+                    readonly property real dotCenter: markerSize / 2
+
+                    width: markerSize * 2.25
+                    height: markerSize
+
+                    transform: Rotation {
+                        origin.x: surveyEndMarker.dotCenter
+                        origin.y: surveyEndMarker.dotCenter
+                        angle: _root._surveyEndHeading - routeMap.bearing - 90
+                    }
+
+                    Canvas {
+                        anchors.fill: parent
+
+                        onPaint: {
+                            var ctx = getContext("2d")
+                            var centerY = height / 2
+                            var shaftStart = surveyEndMarker.markerSize * 0.55
+                            var arrowTip = width - 1
+                            var arrowBase = width - surveyEndMarker.markerSize * 0.55
+                            var arrowHalfHeight = surveyEndMarker.markerSize * 0.34
+
+                            function drawArrow(color, lineWidth) {
+                                ctx.strokeStyle = color
+                                ctx.lineWidth = lineWidth
+                                ctx.lineCap = "round"
+                                ctx.lineJoin = "round"
+                                ctx.beginPath()
+                                ctx.moveTo(shaftStart, centerY)
+                                ctx.lineTo(arrowTip, centerY)
+                                ctx.moveTo(arrowBase, centerY - arrowHalfHeight)
+                                ctx.lineTo(arrowTip, centerY)
+                                ctx.lineTo(arrowBase, centerY + arrowHalfHeight)
+                                ctx.stroke()
+                            }
+
+                            ctx.clearRect(0, 0, width, height)
+                            drawArrow("white", 5)
+                            drawArrow("#ffc400", 3)
+                        }
+                    }
+
+                    Rectangle {
+                        width: surveyEndMarker.markerSize
+                        height: width
+                        radius: width / 2
+                        color: "#ffc400"
+                        border.color: "white"
+                        border.width: 2
+                    }
                 }
             }
 
@@ -865,7 +1213,31 @@ Item {
             Item {
                 width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
                 height: width
-                opacity: _hasMissionPlanItems ? 1.0 : 0.35
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: Math.round(parent.width * 0.85)
+                    height: width
+                    source: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    color: "white"
+                    smooth: true
+                    mipmap: true
+                }
+
+                QGCMouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: _root.openRouteMappingImportDialog()
+                }
+            }
+
+            Item {
+                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+                height: width
+                opacity: 1.0
 
                 QGCColoredImage {
                     anchors.centerIn: parent
@@ -1048,6 +1420,13 @@ Item {
                     }
                 }
 
+                QGCMouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: _root.exitRouteMappingPage()
+                    onPressed: parent.scale = 0.96
+                    onReleased: parent.scale = 1.0
+                }
             }
 
             Rectangle {
@@ -1080,9 +1459,24 @@ Item {
                 QGCMouseArea {
                     anchors.fill: parent
                     enabled: _surveyFinished || _canFinishRoute
-                    onClicked: _root.saveRouteMappingToFlyView()
+                    onClicked: _root.openSaveMappingTaskDialog()
+                }
+
+                Loader {
+                    id: taskbar
+                    active: false
+                    source: "saveMappingTask.qml"
+
+                    onLoaded: {
+                        item.saveRequested.connect(_root.saveMappingTask)
+                        item.dismissed.connect(function() {
+                            Qt.callLater(function() { taskbar.active = false })
+                        })
+                        item.open()
+                    }
                 }
             }
+
         }
 
     }

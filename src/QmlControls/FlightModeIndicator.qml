@@ -17,6 +17,8 @@ Item {
     property var  activeVehicle:    QGroundControl.multiVehicleManager.activeVehicle
     property bool allowEditMode:    true
     property bool editMode:         false
+    property bool showText:         true
+    property real iconRotation:     0
 
     property bool _isVTOL:          activeVehicle ? activeVehicle.vtol : false
     property bool _vtolInFWDFlight: activeVehicle ? activeVehicle.vtolInFwdFlight : false
@@ -37,6 +39,7 @@ Item {
             mipmap:                 true
             color:                  qgcPal.windowTransparentText
             source:                 "/qmlimages/FlightModesComponentIcon.png"
+            rotation:               control.iconRotation
         }
 
         QGCLabel {
@@ -44,6 +47,7 @@ Item {
             text:               activeVehicle ? activeVehicle.flightMode : qsTr("N/A", "No data to display")
             color:              qgcPal.windowTransparentText
             font.pointSize:     fontPointSize
+            visible:            control.showText
 
         }
 
@@ -54,7 +58,7 @@ Item {
             text:                   _vtolInFWDFlight ? qsTr("FW\nVTOL") : qsTr("MR\nVTOL")
             font.pointSize:         ScreenTools.smallFontPointSize
             wrapMode:               Text.WordWrap
-            visible:                _isVTOL
+            visible:                control.showText && _isVTOL
         }
     }
 

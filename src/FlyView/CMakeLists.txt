@@ -74,4 +74,5 @@ qt_add_qml_module(FlyViewModule
         VehicleWarnings.qml
         VirtualJoystick.qml
     NO_PLUGIN
+    QML_FILES startMission.qml
 )
