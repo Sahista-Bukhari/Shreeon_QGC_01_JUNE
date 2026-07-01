@@ -807,7 +807,6 @@ Item {
 
             function onExecuteRequested() {
                 _root.hideStartMissionPopup()
-                _guidedController.executeAction(_guidedController.actionStartMission, null, 0, false)
             }
         }
     }
