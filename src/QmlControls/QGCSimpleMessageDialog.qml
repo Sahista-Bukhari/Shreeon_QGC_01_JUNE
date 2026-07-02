@@ -22,10 +22,14 @@ QGCPopupDialog {
     }
 
     ColumnLayout {
+        width: parent ? parent.width : implicitWidth
+
         QGCLabel {
             id:                     label
-            Layout.preferredWidth:  Math.max(mainWindow.width / (ScreenTools.isMobile ? 2 : 3), headerMinWidth)
+            Layout.fillWidth:       true
             wrapMode:               Text.WordWrap
+            horizontalAlignment:    Text.AlignHCenter
+            color:                  "#343434"
         }
     }
 }

@@ -11,6 +11,8 @@ Popup {
     signal saveRequested(string taskName)
     signal dismissed()
 
+    property string initialTaskName: qsTr("Mapping Task")
+
     parent: Overlay.overlay
     x: 0
     y: 0
@@ -22,6 +24,7 @@ Popup {
     closePolicy: Popup.CloseOnEscape
 
     onOpened: {
+        taskNameField.text = root.initialTaskName
         taskNameField.forceActiveFocus()
         taskNameField.selectAll()
     }

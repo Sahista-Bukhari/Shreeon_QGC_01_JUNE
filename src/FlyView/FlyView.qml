@@ -31,7 +31,6 @@ Item {
     property int    _editingLayer:          _layerMission
     // Removed: _centerTargetMode - crosshair is now always visible in plan edit mode
     property bool   _showMissionStats:      false   // Show mission stats panel for Stats button
-    property bool   _startMissionPopupVisible: false
     property var    routeMappingBoundaryPath: []
     property var    routeMappingTransectPath: []
     property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
@@ -45,14 +44,6 @@ Item {
     readonly property int _layerUTMSP:      4
 
     readonly property int   _decimalPlaces: 8
-
-    function showStartMissionPopup() {
-        _startMissionPopupVisible = true
-    }
-
-    function hideStartMissionPopup() {
-        _startMissionPopupVisible = false
-    }
 
     PlanMasterController {
         id:                     _planController
@@ -562,7 +553,7 @@ Item {
     // Container to handle visibility of GuidedActionConfirm without overwriting its internal state
     Item {
         anchors.fill:       parent
-        visible:            !_root.planEditMode
+        visible:            !QGroundControl.videoManager.fullScreen
         z:                  QGroundControl.zOrderTopMost
 
         GuidedActionConfirm {
@@ -775,39 +766,6 @@ Item {
             }
             
             Behavior on scale { NumberAnimation { duration: 50 } }
-        }
-    }
-
-    Item {
-        id: startMissionPopupOverlay
-        anchors.fill: parent
-        visible: _root._startMissionPopupVisible
-        z: QGroundControl.zOrderTopMost + 1000
-
-        Rectangle {
-            anchors.fill: parent
-            color: Qt.rgba(0, 0, 0, 0.42)
-        }
-
-        Loader {
-            id: startMissionPopupLoader
-            active: startMissionPopupOverlay.visible
-            source: "qrc:/qml/QGroundControl/FlyView/startMission.qml"
-            anchors.centerIn: parent
-            width: Math.min(parent.width - ScreenTools.defaultFontPixelWidth * 2,
-                            ScreenTools.defaultFontPixelWidth * 48)
-        }
-
-        Connections {
-            target: startMissionPopupLoader.item
-
-            function onCollapsed() {
-                _root.hideStartMissionPopup()
-            }
-
-            function onExecuteRequested() {
-                _root.hideStartMissionPopup()
-            }
         }
     }
 }

@@ -53,7 +53,7 @@ RowLayout {
                     return mainStatusLabel._commLostText
                 }
                 if (_activeVehicle.armed) {
-                    _mainStatusBGColor = "#23a800"
+                    _mainStatusBGColor = "green"
 
                     if (_healthAndArmingChecksSupported) {
                         if (_activeVehicle.healthAndArmingCheckReport.canArm) {
@@ -75,10 +75,11 @@ RowLayout {
                 } else {
                     if (_healthAndArmingChecksSupported) {
                         if (_activeVehicle.healthAndArmingCheckReport.canArm) {
-                            // A vehicle which can arm is ready. Warnings remain
-                            // available in the status drawer/message indicator,
-                            // but should not turn a "Ready to go" band yellow.
-                            _mainStatusBGColor = "#23a800"
+                            if (_activeVehicle.healthAndArmingCheckReport.hasWarningsOrErrors) {
+                                _mainStatusBGColor = "yellow"
+                            } else {
+                                _mainStatusBGColor = "green"
+                            }
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "red"
@@ -86,7 +87,7 @@ RowLayout {
                         }
                     } else if (_activeVehicle.readyToFlyAvailable) {
                         if (_activeVehicle.readyToFly) {
-                            _mainStatusBGColor = "#23a800"
+                            _mainStatusBGColor = "green"
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "yellow"
@@ -95,7 +96,7 @@ RowLayout {
                     } else {
                         // Best we can do is determine readiness based on AutoPilot component setup and health indicators from SYS_STATUS
                         if (_activeVehicle.allSensorsHealthy && _activeVehicle.autopilotPlugin.setupComplete) {
-                            _mainStatusBGColor = "#23a800"
+                            _mainStatusBGColor = "green"
                             return mainStatusLabel._readyToFlyText
                         } else {
                             _mainStatusBGColor = "yellow"

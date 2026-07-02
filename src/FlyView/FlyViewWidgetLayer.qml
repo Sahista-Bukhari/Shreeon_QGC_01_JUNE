@@ -136,10 +136,11 @@ Item {
         visible: !_root.isViewer3DOpen && _root._activeVehicle && bottomBar.telemetryItem
         z: QGroundControl.zOrderWidgets + 1
 
-        // Slide down with the bottom bar
+        // Keep flight-critical guided actions available while editing the mission.
+        // The telemetry bottom bar slides away in plan edit mode, but actions such
+        // as Start Mission and Land must remain reachable.
         transform: Translate {
-            y: _root.planEditMode ? bottomBar.height + _toolsMargin * 4 : 0
-            Behavior on y { NumberAnimation { duration: 350; easing.type: Easing.InOutQuad } }
+            y: 0
         }
     }
     // Reference to the action list for the panel

@@ -65,10 +65,11 @@ Item {
 
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0.00; color: "#28a600" }
-                        GradientStop { position: 0.28; color: "#126200" }
-                        GradientStop { position: 0.64; color: Qt.rgba(0.26, 0.42, 0.18, 0.56) }
-                        GradientStop { position: 1.00; color: Qt.rgba(0.26, 0.42, 0.18, 0.0) }
+                        GradientStop { position: 0; color: mainStatusIndicator._mainStatusBGColor }
+                        GradientStop {
+                            position: 1
+                            color:    Qt.rgba(control._glassFill.r, control._glassFill.g, control._glassFill.b, 0)
+                        }
                     }
                 }
 

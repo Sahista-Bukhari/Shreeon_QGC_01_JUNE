@@ -24,9 +24,13 @@ Item {
             _missionMapVisualsEnabled = false
             _cachedSurveyItem = null
             _taskSettingsSurveyItem = null
+            _pendingFlyViewReturn = false
+            _backButtonVisibleProgress = 1.0
         } else {
             _missionMapVisualsEnabled = true
             _updateCachedSurveyItem()
+            _backButtonVisibleProgress = 0
+            Qt.callLater(function() { _backButtonVisibleProgress = 1.0 })
         }
     }
 
@@ -51,11 +55,41 @@ Item {
     property var  _missionController: _planMasterController.missionController
     property var  _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property bool _taskSettingsVisible: false
+    property real _taskSettingsOpenProgress: _taskSettingsVisible ? 1.0 : 0.0
+    property real _backButtonVisibleProgress: 1.0
+    property bool _pendingFlyViewReturn: false
+
+    Behavior on _taskSettingsOpenProgress {
+        NumberAnimation {
+            duration: 320
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    Behavior on _backButtonVisibleProgress {
+        NumberAnimation {
+            duration: 320
+            easing.type: Easing.OutCubic
+        }
+    }
+
+    on_TaskSettingsOpenProgressChanged: {
+        if (_pendingFlyViewReturn && !_taskSettingsVisible && _taskSettingsOpenProgress === 0) {
+            _pendingFlyViewReturn = false
+            _finishReturnToFlyView()
+        }
+    }
+
+    readonly property real _taskSettingsPanelWidth: Math.min(
+                ScreenTools.defaultFontPixelWidth * 38,
+                routeContent.width * 0.42)
     property bool _areaRouteActive: false
     property bool _surveyFinished: false
     property int  _selectedWaypointIndex: -1
     property string _pendingMappingTaskName: ""
     property string _savedMappingTaskName: ""
+    property string _importedMappingTaskName: ""
+    property string _importedMappingPlanPath: ""
     property bool _showSavedMappingOverlay: false
 
     readonly property bool _canFinishRoute: _areaRouteActive && !_surveyFinished && fieldTracePointsModel.count >= 3
@@ -99,6 +133,10 @@ Item {
     readonly property bool _hasCalculatedSurvey: _cachedSurveyItem
                                                  && _cachedSurveyItem.surveyAreaPolygon
                                                  && _cachedSurveyItem.surveyAreaPolygon.isValid
+    readonly property bool _hasRouteMappingContent: _hasMissionPlanItems
+                                                   || _areaRouteActive
+                                                   || fieldTracePointsModel.count > 0
+                                                   || _showSavedMappingOverlay
     readonly property bool _hasTerrainCollision: _hasCalculatedSurvey
                                                  && _cachedSurveyItem.surveyAreaPolygon.showAltColor
     readonly property real _surveyStartHeading: _hasCalculatedSurvey
@@ -166,6 +204,55 @@ Item {
         return "Survey"
     }
 
+    function _taskNameFromPlanFile(filePath) {
+        if (!filePath || filePath === "") {
+            return ""
+        }
+
+        var fileName = filePath
+        var lastSlash = Math.max(fileName.lastIndexOf("/"), fileName.lastIndexOf("\\"))
+        if (lastSlash >= 0) {
+            fileName = fileName.substring(lastSlash + 1)
+        }
+        if (fileName.toLowerCase().endsWith(".plan")) {
+            fileName = fileName.substring(0, fileName.length - 5)
+        }
+        return fileName
+    }
+
+    function _folderFromPlanFile(filePath) {
+        if (!filePath || filePath === "") {
+            return ""
+        }
+
+        var lastSlash = Math.max(filePath.lastIndexOf("/"), filePath.lastIndexOf("\\"))
+        if (lastSlash < 0) {
+            return ""
+        }
+        return filePath.substring(0, lastSlash)
+    }
+
+    function _defaultSaveTaskName() {
+        if (_importedMappingTaskName !== "") {
+            return _importedMappingTaskName
+        }
+        if (_savedMappingTaskName !== "") {
+            return _savedMappingTaskName
+        }
+        return qsTr("Mapping Task")
+    }
+
+    function _openSaveMappingTaskPopup() {
+        var defaultTaskName = _defaultSaveTaskName()
+        if (taskbar.item) {
+            taskbar.item.initialTaskName = defaultTaskName
+            taskbar.item.open()
+        } else {
+            taskbar.pendingInitialTaskName = defaultTaskName
+            taskbar.active = true
+        }
+    }
+
     function mapCenter() {
         var coordinate = routeMap.center
         coordinate.latitude  = coordinate.latitude.toFixed(_decimalPlaces)
@@ -195,6 +282,8 @@ Item {
         _selectedWaypointIndex = -1
         _pendingMappingTaskName = ""
         _savedMappingTaskName = ""
+        _importedMappingTaskName = ""
+        _importedMappingPlanPath = ""
         _showSavedMappingOverlay = false
         _hasMissionPlanItems = _missionController.visualItems.count > 1
     }
@@ -229,6 +318,15 @@ Item {
         if (_missionController.visualItems.count > 1) {
             _planMasterController.removeAll()
         }
+    }
+
+    function _clearFlyViewRouteMappingOverlay() {
+        flyView.routeMappingBoundaryPath = []
+        flyView.routeMappingTransectPath = []
+        flyView.routeMappingEntryCoordinate = QtPositioning.coordinate()
+        flyView.routeMappingExitCoordinate = QtPositioning.coordinate()
+        flyView.routeMappingEntryHeading = 0
+        flyView.routeMappingExitHeading = 0
     }
 
     function _runWithMissionVisualsSuspended(operation) {
@@ -396,7 +494,9 @@ Item {
             return
         }
 
-        _missionController.insertLandItem(mapCenter(), -1, false)
+        if (!_missionController.hasLandItem) {
+            _missionController.insertLandItem(mapCenter(), -1, false)
+        }
         _missionController.setCurrentPlanViewSeqNum(surveyItem.sequenceNumber, true)
 
         _surveyFinished = true
@@ -410,6 +510,28 @@ Item {
         _taskSettingsVisible = false
     }
 
+    function returnToFlyView() {
+        var sidebarOpen = _taskSettingsVisible || _taskSettingsOpenProgress > 0.01
+        hideTaskSettings()
+        if (sidebarOpen) {
+            _pendingFlyViewReturn = true
+            return
+        }
+        _finishReturnToFlyView()
+    }
+
+    function _finishReturnToFlyView() {
+        _backButtonVisibleProgress = 0
+        flyViewReturnTimer.restart()
+    }
+
+    Timer {
+        id: flyViewReturnTimer
+        interval: 320
+        repeat: false
+        onTriggered: mainWindow.showFlyView()
+    }
+
     function onAddButtonClicked() {
         if (_taskSettingsVisible) {
             hideTaskSettings()
@@ -421,15 +543,23 @@ Item {
     }
 
     function clearRouteMappingPlan() {
+        if (!_hasRouteMappingContent) {
+            return
+        }
+
         mainWindow.showMessageDialog(
                     qsTr("Clear"),
                     qsTr("Are you sure you want to remove all items from the route mapping plan?"),
                     Dialog.Yes | Dialog.Cancel,
                     function() {
                         _runWithMissionVisualsSuspended(function() {
+                            hideTaskSettings()
                             _clearMissionItemsIfNeeded()
                             _missionController.setCurrentPlanViewSeqNum(0, true)
                             resetAreaRouteState()
+                            _hasMissionPlanItems = false
+                            _planMasterController.dirty = false
+                            _clearFlyViewRouteMappingOverlay()
                         })
                     })
     }
@@ -457,12 +587,16 @@ Item {
         hideTaskSettings()
         resetAreaRouteState()
         _planMasterController.loadFromFile(file)
+        _importedMappingPlanPath = file
+        _importedMappingTaskName = _taskNameFromPlanFile(file)
 
         _missionMapVisualsEnabled = true
         _updateCachedSurveyItem()
 
         if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
+            polygon.traceMode = false
+            polygon.interactive = false
             for (var i = 0; i < polygon.count; i++) {
                 var coordinate = polygon.vertexCoordinate(i)
                 fieldTracePointsModel.append({
@@ -472,7 +606,9 @@ Item {
                                              })
             }
             _areaRouteActive = true
-            _surveyFinished = polygon.count >= 3
+            // Keep imported plans editable so boundary tweaks recalculate transects.
+            _surveyFinished = false
+            _planMasterController.manualCreation = true
             _taskSettingsSurveyItem = _cachedSurveyItem
             _missionController.setCurrentPlanViewSeqNum(_cachedSurveyItem.sequenceNumber, true)
         }
@@ -505,11 +641,7 @@ Item {
             return
         }
 
-        if (taskbar.item) {
-            taskbar.item.open()
-        } else {
-            taskbar.active = true
-        }
+        _openSaveMappingTaskPopup()
     }
 
     function saveMappingTask(taskName) {
@@ -519,22 +651,20 @@ Item {
         fileDialog.nameFilters = _planMasterController.saveNameFilters
         fileDialog.defaultSuffix = "plan"
         fileDialog.suggestedFileName = safeTaskName + ".plan"
+        var importedFolder = _folderFromPlanFile(_importedMappingPlanPath)
+        if (importedFolder !== "") {
+            fileDialog.folder = importedFolder
+        }
         fileDialog.openForSave()
     }
 
+    // This function controls the exit functionlity
     function exitRouteMappingPage() {
         if (_showSavedMappingOverlay && _savedMappingTaskName !== "") {
             var transferResult = _transferPlanToFlyView()
             if (!transferResult.success) {
                 return
             }
-            return
-        }
-
-        if (_hasMissionPlanItems || _areaRouteActive || fieldTracePointsModel.count > 0) {
-            mainWindow.showMessageDialog(
-                        qsTr("Exit"),
-                        qsTr("Save the route mapping plan before exiting to show the same plan on the Fly screen."))
             return
         }
 
@@ -573,7 +703,6 @@ Item {
         var routeMappingOverlayData = _routeMappingOverlayData()
         mainWindow.showFlyView()
         _showPlanOnFlyView(routeMappingOverlayData)
-        flyView.showStartMissionPopup()
 
         return { success: true, uploaded: _tryUploadFlyViewPlan(flyPlanController) }
     }
@@ -702,6 +831,8 @@ Item {
                                _planMasterController.saveToFile(file)
                                hideTaskSettings()
                                _savedMappingTaskName = _pendingMappingTaskName
+                               _importedMappingPlanPath = file
+                               _importedMappingTaskName = _taskNameFromPlanFile(file)
                                _showSavedMappingOverlay = true
                                close()
                            }
@@ -721,9 +852,7 @@ Item {
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition
 
-            readonly property real _leftToolWidth: _root._taskSettingsVisible
-                                                   ? taskSettingsPanel.width + ScreenTools.defaultFontPixelWidth * 0.5
-                                                   : ScreenTools.defaultFontPixelWidth * 0.5
+            readonly property real _leftToolWidth: ScreenTools.defaultFontPixelWidth * 0.5
             readonly property real _mapMargin: ScreenTools.defaultFontPixelHeight * 0.5
             property rect centerViewport: Qt.rect(
                                               _leftToolWidth,
@@ -1150,21 +1279,18 @@ Item {
         Rectangle {
             id: routeBackButton
             anchors.left: parent.left
-            anchors.leftMargin: _taskSettingsVisible
-                                ? taskSettingsPanel.width + ScreenTools.defaultFontPixelWidth * 0.5
-                                : 0
+            anchors.leftMargin: _taskSettingsOpenProgress
+                                * (_taskSettingsPanelWidth + ScreenTools.defaultFontPixelWidth * 0.5)
             anchors.verticalCenter: parent.verticalCenter
-            width: ScreenTools.defaultFontPixelHeight * 3.5
-            height: ScreenTools.defaultFontPixelHeight * 3
+            width: ScreenTools.defaultFontPixelHeight * 3.1
+            height: ScreenTools.defaultFontPixelHeight * 5
             radius: ScreenTools.defaultFontPixelWidth * 0.45
             color: routeBackMouseArea.pressed ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.22)
+            opacity: _backButtonVisibleProgress
             z: QGroundControl.zOrderWidgets + 12
 
-            Behavior on anchors.leftMargin {
-                NumberAnimation {
-                    duration: 180
-                    easing.type: Easing.OutCubic
-                }
+            transform: Translate {
+                x: (1.0 - _backButtonVisibleProgress) * -routeBackButton.width * 0.55
             }
 
             Image {
@@ -1178,27 +1304,48 @@ Item {
             QGCMouseArea {
                 id: routeBackMouseArea
                 anchors.fill: parent
-                onClicked: {
-                    _root.hideTaskSettings()
-                    mainWindow.showFlyView()
-                }
+                onClicked: _root.returnToFlyView()
             }
         }
 
-        RouteMappingTaskSettings {
-            id: taskSettingsPanel
-            visible: _taskSettingsVisible
-            surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
+        Item {
+            id: taskSettingsHost
             anchors.left: parent.left
             anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.5
             anchors.top: parent.top
             anchors.topMargin: mainToolBar.height + ScreenTools.defaultFontPixelHeight * 0.5
             anchors.bottom: parent.bottom
             anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.6
-            width: Math.min(ScreenTools.defaultFontPixelWidth * 38, parent.width * 0.42)
+            width: _taskSettingsPanelWidth
+            opacity: _taskSettingsOpenProgress
+            visible: _taskSettingsVisible || _taskSettingsOpenProgress > 0
+            enabled: _taskSettingsOpenProgress > 0.05
             z: QGroundControl.zOrderWidgets + 11
 
-            onAreaRouteSelected: _root.startAreaRouteSession()
+            transform: Translate {
+                x: (1.0 - _taskSettingsOpenProgress) * -taskSettingsHost.width
+            }
+
+            RouteMappingTaskSettings {
+                id: taskSettingsPanel
+                anchors.fill: parent
+                surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
+
+                onAreaRouteSelected: _root.startAreaRouteSession()
+            }
+
+            Rectangle {
+                anchors.left: parent.right
+                anchors.top: parent.top
+                anchors.bottom: parent.bottom
+                width: ScreenTools.defaultFontPixelWidth * 0.35
+                opacity: _taskSettingsOpenProgress * 0.35
+                gradient: Gradient {
+                    orientation: Gradient.Horizontal
+                    GradientStop { position: 0.0; color: "#30000000" }
+                    GradientStop { position: 1.0; color: "transparent" }
+                }
+            }
         }
 
         Row {
@@ -1254,7 +1401,7 @@ Item {
 
                 QGCMouseArea {
                     anchors.fill: parent
-                    enabled: _hasMissionPlanItems
+                    enabled: _hasRouteMappingContent
                     cursorShape: Qt.PointingHandCursor
                     onClicked: _root.clearRouteMappingPlan()
                 }
@@ -1262,6 +1409,7 @@ Item {
         }
 
         Rectangle {
+
             id: mappingStats
             anchors.top: mapTools.bottom
             anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.5
@@ -1429,6 +1577,7 @@ Item {
                 }
             }
 
+
             Rectangle {
                 width: saveRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
                 height: ScreenTools.defaultFontPixelHeight * 2
@@ -1466,15 +1615,21 @@ Item {
                     id: taskbar
                     active: false
                     source: "saveMappingTask.qml"
+                    property string pendingInitialTaskName: ""
 
                     onLoaded: {
                         item.saveRequested.connect(_root.saveMappingTask)
                         item.dismissed.connect(function() {
                             Qt.callLater(function() { taskbar.active = false })
                         })
+                        if (taskbar.pendingInitialTaskName !== "") {
+                            item.initialTaskName = taskbar.pendingInitialTaskName
+                            taskbar.pendingInitialTaskName = ""
+                        }
                         item.open()
                     }
                 }
+
             }
 
         }

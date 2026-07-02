@@ -45,10 +45,11 @@ Popup {
     property bool   destroyOnClose:         true
     property bool   preventClose:           false
 
-    property real maxContentAvailableWidth:    mainWindow.width - _contentMargin * 6
-    property real maxContentAvailableHeight:   mainWindow.height - titleRowLayout.height - _contentMargin * 7
+    property real maxContentAvailableWidth:    mainWindow.width - _contentMargin * 8
+    property real maxContentAvailableHeight:   mainWindow.height - titleLabel.implicitHeight - buttonRow.implicitHeight - _contentMargin * 7
 
-    readonly property real headerMinWidth: titleLabel.implicitWidth + rejectButton.width + acceptButton.width + titleRowLayout.spacing * 2
+    readonly property real headerMinWidth: Math.max(titleLabel.implicitWidth + _contentMargin * 4, ScreenTools.defaultFontPixelWidth * 40)
+    readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * 54)
 
     signal accepted
     signal rejected
@@ -64,6 +65,11 @@ Popup {
         width:  mainWindow.width
         height: mainWindow.height
 
+        Rectangle {
+            anchors.fill: parent
+            color: Qt.rgba(0, 0, 0, 0.58)
+        }
+
         onClicked: {
             if (closePolicy & Popup.CloseOnPressOutside) {
                 _reject()
@@ -72,9 +78,14 @@ Popup {
     }
 
     Component.onCompleted: {
-        // The last child item will be the true dialog content.
-        // Re-Parent it to the right place in the ui hierarchy.
-        contentChildren[contentChildren.length - 1].parent = dialogContentParent
+        // Re-parent externally supplied dialog content into dialogContentParent.
+        // Skip internal popup frame items so content is consistently visible.
+        for (let i = 0; i < contentChildren.length; i++) {
+            const child = contentChildren[i]
+            if (child !== dialogFrame) {
+                child.parent = dialogContentParent
+            }
+        }
     }
 
     onAboutToShow: {
@@ -186,76 +197,137 @@ Popup {
     }
 
     Rectangle {
-        x:              mainLayout.x - _contentMargin
-        y:              mainLayout.y - _contentMargin
-        width:          mainLayout.width + _contentMargin * 2
-        height:         mainLayout.height + _contentMargin * 2
-        color:          _qgcPal.windowShade
-        radius:         root.padding / 2
-        border.width:   1
-        border.color:   _qgcPal.windowShadeLight
-    }
+        id: dialogFrame
+        anchors.centerIn: parent
+        width: dialogPreferredWidth
+        height: dialogColumn.implicitHeight
+        implicitHeight: dialogColumn.implicitHeight
+        color: "white"
+        radius: ScreenTools.defaultFontPixelWidth * 0.8
+        clip: true
 
-    ColumnLayout {
-        id:                 mainLayout
-        anchors.centerIn:   parent
-        x:                  _contentMargin
-        y:                  _contentMargin
-        spacing:            _contentMargin
-
-        RowLayout {
-            id:                     titleRowLayout
-            Layout.fillWidth:       true
-            spacing:                _contentMargin
+        ColumnLayout {
+            id: dialogColumn
+            width: parent.width
+            spacing: 0
 
             QGCLabel {
-                id:                 titleLabel
-                Layout.fillWidth:   true
-                text:               root.title
-                font.pointSize:     ScreenTools.mediumFontPointSize
-                verticalAlignment:	Text.AlignVCenter
+                id: titleLabel
+                Layout.fillWidth: true
+                Layout.topMargin: ScreenTools.defaultFontPixelHeight * 1.15
+                Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 2
+                Layout.rightMargin: ScreenTools.defaultFontPixelWidth * 2
+                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.75
+                text: root.title
+                color: "#202124"
+                font.pointSize: ScreenTools.mediumFontPointSize
+                font.weight: Font.DemiBold
+                horizontalAlignment: Text.AlignHCenter
+                visible: root.title !== ""
             }
 
-            QGCButton {
-                id:                     rejectButton
-                onClicked:              _reject()
-                Layout.minimumWidth:    height * 1.5
-            }
+            Rectangle {
+                id: messageArea
+                Layout.fillWidth: true
+                Layout.minimumHeight: ScreenTools.defaultFontPixelHeight * 3.5
+                Layout.preferredHeight: Math.max(
+                                            totalContentHeight,
+                                            ScreenTools.defaultFontPixelHeight * 3.5)
+                color: "white"
 
-            QGCButton {
-                id:                     acceptButton
-                primary:                true
-                onClicked:              _accept()
-                Layout.minimumWidth:    height * 1.5
-            }
-        }
+                property real contentWidth: dialogPreferredWidth - _contentMargin * 4
+                property real totalContentWidth: Math.max(dialogContentParent.childrenRect.width, contentWidth)
+                property real totalContentHeight: dialogContentParent.childrenRect.height + _contentMargin * 2
 
-        Rectangle {
-            Layout.fillWidth:       true
-            Layout.preferredWidth:  Math.min(maxAvailableWidth, totalContentWidth)
-            Layout.preferredHeight: Math.min(maxAvailableHeight, totalContentHeight)
-            color:                  _qgcPal.window
+                QGCFlickable {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
+                    anchors.leftMargin: _contentMargin * 2
+                    anchors.rightMargin: _contentMargin * 2
+                    anchors.topMargin: _contentMargin * 1.2
+                    anchors.bottomMargin: _contentMargin * 1.2
+                    contentWidth: messageArea.contentWidth
+                    contentHeight: dialogContentParent.childrenRect.height
 
-            property real totalContentWidth:    dialogContentParent.childrenRect.width + _contentMargin * 2
-            property real totalContentHeight:   dialogContentParent.childrenRect.height + _contentMargin * 2
-            property real maxAvailableWidth:    mainWindow.width - _contentMargin * 4
-            property real maxAvailableHeight:   mainWindow.height - titleRowLayout.height - _contentMargin * 5
+                    Item {
+                        id: dialogContentParent
+                        width: messageArea.contentWidth
+                        focus: true
 
-            QGCFlickable {
-                anchors.margins:    _contentMargin
-                anchors.fill:       parent
-                contentWidth:       dialogContentParent.childrenRect.width
-                contentHeight:      dialogContentParent.childrenRect.height
-
-                Item {
-                    id:     dialogContentParent
-                    focus:  true
-
-                    Keys.onPressed: (event) => {
-                        if (event.key === Qt.Key_Escape && _rejectAllowed) {
-                            _reject()
-                            event.accepted = true
+                        Keys.onPressed: (event) => {
+                            if (event.key === Qt.Key_Escape && _rejectAllowed) {
+                                _reject()
+                                event.accepted = true
+                            }
                         }
+                    }
+                }
+            }
+
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: "#dedede"
+            }
+
+            RowLayout {
+                id: buttonRow
+                Layout.fillWidth: true
+                spacing: 0
+
+                Rectangle {
+                    id: rejectButton
+                    property string text: ""
+                    property bool enabled: true
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                    color: rejectMouseArea.pressed ? "#f1f1f1" : "white"
+                    visible: false
+
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        text: rejectButton.text
+                        color: rejectButton.enabled ? "#5f6368" : "#a8a8a8"
+                    }
+
+                    QGCMouseArea {
+                        id: rejectMouseArea
+                        anchors.fill: parent
+                        enabled: rejectButton.enabled
+                        onClicked: _reject()
+                    }
+                }
+
+                Rectangle {
+                    Layout.preferredWidth: 1
+                    Layout.fillHeight: true
+                    color: "#dedede"
+                    visible: acceptButton.visible && rejectButton.visible
+                }
+
+                Rectangle {
+                    id: acceptButton
+                    property string text: ""
+                    property bool enabled: true
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                    color: acceptMouseArea.pressed ? "#f1f1f1" : "white"
+                    visible: false
+
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        text: acceptButton.text
+                        color: acceptButton.enabled ? "#58ad2f" : "#a8a8a8"
+                        font.weight: Font.DemiBold
+                    }
+
+                    QGCMouseArea {
+                        id: acceptMouseArea
+                        anchors.fill: parent
+                        enabled: acceptButton.enabled
+                        onClicked: _accept()
                     }
                 }
             }
