@@ -102,6 +102,7 @@ Vehicle::Vehicle(LinkInterface*             link,
     , _localPositionSetpointFactGroup(this)
     , _estimatorStatusFactGroup     (this)
     , _hygrometerFactGroup          (this)
+    , _tankFactGroup                (this)      // PX4 LC_WEIGHT -> weightKg fact
     , _generatorFactGroup           (this)
     , _efiFactGroup                 (this)
     , _rpmFactGroup                 (this)
@@ -322,6 +323,7 @@ void Vehicle::_commonInit(LinkInterface* link)
     _addFactGroup(&_localPositionSetpointFactGroup,_localPositionSetpointFactGroupName);
     _addFactGroup(&_estimatorStatusFactGroup,   _estimatorStatusFactGroupName);
     _addFactGroup(&_hygrometerFactGroup,        _hygrometerFactGroupName);
+    _addFactGroup(&_tankFactGroup,              _tankFactGroupName);          // routes mavlink to VehicleTankFactGroup
     _addFactGroup(&_generatorFactGroup,         _generatorFactGroupName);
     _addFactGroup(&_efiFactGroup,               _efiFactGroupName);
     _addFactGroup(&_rpmFactGroup,               _rpmFactGroupName);

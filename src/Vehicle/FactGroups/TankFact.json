@@ -1,0 +1,15 @@
+{
+    "version":      1,
+    "fileType":  "FactMetaData",
+    "QGC.MetaData.Facts":
+[
+{
+    "name":             "weightKg",
+    "shortDesc":        "Tank weight",
+    "longDesc":         "Live tank weight from PX4 NAMED_VALUE_FLOAT LC_WEIGHT (kg)",
+    "type":             "double",
+    "decimalPlaces":    1,
+    "units":            "kg"
+}
+]
+}

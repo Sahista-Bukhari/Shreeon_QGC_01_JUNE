@@ -28,9 +28,14 @@ Item {
     property real _roll: _activeVehicle && _activeVehicle.roll ? _activeVehicle.roll.rawValue : 0
     property bool _greenLoopRunning: root.visible && root._activeVehicle && root._activeVehicle.flying
 
-    // Tank capacity (Litres)
-    property real _tankCapacityMax: 16.0
-    property real _tankCurrentLevel: 10.4
+    // Tank (kg)
+    // _tankCapacityMax : fixed UI max for fill-bar percentage (20 kg)
+    // _tankCurrentLevel: live value from PX4 NAMED_VALUE_FLOAT name "LC_WEIGHT"
+    //                    via VehicleTankFactGroup -> activeVehicle.tank.weightKg
+    property real _tankCapacityMax: 20.0
+    property real _tankCurrentLevel: _activeVehicle && _activeVehicle.tank && _activeVehicle.tank.weightKg
+        ? _activeVehicle.tank.weightKg.rawValue
+        : 0
     property bool _terrainFlowActive: _mpcAltModeFact ? _mpcAltModeFact.rawValue === 1 : false
 
     // Action buttons model for horizontal panel above bottom bar
@@ -575,6 +580,10 @@ Item {
                 // So we start with Toggles directly.
 
                 // === TANK ===
+                // Top label    : _tankCapacityMax (20 kg)
+                // Fill bar     : _tankCurrentLevel / _tankCapacityMax
+                // Center label : live LC_WEIGHT value in kg
+                // Bottom label : static 0 kg reference
                 Column {
                     Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.7
                     spacing: 2
@@ -583,7 +592,7 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
                         font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.32
-                        text: root._tankCapacityMax.toFixed(0) + "L"
+                        text: root._tankCapacityMax.toFixed(0) + "kg"
                     }
                     Rectangle {
                         anchors.horizontalCenter: parent.horizontalCenter
@@ -623,13 +632,13 @@ Item {
                         color: qgcPal.colorBlue
                         font.bold: true
                         font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.34
-                        text: root._tankCurrentLevel.toFixed(1) + "L"
+                        text: root._tankCurrentLevel.toFixed(1) + "kg"
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
                         font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.28
-                        text: "0L"
+                        text: "0kg"
                     }
                 }
 
