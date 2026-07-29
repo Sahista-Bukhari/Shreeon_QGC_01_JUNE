@@ -292,8 +292,10 @@ private:
     };
     QList<ADSBVehicle> _adsbVehicles;               ///< Store data for multiple ADS-B vehicles
     QList<QGeoCoordinate> _adsbVehicleCoordinates;  ///< List for multiple vehicles
-    static constexpr int _numberOfVehicles = 5;     ///< Number of ADS-B vehicles
-    double _adsbAngles[_numberOfVehicles]{};        ///< Array for angles of each vehicle
+    // Keep at 0 so Mock Link does not spawn fake ADS-B aircraft that circle/spin
+    // on the map and look like the drone is moving by itself on startup.
+    static constexpr int _numberOfVehicles = 0;     ///< Number of ADS-B vehicles
+    double _adsbAngles[1]{};                        ///< Unused when _numberOfVehicles == 0
 
     static int _nextVehicleSystemId;
 

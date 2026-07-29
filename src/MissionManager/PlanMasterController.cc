@@ -217,6 +217,30 @@ void PlanMasterController::loadFromVehicle(void)
     }
 }
 
+void PlanMasterController::reloadMissionFromVehicle(void)
+{
+    SharedLinkInterfacePtr sharedLink = _managerVehicle->vehicleLinkManager()->primaryLink().lock();
+    if (sharedLink) {
+        if (sharedLink->linkConfiguration()->isHighLatency()) {
+            qgcApp()->showAppMessage(tr("Download not supported on high latency links."));
+            return;
+        }
+    } else {
+        // Vehicle is shutting down
+        return;
+    }
+
+    if (offline()) {
+        qCWarning(PlanMasterControllerLog) << "PlanMasterController::reloadMissionFromVehicle called while offline";
+    } else if (syncInProgress()) {
+        qCWarning(PlanMasterControllerLog) << "PlanMasterController::reloadMissionFromVehicle called while syncInProgress";
+    } else {
+        qCDebug(PlanMasterControllerLog) << "PlanMasterController::reloadMissionFromVehicle";
+        _missionController.loadFromVehicle();
+        setDirty(false);
+    }
+}
+
 
 void PlanMasterController::_loadMissionComplete(void)
 {

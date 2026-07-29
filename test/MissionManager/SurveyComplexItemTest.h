@@ -28,6 +28,7 @@ private slots:
     void _testItemGeneration(void);
     void _testItemCount(void);
     void _testHoverCaptureItemGeneration(void);
+    void _testPatternParameters(void);
 #else
     // Handy mechanism to to a single test
 private slots:
@@ -38,6 +39,7 @@ private:
     void _testEntryLocation(void);
     void _testItemGeneration(void);
     void _testHoverCaptureItemGeneration(void);
+    void _testPatternParameters(void);
 #endif
 
 private:

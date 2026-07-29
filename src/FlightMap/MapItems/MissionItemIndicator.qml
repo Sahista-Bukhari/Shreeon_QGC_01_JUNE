@@ -29,7 +29,9 @@ MapQuickItem {
         showSequenceNumbers: false
         highlightSelected:  true
         onClicked:          _item.clicked()
-        opacity:            missionItem.isTakeoffItem ? _item.opacity : 0
+        opacity:            (missionItem.isTakeoffItem
+                             || missionItem.isLandCommand
+                             || missionItem.command === 20) ? _item.opacity : 0
 
         property bool _isCurrentItem:   missionItem ? missionItem.isCurrentItem || missionItem.hasCurrentChildItem : false
     }

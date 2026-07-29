@@ -1333,7 +1333,12 @@ void SurveyComplexItem::rotateEntryPoint(void)
 
 double SurveyComplexItem::timeBetweenShots(void)
 {
-    return _vehicleSpeed == 0 ? 0 : triggerDistance() / _vehicleSpeed;
+    // Photo timing follows the survey-local speed when enabled; otherwise it
+    // uses the speed inherited from the surrounding mission.
+    const double flightSpeed = _specifyPatternFlightSpeed
+                                ? _patternFlightSpeedFact.rawValue().toDouble()
+                                : _vehicleSpeed;
+    return flightSpeed == 0 ? 0 : triggerDistance() / flightSpeed;
 }
 
 double SurveyComplexItem::additionalTimeDelay (void) const

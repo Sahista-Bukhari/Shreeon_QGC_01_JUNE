@@ -360,6 +360,25 @@ public:
     /// Alter the current mission item on the vehicle
     Q_INVOKABLE void setCurrentMissionSequence(int seq);
 
+    /// Best mission sequence for setCurrentMissionSequence after a mid-flight
+    /// altitude change: climb in place then continue to the next waypoint ahead.
+    /// Returns -1 instead of selecting takeoff, a passed waypoint, or an earlier item.
+    /// fromVisualSequence: optional captured visual index when Change Alt started
+    /// (-1 = use live MISSION_CURRENT). Pass the saved index after a mission rewrite
+    /// clears currentIndex, so resume still continues forward from that point.
+    Q_INVOKABLE int altitudeChangeResumeMissionSequence(int fromVisualSequence = -1) const;
+
+    /// Update altitude of remaining (current and later) mission waypoints on the vehicle.
+    /// Relative altitude in meters. Used for mid-mission altitude changes without rebuild of survey patterns.
+    /// If groundSpeedMetersSecond is finite, also updates remaining MAV_CMD_DO_CHANGE_SPEED items so
+    /// resuming Mission does not restore the plan's old cruise speed.
+    /// Emits remainingMissionAltitudeUpdated when the vehicle write finishes (or immediately on failure to start).
+    Q_INVOKABLE void updateRemainingMissionAltitudeRelative(double relativeAltitudeMeters, double groundSpeedMetersSecond = qQNaN());
+
+    /// True while a mid-flight altitude/speed mission rewrite is in flight.
+    /// MissionControllers must not reload Fly View plan from the vehicle until cleared.
+    bool skipPlanReloadAfterMissionWrite() const { return _skipPlanReloadAfterMissionWrite; }
+
     /// Reboot vehicle
     Q_INVOKABLE void rebootVehicle();
 
@@ -498,6 +517,7 @@ public:
     void setPrearmError(const QString& prearmError);
 
     QmlObjectListModel* cameraTriggerPoints () { return &_cameraTriggerPoints; }
+    Q_INVOKABLE void clearCameraTriggerPoints() { _clearCameraTriggerPoints(); }
 
     //-- Mavlink Logging
     void startMavlinkLog();
@@ -881,6 +901,9 @@ signals:
     ///     @param failureCode      More detailed failure code Vehicle::MavCmdResultFailureCode_t
     void mavCommandResult               (int vehicleId, int targetComponent, int command, int ackResult, int failureCode);
 
+    /// Emitted when updateRemainingMissionAltitudeRelative finishes writing to the vehicle
+    void remainingMissionAltitudeUpdated(bool success);
+
     // MAVlink Serial Data
     void mavlinkSerialControl           (uint8_t device, uint8_t flags, uint16_t timeout, uint32_t baudrate, QByteArray data);
 
@@ -1082,6 +1105,7 @@ private:
     //QMap<QString, ADSBVehicle*>     _trafficVehicleMap;
 
     bool _allLinksRemovedSent = false; ///< true: allLinkRemoved signal already sent one time
+    bool _skipPlanReloadAfterMissionWrite = false; ///< mid-flight altitude rewrite: keep GCS survey overlay
 
     uint                _messagesReceived = 0;
     uint                _messagesSent = 0;

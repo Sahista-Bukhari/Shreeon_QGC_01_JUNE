@@ -20,6 +20,9 @@ Item {
     property real   _sliderMinVal:          0
     property int    _sliderType:            GuidedValueSlider.SliderType.Altitude
     property string _displayText:           ""
+    readonly property bool leftSide:        _sliderType === GuidedValueSlider.SliderType.Speed
+                                             || _sliderType === GuidedValueSlider.SliderType.Altitude
+    readonly property bool compactMode:     leftSide
 
     property var    _unitsSettings:         QGroundControl.settingsManager.unitsSettings
     property real   _indicatorCenterPos:    sliderFlickable.height / 2
@@ -106,6 +109,8 @@ Item {
         anchors.fill:   parent
         color:          _qgcPal.window
         opacity:        0.5
+        radius:         Math.min(ScreenTools.defaultFontPixelHeight * 0.6, Math.min(width, height) / 2)
+        antialiasing:   true
     }
 
     ColumnLayout {
@@ -126,6 +131,7 @@ Item {
             contentWidth:       sliderContainer.width
             contentHeight:      sliderContainer.height
             flickableDirection: Flickable.VerticalFlick
+            indicatorColor:     "#6beb17"
 
             // The default deceleration is too fast for the slider. We need to slow it down a bit. This allows for large movements of the slider
             // to set large altitudes.

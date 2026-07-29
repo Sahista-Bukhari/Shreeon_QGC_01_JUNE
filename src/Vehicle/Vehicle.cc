@@ -18,6 +18,7 @@
 #include "MAVLinkProtocol.h"
 #include "MissionCommandTree.h"
 #include "MissionManager.h"
+#include "MissionItem.h"
 #include "MultiVehicleManager.h"
 #include "ParameterManager.h"
 #include "PlanMasterController.h"
@@ -48,6 +49,8 @@
 #include "GimbalController.h"
 #include "MavlinkSettings.h"
 #include "APM.h"
+
+#include <QtMath>
 
 #ifdef QGC_UTM_ADAPTER
 #include "UTMSPVehicle.h"
@@ -253,13 +256,11 @@ void Vehicle::_commonInit(LinkInterface* link)
     _missionManager = new MissionManager(this);
     connect(_missionManager, &MissionManager::error,                    this, &Vehicle::_missionManagerError);
     connect(_missionManager, &MissionManager::newMissionItemsAvailable, this, &Vehicle::_firstMissionLoadComplete);
-    connect(_missionManager, &MissionManager::newMissionItemsAvailable, this, &Vehicle::_clearCameraTriggerPoints);
-    connect(_missionManager, &MissionManager::sendComplete,             this, &Vehicle::_clearCameraTriggerPoints);
+    // Do NOT clear camera triggers / trajectory on mission send or reload.
+    // Mid-flight altitude/speed updates rewrite the mission and would wipe the
+    // completed red path. Fresh traces start on arm via TrajectoryPoints::start().
     connect(_missionManager, &MissionManager::currentIndexChanged,      this, &Vehicle::_updateHeadingToNextWP);
     connect(_missionManager, &MissionManager::currentIndexChanged,      this, &Vehicle::_updateMissionItemIndex);
-
-    connect(_missionManager, &MissionManager::sendComplete,             _trajectoryPoints, &TrajectoryPoints::clear);
-    connect(_missionManager, &MissionManager::newMissionItemsAvailable, _trajectoryPoints, &TrajectoryPoints::clear);
 
     _standardModes                  = new StandardModes                 (this, this);
     _componentInformationManager    = new ComponentInformationManager   (this, this);
@@ -2097,6 +2098,114 @@ void Vehicle::startMission()
     _firmwarePlugin->startMission(this);
 }
 
+void Vehicle::updateRemainingMissionAltitudeRelative(double relativeAltitudeMeters, double groundSpeedMetersSecond)
+{
+    if (!_missionManager) {
+        emit remainingMissionAltitudeUpdated(false);
+        return;
+    }
+    if (isOfflineEditingVehicle()) {
+        emit remainingMissionAltitudeUpdated(false);
+        return;
+    }
+    if (_missionManager->inProgress()) {
+        qCWarning(VehicleLog) << "updateRemainingMissionAltitudeRelative: mission transaction already in progress";
+        emit remainingMissionAltitudeUpdated(false);
+        return;
+    }
+
+    const QList<MissionItem*>& vehicleItems = _missionManager->missionItems();
+    if (vehicleItems.isEmpty()) {
+        emit remainingMissionAltitudeUpdated(false);
+        return;
+    }
+
+    const int currentIdx = _missionManager->currentIndex();
+    const bool skipFirstItem = !_firmwarePlugin->sendHomePositionToVehicle();
+    const bool updateSpeed = !qIsNaN(groundSpeedMetersSecond) && groundSpeedMetersSecond > 0.0;
+    QList<MissionItem*> writeList;
+
+    if (skipFirstItem) {
+        // writeMissionItems expects a leading home item that it will strip.
+        MissionItem* homeItem = new MissionItem(
+            0,
+            MAV_CMD_NAV_WAYPOINT,
+            MAV_FRAME_GLOBAL,
+            0, 0, 0, 0,
+            homePosition().isValid() ? homePosition().latitude() : 0,
+            homePosition().isValid() ? homePosition().longitude() : 0,
+            homePosition().isValid() ? homePosition().altitude() : 0,
+            true  /* autoContinue */,
+            false /* isCurrentItem */,
+            this);
+        writeList.append(homeItem);
+    }
+
+    auto altitudeCommand = [](MAV_CMD command) {
+        switch (command) {
+        case MAV_CMD_NAV_WAYPOINT:
+        case MAV_CMD_NAV_LOITER_UNLIM:
+        case MAV_CMD_NAV_LOITER_TURNS:
+        case MAV_CMD_NAV_LOITER_TIME:
+        case MAV_CMD_NAV_LOITER_TO_ALT:
+        case MAV_CMD_NAV_SPLINE_WAYPOINT:
+        case MAV_CMD_NAV_TAKEOFF:
+        case MAV_CMD_NAV_VTOL_TAKEOFF:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    for (MissionItem* item : vehicleItems) {
+        MissionItem* copy = new MissionItem(*item, this);
+
+        if (skipFirstItem) {
+            copy->setSequenceNumber(item->sequenceNumber() + 1);
+            if (copy->command() == MAV_CMD_DO_JUMP) {
+                copy->setParam1(copy->param1() + 1);
+            }
+        }
+
+        if (item->sequenceNumber() >= currentIdx) {
+            if (altitudeCommand(copy->command())) {
+                const MAV_FRAME frame = copy->frame();
+                if (frame == MAV_FRAME_GLOBAL_RELATIVE_ALT || frame == MAV_FRAME_GLOBAL_RELATIVE_ALT_INT ||
+                    frame == MAV_FRAME_GLOBAL_TERRAIN_ALT || frame == MAV_FRAME_GLOBAL_TERRAIN_ALT_INT) {
+                    copy->setParam7(relativeAltitudeMeters);
+                } else if ((frame == MAV_FRAME_GLOBAL || frame == MAV_FRAME_GLOBAL_INT) && homePosition().isValid()) {
+                    copy->setParam7(homePosition().altitude() + relativeAltitudeMeters);
+                } else {
+                    copy->setParam7(relativeAltitudeMeters);
+                }
+            } else if (updateSpeed && copy->command() == MAV_CMD_DO_CHANGE_SPEED) {
+                // Keep speed type (param1); update speed setpoint (param2).
+                copy->setParam2(groundSpeedMetersSecond);
+            }
+        }
+
+        writeList.append(copy);
+    }
+
+    // Keep survey plan visuals intact in Fly View after this write completes.
+    // Flag stays true for the whole DirectConnection fan-out of sendComplete so
+    // every MissionController (Fly View + per-vehicle PlanMapItems) can skip reload.
+    // Cleared Queued so that runs after those handlers.
+    _skipPlanReloadAfterMissionWrite = true;
+
+    connect(_missionManager, &MissionManager::sendComplete, this,
+            [this](bool error) {
+                emit remainingMissionAltitudeUpdated(!error);
+                // Queued clear: runs after all DirectConnection MissionController handlers.
+                QMetaObject::invokeMethod(this, [this]() {
+                    _skipPlanReloadAfterMissionWrite = false;
+                }, Qt::QueuedConnection);
+            },
+            Qt::SingleShotConnection);
+
+    _missionManager->writeMissionItems(writeList);
+}
+
 void Vehicle::guidedModeGotoLocation(const QGeoCoordinate& gotoCoord, double forwardFlightLoiterRadius)
 {
     if (!guidedModeSupported()) {
@@ -2361,6 +2470,120 @@ void Vehicle::setCurrentMissionSequence(int seq)
         true, // showError
         static_cast<uint16_t>(seq)
     );
+}
+
+int Vehicle::altitudeChangeResumeMissionSequence(int fromVisualSequence) const
+{
+    if (!_missionManager) {
+        return -1;
+    }
+
+    const QList<MissionItem*>& items = _missionManager->missionItems();
+    if (items.isEmpty()) {
+        return -1;
+    }
+
+    // Mission-manager sequence floor: never resume before this point.
+    int startSeq = -1;
+    if (fromVisualSequence >= 0) {
+        startSeq = fromVisualSequence;
+        if (!_firmwarePlugin->sendHomePositionToVehicle()) {
+            startSeq--;
+        }
+        if (startSeq < 0) {
+            startSeq = 0;
+        }
+    } else {
+        startSeq = _missionManager->currentIndex();
+        if (startSeq < 0) {
+            startSeq = _missionManager->lastCurrentIndex();
+        }
+        if (startSeq < 0) {
+            startSeq = 0;
+        }
+    }
+
+    auto isNavWaypoint = [](MAV_CMD command) {
+        switch (command) {
+        case MAV_CMD_NAV_WAYPOINT:
+        case MAV_CMD_NAV_SPLINE_WAYPOINT:
+        case MAV_CMD_NAV_LOITER_UNLIM:
+        case MAV_CMD_NAV_LOITER_TURNS:
+        case MAV_CMD_NAV_LOITER_TIME:
+        case MAV_CMD_NAV_LOITER_TO_ALT:
+            return true;
+        default:
+            return false;
+        }
+    };
+
+    // Select the active target only while it is still ahead on its incoming
+    // mission leg. If the vehicle is at/past that point, continue to the next
+    // navigation item. A simple distance threshold is not sufficient here: a
+    // waypoint can be far away and still be behind the aircraft.
+    static constexpr double reachedWaypointMeters = 5.0;
+    int resumeMgrSeq = -1;
+    QGeoCoordinate previousNavCoordinate;
+
+    for (MissionItem* item : items) {
+        if (!item) {
+            continue;
+        }
+
+        const bool takeoffItem = item->command() == MAV_CMD_NAV_TAKEOFF
+                                 || item->command() == MAV_CMD_NAV_VTOL_TAKEOFF;
+        const bool navigationItem = isNavWaypoint(item->command());
+        if (!takeoffItem && !navigationItem) {
+            continue;
+        }
+
+        const QGeoCoordinate waypoint = item->coordinate();
+        if (!waypoint.isValid()) {
+            continue;
+        }
+
+        if (item->sequenceNumber() < startSeq || takeoffItem) {
+            previousNavCoordinate = waypoint;
+            continue;
+        }
+
+        bool waypointIsAhead = true;
+        if (_coordinate.isValid()) {
+            if (_coordinate.distanceTo(waypoint) <= reachedWaypointMeters) {
+                waypointIsAhead = false;
+            } else if (previousNavCoordinate.isValid()) {
+                const double legLength = previousNavCoordinate.distanceTo(waypoint);
+                if (legLength > 0.1) {
+                    const double vehicleDistance = previousNavCoordinate.distanceTo(_coordinate);
+                    const double headingDeltaRadians = qDegreesToRadians(
+                        previousNavCoordinate.azimuthTo(_coordinate)
+                        - previousNavCoordinate.azimuthTo(waypoint));
+                    const double distanceAlongLeg = vehicleDistance * qCos(headingDeltaRadians);
+                    waypointIsAhead = distanceAlongLeg < (legLength - reachedWaypointMeters);
+                }
+            }
+        }
+
+        if (!waypointIsAhead) {
+            previousNavCoordinate = waypoint;
+            continue;
+        }
+
+        resumeMgrSeq = item->sequenceNumber();
+        break;
+    }
+
+    if (resumeMgrSeq < 0) {
+        // There is no safe forward navigation target. Remaining in Hold/Guided
+        // is safer than restarting at an earlier mission item.
+        return -1;
+    }
+
+    // Same visual numbering as missionItemIndex / setCurrentMissionSequence().
+    if (!_firmwarePlugin->sendHomePositionToVehicle()) {
+        return resumeMgrSeq + 1;
+    }
+    return resumeMgrSeq;
 }
 
 void Vehicle::sendMavCommand(int compId, MAV_CMD command, bool showError, float param1, float param2, float param3, float param4, float param5, float param6, float param7)

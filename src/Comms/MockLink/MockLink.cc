@@ -143,7 +143,9 @@ void MockLink::run1HzTasks()
     _sendVibration();
     _sendBatteryStatus();
     _sendSysStatus();
-    _sendADSBVehicles();
+    if (_numberOfVehicles > 0) {
+        _sendADSBVehicles();
+    }
     if (_vehicleType != MAV_TYPE_SUBMARINE) {
         _sendRemoteIDArmStatus();
     }

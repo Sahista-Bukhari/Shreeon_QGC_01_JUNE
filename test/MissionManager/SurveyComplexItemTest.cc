@@ -348,3 +348,51 @@ void SurveyComplexItemTest::_testHoverCaptureItemGeneration(void)
     _testItemGenerationWorker(false /* imagesInTurnaround */, true /* hasTurnaround */, true /* useConditionGate */, expectedCommands);
     _testItemGenerationWorker(false /* imagesInTurnaround */, true /* hasTurnaround */, false /* useConditionGate */, expectedCommands);
 }
+
+void SurveyComplexItemTest::_testPatternParameters(void)
+{
+    QList<MissionItem*> items;
+    _surveyItem->appendMissionItems(items, this);
+    const int itemCountWithoutPatternSpeed = items.count();
+    items.clear();
+
+    const double patternAltitude = 42.0;
+    const double patternSpeed = 7.5;
+    _surveyItem->cameraCalc()->distanceToSurface()->setRawValue(patternAltitude);
+    _surveyItem->patternFlightSpeed()->setRawValue(patternSpeed);
+    _surveyItem->setSpecifyPatternFlightSpeed(true);
+    _surveyItem->appendMissionItems(items, this);
+
+    QCOMPARE(items.count(), itemCountWithoutPatternSpeed + 2);
+    QCOMPARE(items.count() - 1, _surveyItem->lastSequenceNumber());
+    QCOMPARE(items.first()->command(), MAV_CMD_DO_CHANGE_SPEED);
+    QCOMPARE(items.first()->param2(), patternSpeed);
+    QCOMPARE(items.last()->command(), MAV_CMD_DO_CHANGE_SPEED);
+    QVERIFY(items.last()->param2() > 0);
+
+    int coordinateItemCount = 0;
+    for (const MissionItem* item: items) {
+        if (item->command() == MAV_CMD_NAV_WAYPOINT || item->command() == MAV_CMD_CONDITION_GATE) {
+            QCOMPARE(item->param7(), patternAltitude);
+            coordinateItemCount++;
+        }
+    }
+    QVERIFY(coordinateItemCount > 0);
+
+    QJsonArray savedItems;
+    _surveyItem->save(savedItems);
+    QCOMPARE(savedItems.count(), 1);
+
+    SurveyComplexItem* loadedSurveyItem = new SurveyComplexItem(_masterController, false /* flyView */, QString() /* kmlFile */);
+    QString errorString;
+    QVERIFY2(loadedSurveyItem->load(savedItems.first().toObject(), 0, errorString), qPrintable(errorString));
+    QVERIFY(loadedSurveyItem->specifyPatternFlightSpeed());
+    QCOMPARE(loadedSurveyItem->patternFlightSpeed()->rawValue().toDouble(), patternSpeed);
+    QCOMPARE(loadedSurveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), patternAltitude);
+
+    QList<MissionItem*> loadedItems;
+    loadedSurveyItem->appendMissionItems(loadedItems, this);
+    QCOMPARE(loadedItems.first()->command(), MAV_CMD_DO_CHANGE_SPEED);
+    QCOMPARE(loadedItems.first()->param2(), patternSpeed);
+    QCOMPARE(loadedItems.last()->command(), MAV_CMD_DO_CHANGE_SPEED);
+}

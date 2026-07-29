@@ -12,12 +12,14 @@ QGCPopupDialog {
     title:      fact.componentId > 0 ? fact.name : qsTr("Value Editor")
 
     buttons:    Dialog.Save | (validate ? 0 : Dialog.Cancel)
+    minimumContentHeight: compactValueDetails ? ScreenTools.defaultFontPixelHeight * 4.0 : -1
 
     property Fact   fact
     property bool   showRCToParam:  false
     property bool   validate:       false
     property string validateValue
     property bool   setFocus:       true    ///< true: focus is set to text field on display, false: focus not set (works around strange virtual keyboard bug with FactValueSlider
+    property bool   compactValueDetails: false
 
     property real   _editFieldWidth:            ScreenTools.defaultFontPixelWidth * 20
     property bool   _longDescriptionAvailable:  fact.longDescription != ""
@@ -76,7 +78,7 @@ QGCPopupDialog {
 
     ColumnLayout {
         width:      Math.min(mainWindow.width * .75, Math.max(ScreenTools.defaultFontPixelWidth * 60, editRow.width))
-        spacing:    globals.defaultTextHeight
+        spacing:    compactValueDetails ? ScreenTools.defaultFontPixelHeight * 0.6 : globals.defaultTextHeight
 
         QGCLabel {
             id:                 validationError
@@ -140,7 +142,7 @@ QGCPopupDialog {
         Column {
             id:         bitmaskColumn
             spacing:    ScreenTools.defaultFontPixelHeight / 2
-            visible:    fact.bitmaskStrings.length > 0
+            visible:    !compactValueDetails && fact.bitmaskStrings.length > 0
 
             Repeater {
                 id:     bitmaskRepeater
@@ -160,7 +162,7 @@ QGCPopupDialog {
         QGCLabel {
             Layout.fillWidth:   true
             wrapMode:           Text.WordWrap
-            visible:            !longDescriptionLabel.visible
+            visible:            !compactValueDetails && !longDescriptionLabel.visible
             text:               fact.shortDescription
         }
 
@@ -168,12 +170,13 @@ QGCPopupDialog {
             id:                 longDescriptionLabel
             Layout.fillWidth:   true
             wrapMode:           Text.WordWrap
-            visible:            fact.longDescription != ""
+            visible:            !compactValueDetails && fact.longDescription != ""
             text:               fact.longDescription
         }
 
         Row {
             spacing: ScreenTools.defaultFontPixelWidth
+            visible: !compactValueDetails
 
             QGCLabel {
                 id:         minValueDisplay
@@ -193,12 +196,12 @@ QGCPopupDialog {
         }
 
         QGCLabel {
-            visible:    fact.vehicleRebootRequired
+            visible:    !compactValueDetails && fact.vehicleRebootRequired
             text:       qsTr("Vehicle reboot required after change")
         }
 
         QGCLabel {
-            visible:    fact.qgcRebootRequired
+            visible:    !compactValueDetails && fact.qgcRebootRequired
             text:       qsTr("Application restart required after change")
         }
 
@@ -207,7 +210,7 @@ QGCPopupDialog {
             wrapMode:   Text.WordWrap
             text:       qsTr("Warning: Modifying values while vehicle is in flight can lead to vehicle instability and possible vehicle loss. ") +
                         qsTr("Make sure you know what you are doing and double-check your values before Save!")
-            visible:    fact.componentId != -1
+            visible:    !compactValueDetails && fact.componentId != -1
         }
 
         QGCCheckBox {
@@ -219,7 +222,7 @@ QGCPopupDialog {
         QGCCheckBox {
             id:         _advanced
             text:       qsTr("Advanced settings")
-            visible:    showRCToParam || factCombo.visible || bitmaskColumn.visible
+            visible:    !compactValueDetails && (showRCToParam || factCombo.visible || bitmaskColumn.visible)
         }
 
         // Checkbox to allow manual entry of enumerated or bitmask parameters

@@ -11,7 +11,7 @@ Popup {
     signal saveRequested(string taskName)
     signal dismissed()
 
-    property string initialTaskName: qsTr("Mapping Task")
+    property string initialTaskName: ""
 
     parent: Overlay.overlay
     x: 0
@@ -91,7 +91,7 @@ Popup {
                         color: "white"
                         radius: ScreenTools.defaultBorderRadius * 2
                         border.width: 1
-                        border.color: "#58ad2f"
+                        border.color: "#23a800"
                         implicitWidth: ScreenTools.implicitTextFieldWidth
                         implicitHeight: ScreenTools.implicitTextFieldHeight
                     }
@@ -142,7 +142,7 @@ Popup {
                         QGCLabel {
                             anchors.centerIn: parent
                             text: qsTr("Save")
-                            color: taskNameField.text.trim() === "" ? "#a8a8a8" : "#58ad2f"
+                            color: taskNameField.text.trim() === "" ? "#a8a8a8" : "#23a800"
                             font.weight: Font.DemiBold
                         }
 

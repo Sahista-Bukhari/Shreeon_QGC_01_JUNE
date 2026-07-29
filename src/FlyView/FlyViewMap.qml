@@ -48,10 +48,270 @@ FlightMap {
     property var    rallyPointController
     property var    routeMappingBoundaryPath: []
     property var    routeMappingTransectPath: []
+    property var    routeMappingTakeoffCoordinate: QtPositioning.coordinate()
     property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
     property var    routeMappingExitCoordinate: QtPositioning.coordinate()
     property real   routeMappingEntryHeading: 0
     property real   routeMappingExitHeading: 0
+    property bool   hideVehicleMissionForUnuploadedRoute: false
+    readonly property var _routeMappingTakeoffPath: {
+        if (!routeMappingTakeoffCoordinate || !routeMappingTakeoffCoordinate.isValid
+                || !routeMappingEntryCoordinate || !routeMappingEntryCoordinate.isValid) {
+            return []
+        }
+        return [routeMappingTakeoffCoordinate, routeMappingEntryCoordinate]
+    }
+
+    // Return-to-launch leg: survey exit back to the takeoff/home coordinate.
+    // Mission line segments are suppressed under the yellow overlay, so the RTL
+    // line is drawn here to stay visible on Fly View.
+    readonly property var _routeMappingReturnPath: {
+        if (!routeMappingExitCoordinate || !routeMappingExitCoordinate.isValid
+                || !routeMappingTakeoffCoordinate || !routeMappingTakeoffCoordinate.isValid) {
+            return []
+        }
+        return [routeMappingExitCoordinate, routeMappingTakeoffCoordinate]
+    }
+
+    property real   _routeMappingCoveredDistance: 0
+    property var    _routeMappingRemainingTransectPath: []
+    property var    _routeMappingCompletedGradientSegments: []
+
+    readonly property real routeMappingProgressRatio: {
+        var path = routeMappingTransectPath
+        var covered = _routeMappingCoveredDistance
+        if (!path || path.length < 2 || covered <= 0) {
+            return 0
+        }
+        var total = _pathLength(path)
+        if (total <= 0) {
+            return 0
+        }
+        return Math.min(1, covered / total)
+    }
+    readonly property int routeMappingProgressPercent: Math.floor(routeMappingProgressRatio * 100)
+
+    readonly property var _routeCompletedGradientColors: [
+        "#00ccff", "#00b8e6", "#00a3cc", "#008fbf", "#007ab3", "#005588"
+    ]
+    readonly property color _routeRemainingColor: Qt.rgba(1.0, 0.94, 0.38, 0.78)
+
+    onRouteMappingTransectPathChanged: {
+        // Never wipe covered progress mid-flight. Progress only resets when the
+        // plan overlay is cleared, the vehicle is swapped, or the user clears the plan.
+        var pathEmpty = !routeMappingTransectPath || routeMappingTransectPath.length < 2
+        var keepProgress = _activeVehicle && (_activeVehicle.flying || _activeVehicle.armed)
+                && _routeMappingCoveredDistance > 0
+                && !pathEmpty
+        if (!keepProgress) {
+            _routeMappingCoveredDistance = 0
+        }
+        Qt.callLater(_updateRouteMappingCoverage)
+    }
+
+    function _pathLength(path) {
+        var length = 0
+        for (var i = 1; i < path.length; i++) {
+            length += path[i - 1].distanceTo(path[i])
+        }
+        return length
+    }
+
+    function _projectPointOnSegment(point, segStart, segEnd) {
+        var segLen = segStart.distanceTo(segEnd)
+        if (segLen < 0.01) {
+            return segStart
+        }
+
+        var azSeg = segStart.azimuthTo(segEnd)
+        var azToPoint = segStart.azimuthTo(point)
+        var distToPoint = segStart.distanceTo(point)
+        var angleRad = (azToPoint - azSeg) * Math.PI / 180.0
+        var along = distToPoint * Math.cos(angleRad)
+        along = Math.max(0, Math.min(segLen, along))
+        return segStart.atDistanceAndAzimuth(along, azSeg)
+    }
+
+    function _distanceAlongTransect(path, coord) {
+        var bestAlong = 0
+        var minDist = Number.MAX_VALUE
+        var accumulated = 0
+
+        for (var i = 0; i < path.length - 1; i++) {
+            var segStart = path[i]
+            var segEnd = path[i + 1]
+            var projected = _projectPointOnSegment(coord, segStart, segEnd)
+            var distToPath = coord.distanceTo(projected)
+            if (distToPath < minDist) {
+                minDist = distToPath
+                bestAlong = accumulated + segStart.distanceTo(projected)
+            }
+            accumulated += segStart.distanceTo(segEnd)
+        }
+
+        if (minDist > 40) {
+            return -1
+        }
+        return bestAlong
+    }
+
+    function _slicePathFromStart(path, endDistance) {
+        if (path.length < 2 || endDistance <= 0) {
+            return path.length >= 1 ? [path[0]] : []
+        }
+
+        var accumulated = 0
+        var result = [path[0]]
+        for (var i = 1; i < path.length; i++) {
+            var segLen = path[i - 1].distanceTo(path[i])
+            if (accumulated + segLen <= endDistance + 0.01) {
+                result.push(path[i])
+                accumulated += segLen
+            } else {
+                var remain = endDistance - accumulated
+                if (remain > 0.5) {
+                    result.push(path[i - 1].atDistanceAndAzimuth(remain, path[i - 1].azimuthTo(path[i])))
+                }
+                break
+            }
+        }
+        return result
+    }
+
+    function _slicePathFromDistance(path, startDistance) {
+        if (path.length < 2 || startDistance <= 0) {
+            return path.slice()
+        }
+
+        var accumulated = 0
+        var result = []
+        for (var i = 1; i < path.length; i++) {
+            var segLen = path[i - 1].distanceTo(path[i])
+            if (accumulated + segLen <= startDistance) {
+                accumulated += segLen
+                continue
+            }
+
+            if (result.length === 0) {
+                var intoSeg = startDistance - accumulated
+                if (intoSeg > 0.5) {
+                    result.push(path[i - 1].atDistanceAndAzimuth(intoSeg, path[i - 1].azimuthTo(path[i])))
+                } else {
+                    result.push(path[i - 1])
+                }
+            }
+            result.push(path[i])
+        }
+
+        return result.length > 0 ? result : (path.length > 0 ? [path[path.length - 1]] : [])
+    }
+
+    function _slicePathBetween(path, startDistance, endDistance) {
+        return _slicePathFromStart(_slicePathFromDistance(path, startDistance), endDistance - startDistance)
+    }
+
+    function _buildCompletedGradientSegments(path) {
+        if (!path || path.length < 2) {
+            return []
+        }
+
+        var totalLen = _pathLength(path)
+        if (totalLen < 1) {
+            return []
+        }
+
+        var steps = _routeCompletedGradientColors.length
+        var segments = []
+        for (var s = 0; s < steps; s++) {
+            var startD = (s / steps) * totalLen
+            var endD = ((s + 1) / steps) * totalLen
+            var segPath = _slicePathBetween(path, startD, endD)
+            if (segPath.length >= 2) {
+                segments.push({
+                              path: segPath,
+                              color: _routeCompletedGradientColors[s]
+                              })
+            }
+        }
+        return segments
+    }
+
+    function _copyPath(path) {
+        var result = []
+        if (!path) {
+            return result
+        }
+        for (var i = 0; i < path.length; i++) {
+            result.push(path[i])
+        }
+        return result
+    }
+
+    function _updateRouteMappingCoverage() {
+        var fullPath = routeMappingTransectPath
+        if (!fullPath || fullPath.length < 2) {
+            _routeMappingRemainingTransectPath = []
+            _routeMappingCompletedGradientSegments = []
+            return
+        }
+
+        // Always paint the full frozen survey geometry. Progress is shown only
+        // via the covered-distance cyan gradient (and the red trajectory) —
+        // never by regenerating, rotating, or truncating the yellow plan.
+        _routeMappingRemainingTransectPath = _copyPath(fullPath)
+
+        if (_activeVehicle && _activeVehicle.flying
+                && _activeVehicle.coordinate && _activeVehicle.coordinate.isValid) {
+            var alongPath = _distanceAlongTransect(fullPath, _activeVehicle.coordinate)
+            if (alongPath >= 0) {
+                _routeMappingCoveredDistance = Math.max(_routeMappingCoveredDistance, alongPath)
+            }
+        }
+
+        if (_routeMappingCoveredDistance <= 0) {
+            _routeMappingCompletedGradientSegments = []
+            return
+        }
+
+        var completedPath = _slicePathFromStart(fullPath, _routeMappingCoveredDistance)
+        _routeMappingCompletedGradientSegments = _buildCompletedGradientSegments(completedPath)
+    }
+
+    function resetRouteMappingProgress() {
+        _routeMappingCoveredDistance = 0
+        _routeMappingRemainingTransectPath = []
+        _routeMappingCompletedGradientSegments = []
+    }
+
+    Connections {
+        target: _activeVehicle
+        ignoreUnknownSignals: true
+
+        function onCoordinateChanged() {
+            _root._updateRouteMappingCoverage()
+        }
+
+        function onFlyingChanged() {
+            _root._updateRouteMappingCoverage()
+        }
+
+        function onArmedChanged(armed) {
+            // A new arm starts a new mapping run. Camera captures are reset by
+            // Vehicle at the same transition, so route and area must reset too.
+            if (armed && !_activeVehicle.flying) {
+                _root.resetRouteMappingProgress()
+            }
+            _root._updateRouteMappingCoverage()
+        }
+    }
+
+    Connections {
+        target: QGroundControl.multiVehicleManager
+        function onActiveVehicleChanged() {
+            _root._routeMappingCoveredDistance = 0
+            _root._updateRouteMappingCoverage()
+        }
+    }
 
     readonly property int _layerMission:        1
     readonly property int _layerFence:          2
@@ -91,6 +351,7 @@ FlightMap {
         if (visible) {
             // Synchronize center position with Plan View
             center = QGroundControl.flightMapPosition
+            _updateRouteMappingCoverage()
         }
     }
 
@@ -337,6 +598,9 @@ FlightMap {
             largeMapView:           !pipMode
             planMasterController:   masterController
             vehicle:                _vehicle
+            routeMappingOverlayActive: routeMappingTransectPath
+                                       && routeMappingTransectPath.length >= 2
+            hideMissionVisuals: hideVehicleMissionForUnuploadedRoute
 
             property var _vehicle: object
 
@@ -379,9 +643,11 @@ FlightMap {
         }
     }
 
-    // Camera trigger points
+    // Camera trigger points — hidden on map for route-mapping Fly View
+    // (photo count still tracked via cameraTriggerPoints for the progress panel)
     MapItemView {
-        model: _activeVehicle ? _activeVehicle.cameraTriggerPoints : 0
+        model: 0
+        visible: false
 
         delegate: CameraTriggerIndicator {
             coordinate:     object.coordinate
@@ -985,11 +1251,41 @@ FlightMap {
         z: QGroundControl.zOrderWaypointLines + 3
     }
 
+    // Frozen takeoff → survey entry connector (never regenerates mid-flight).
     MapPolyline {
-        line.color: Qt.rgba(1.0, 0.94, 0.38, 0.78)
+        line.color: _routeRemainingColor
         line.width: 2
-        path: routeMappingTransectPath
-        visible: !planEditMode && routeMappingTransectPath ? routeMappingTransectPath.length >= 2 : false
+        path: _routeMappingTakeoffPath
+        visible: !planEditMode && _routeMappingTakeoffPath.length >= 2
+        z: QGroundControl.zOrderWaypointLines + 2
+    }
+
+    // Survey exit → launch return leg (RTL). Drawn in the same yellow as the
+    // transit/takeoff legs so the return path is visible under the overlay.
+    MapPolyline {
+        line.color: _routeRemainingColor
+        line.width: 2
+        path: _routeMappingReturnPath
+        visible: !planEditMode && _routeMappingReturnPath.length >= 2
+        z: QGroundControl.zOrderWaypointLines + 2
+    }
+
+    Repeater {
+        model: !planEditMode ? _routeMappingCompletedGradientSegments : []
+        delegate: MapPolyline {
+            line.color: modelData.color
+            line.width: 3
+            path: modelData.path
+            visible: modelData.path.length >= 2
+            z: QGroundControl.zOrderWaypointLines + 2
+        }
+    }
+
+    MapPolyline {
+        line.color: _routeRemainingColor
+        line.width: 2
+        path: _routeMappingRemainingTransectPath
+        visible: !planEditMode && _routeMappingRemainingTransectPath.length >= 2
         z: QGroundControl.zOrderWaypointLines + 2
     }
 

@@ -568,7 +568,7 @@ Item {
                         title: qsTr("Agriculture Spraying")
                         width: centerContent.colRouteW
 
-                        onClicked: control._selectMode(this, function() { mainWindow.showPlanView() })
+                        onClicked: control._selectMode(this, function() { mainWindow.showAgricultureSprayingMissionView() })
                     }
                     Column {
                         spacing: control._cardGap
@@ -577,7 +577,7 @@ Item {
                         ModeCard {
                             animationIndex: 1
                             cornerIconSource: control._modeCornerIcons.manual
-                            desaturated: true
+                            desaturated: false
                             height: centerContent.manualRowH
                             imageSource: control._modeImages.manual
                             title: qsTr("Manual")
@@ -588,13 +588,13 @@ Item {
                         ModeCard {
                             animationIndex: 2
                             cornerIconSource: control._modeCornerIcons.seedSpreader
-                            desaturated: true
+                            desaturated: false
                             height: centerContent.fruitTreeRowH
                             imageSource: control._modeImages.seedSpreader
                             title: qsTr("Seed Spreader")
                             width: centerContent.colMidW
 
-                            onClicked: control._selectMode(this, function() { mainWindow.showPlanView() })
+                            onClicked: control._selectMode(this, function() { mainWindow.showSeedSpraderMissionView() })
                         }
                     }
                     Column {
@@ -614,13 +614,13 @@ Item {
                         ModeCard {
                             animationIndex: 4
                             cornerIconSource: control._modeCornerIcons.customMission
-                            desaturated: true
+                            desaturated: false
                             height: centerContent.fruitTreeMappingRowH
                             imageSource: control._modeImages.customMission
                             title: qsTr("Custom Mission")
                             width: centerContent.colRightW
 
-                            onClicked: control._selectMode(this, function() { mainWindow.showPlanView() })
+                            onClicked: control._selectMode(this, function() { mainWindow.showCustomMissionView() })
                         }
                     }
                 }
@@ -790,6 +790,9 @@ Item {
                 anchors.fill: parent
                 layer.enabled: true
                 layer.smooth: true
+                layer.textureSize: Qt.size(
+                    Math.max(1, Math.round(width * Screen.devicePixelRatio)),
+                    Math.max(1, Math.round(height * Screen.devicePixelRatio)))
                 visible: !cardRoot.useSchematic
 
                 layer.effect: OpacityMask {
@@ -807,15 +810,13 @@ Item {
                     asynchronous: true
                     fillMode: Image.PreserveAspectCrop
                     horizontalAlignment: Image.AlignHCenter
-                    layer.enabled: cardRoot.desaturated
                     mipmap: true
                     smooth: true
                     source: cardRoot.imageSource
+                    sourceSize.width: Math.max(1, Math.round(width * Screen.devicePixelRatio))
+                    sourceSize.height: Math.max(1, Math.round(height * Screen.devicePixelRatio))
                     verticalAlignment: Image.AlignVCenter
-
-                    layer.effect: Desaturate {
-                        desaturation: 0.9
-                    }
+                    opacity: cardRoot.desaturated ? 0.55 : 1.0
                 }
             }
             Rectangle {

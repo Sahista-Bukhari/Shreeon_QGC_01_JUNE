@@ -27,19 +27,27 @@ Rectangle {
     radius:         ScreenTools.defaultBorderRadius
 
     property bool _loadComplete:            false
-    property bool _showSlider:              fact.userMin !== undefined && fact.userMax !== undefined
+    property bool _showSlider:              fact && fact.userMin !== undefined && fact.userMax !== undefined
     property color _ftfsBackgroundColor:    Qt.rgba(qgcPal.windowShadeLight.r, qgcPal.windowShadeLight.g, qgcPal.windowShadeLight.b, 0.2)
 
     function updateSliderToClampedValue() {
-        if (_showSlider && sliderLoader.item) {
-            let clampedSliderValue = control.fact.value
-            if (clampedSliderValue > control.fact.userMax) {
-                clampedSliderValue = control.fact.userMax
-            } else if (clampedSliderValue < control.fact.userMin) {
-                clampedSliderValue = control.fact.userMin
-            }
-            sliderLoader.item.value = clampedSliderValue
+        if (!_showSlider || !sliderLoader.item || !control.fact) {
+            return
         }
+        let clampedSliderValue = control.fact.value
+        if (clampedSliderValue === undefined || clampedSliderValue === null) {
+            return
+        }
+        clampedSliderValue = Number(clampedSliderValue)
+        if (isNaN(clampedSliderValue)) {
+            return
+        }
+        if (clampedSliderValue > control.fact.userMax) {
+            clampedSliderValue = control.fact.userMax
+        } else if (clampedSliderValue < control.fact.userMin) {
+            clampedSliderValue = control.fact.userMin
+        }
+        sliderLoader.item.value = clampedSliderValue
     }
 
     Component.onCompleted: {

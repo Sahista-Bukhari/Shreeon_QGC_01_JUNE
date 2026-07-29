@@ -141,7 +141,7 @@ Item {
                 ToolStripAction {
                     text: qsTr("Add")
                     iconSource: "/res/target-crosshair.svg"
-                    onTriggered: mainWindow.showRouteMappingView()
+                    onTriggered: mainWindow.showActiveMissionEditor(planMasterController.containsItems)
                 },
                 ToolStripAction {
                     id: statsAction

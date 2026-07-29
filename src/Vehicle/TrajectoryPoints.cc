@@ -44,7 +44,8 @@ void TrajectoryPoints::_vehicleCoordinateChanged(QGeoCoordinate coordinate)
 
 void TrajectoryPoints::start(void)
 {
-    clear();
+    // Always clear on a new arm — that is the only time we intentionally wipe the path.
+    _forceClear();
     connect(_vehicle, &Vehicle::coordinateChanged, this, &TrajectoryPoints::_vehicleCoordinateChanged);
 }
 
@@ -54,6 +55,15 @@ void TrajectoryPoints::stop(void)
 }
 
 void TrajectoryPoints::clear(void)
+{
+    // Mid-flight mission uploads (altitude/speed change) must not wipe the red completed path.
+    if (_vehicle && _vehicle->flying()) {
+        return;
+    }
+    _forceClear();
+}
+
+void TrajectoryPoints::_forceClear(void)
 {
     _points.clear();
     _lastPoint = QGeoCoordinate();

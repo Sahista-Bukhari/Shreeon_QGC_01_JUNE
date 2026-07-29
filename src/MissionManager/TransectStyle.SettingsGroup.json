@@ -40,6 +40,16 @@
     "default":     false
 },
 {
+    "name":             "PatternFlightSpeed",
+    "shortDesc":        "Flight speed used only while flying the survey pattern.",
+    "type":             "double",
+    "decimalPlaces":    1,
+    "min":              0.5,
+    "max":              30,
+    "units":            "m/s",
+    "default":          5
+},
+{
     "name":             "TerrainAdjustTolerance",
     "shortDesc": "Additional waypoints within the transect will be added if the terrain altitude difference grows larger than this tolerance.",
     "type":             "double",

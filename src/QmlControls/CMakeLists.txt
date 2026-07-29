@@ -255,7 +255,9 @@ qt_add_qml_module(QGroundControlControlsModule
         ScreenTools.qml
     NO_PLUGIN
     QML_FILES saveMappingTask.qml
-    QML_FILES startMission.qml
+    QML_FILES CustomMissionView.qml
+    QML_FILES AgricultureSprayingMissionView.qml
+    QML_FILES SeedSpraderMissionView.qml
 )
 
 # ----------------------------------------------------------------------------

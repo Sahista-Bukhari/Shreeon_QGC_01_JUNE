@@ -40,6 +40,8 @@ ToolStripActionList {
         GuidedActionLand { },
         GuidedActionRTL { },
         GuidedActionPause { },
+        GuidedActionChangeAltitude { },
+        GuidedActionChangeSpeed { },
         FlyViewAdditionalActionsButton { },
         FlyViewGripperButton { }
     ]

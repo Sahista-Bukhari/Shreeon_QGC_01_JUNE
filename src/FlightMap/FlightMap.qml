@@ -21,6 +21,7 @@ Map {
     property real   gcsHeading:                     QGroundControl.qgcPositionManger.gcsHeading
     property bool   allowGCSLocationCenter:         false   ///< true: map will center/zoom to gcs location one time
     property bool   allowVehicleLocationCenter:     false   ///< true: map will center/zoom to vehicle location one time
+    property bool   allowZoomGestures:              true    ///< false: ignore wheel, trackpad, and pinch zoom gestures
     property bool   firstGCSPositionReceived:       false   ///< true: first gcs position update was responded to
     property bool   firstVehiclePositionReceived:   false   ///< true: first vehicle position update was responded to
     property bool   planView:                       false   ///< true: map being using for Plan view, items should be draggable
@@ -113,6 +114,7 @@ Map {
     PinchHandler {
         id:     pinchHandler
         target: null
+        enabled: _map.allowZoomGestures
 
         property var pinchStartCentroid
 
@@ -134,6 +136,7 @@ Map {
         // and we don't yet distinguish mice and trackpads on Wayland either
         acceptedDevices:    Qt.platform.pluginName === "cocoa" || Qt.platform.pluginName === "wayland" ?
                                 PointerDevice.Mouse | PointerDevice.TouchPad : PointerDevice.Mouse
+        enabled:            _map.allowZoomGestures
         rotationScale:      1 / 120
         property:           "zoomLevel"
 

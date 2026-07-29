@@ -44,12 +44,17 @@ Popup {
     property var    dialogProperties
     property bool   destroyOnClose:         true
     property bool   preventClose:           false
+    property bool   compact:                false
+    property bool   largeTitleText:         false
+    property real   minimumContentHeight:   -1
 
     property real maxContentAvailableWidth:    mainWindow.width - _contentMargin * 8
     property real maxContentAvailableHeight:   mainWindow.height - titleLabel.implicitHeight - buttonRow.implicitHeight - _contentMargin * 7
 
-    readonly property real headerMinWidth: Math.max(titleLabel.implicitWidth + _contentMargin * 4, ScreenTools.defaultFontPixelWidth * 40)
-    readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * 54)
+    readonly property real headerMinWidth: Math.max(titleLabel.implicitWidth + _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 28 : 40))
+    readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 34 : 54))
+    readonly property real messageMinHeight: minimumContentHeight >= 0 ? minimumContentHeight : ScreenTools.defaultFontPixelHeight * (compact ? 1.4 : 3.5)
+    readonly property real buttonRowHeight: ScreenTools.defaultFontPixelHeight * (compact ? 2.35 : 3)
 
     signal accepted
     signal rejected
@@ -214,13 +219,14 @@ Popup {
             QGCLabel {
                 id: titleLabel
                 Layout.fillWidth: true
-                Layout.topMargin: ScreenTools.defaultFontPixelHeight * 1.15
-                Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 2
-                Layout.rightMargin: ScreenTools.defaultFontPixelWidth * 2
-                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.75
+                Layout.topMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.85 : 1.15)
+                Layout.leftMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
+                Layout.rightMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
+                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.45 : 0.75)
                 text: root.title
                 color: "#202124"
-                font.pointSize: ScreenTools.mediumFontPointSize
+                font.pointSize: (compact && largeTitleText) ? ScreenTools.largeFontPointSize
+                                              : (compact ? ScreenTools.smallFontPointSize : ScreenTools.mediumFontPointSize)
                 font.weight: Font.DemiBold
                 horizontalAlignment: Text.AlignHCenter
                 visible: root.title !== ""
@@ -229,10 +235,10 @@ Popup {
             Rectangle {
                 id: messageArea
                 Layout.fillWidth: true
-                Layout.minimumHeight: ScreenTools.defaultFontPixelHeight * 3.5
+                Layout.minimumHeight: messageMinHeight
                 Layout.preferredHeight: Math.max(
                                             totalContentHeight,
-                                            ScreenTools.defaultFontPixelHeight * 3.5)
+                                            messageMinHeight)
                 color: "white"
 
                 property real contentWidth: dialogPreferredWidth - _contentMargin * 4
@@ -246,8 +252,8 @@ Popup {
                     anchors.bottom: parent.bottom
                     anchors.leftMargin: _contentMargin * 2
                     anchors.rightMargin: _contentMargin * 2
-                    anchors.topMargin: _contentMargin * 1.2
-                    anchors.bottomMargin: _contentMargin * 1.2
+                    anchors.topMargin: _contentMargin * (compact ? 0.6 : 1.2)
+                    anchors.bottomMargin: _contentMargin * (compact ? 0.6 : 1.2)
                     contentWidth: messageArea.contentWidth
                     contentHeight: dialogContentParent.childrenRect.height
 
@@ -282,7 +288,7 @@ Popup {
                     property string text: ""
                     property bool enabled: true
                     Layout.fillWidth: true
-                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                    Layout.preferredHeight: buttonRowHeight
                     color: rejectMouseArea.pressed ? "#f1f1f1" : "white"
                     visible: false
 
@@ -312,14 +318,14 @@ Popup {
                     property string text: ""
                     property bool enabled: true
                     Layout.fillWidth: true
-                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                    Layout.preferredHeight: buttonRowHeight
                     color: acceptMouseArea.pressed ? "#f1f1f1" : "white"
                     visible: false
 
                     QGCLabel {
                         anchors.centerIn: parent
                         text: acceptButton.text
-                        color: acceptButton.enabled ? "#58ad2f" : "#a8a8a8"
+                        color: acceptButton.enabled ? "#23a800" : "#a8a8a8"
                         font.weight: Font.DemiBold
                     }
 

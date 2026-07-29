@@ -30,6 +30,9 @@ TextField {
     property bool   numericValuesOnly:  false   // true: Used as hint for mobile devices to show numeric only keyboard
     property alias  textColor:          control.color
     property bool   validationError:    false
+    // Screens can override the standard blue focus outline without changing
+    // validation errors, which always remain red.
+    property color  activeFocusBorderColor: qgcPal.brandingBlue
 
     property real _helpLayoutWidth: 0
     property real _marginPadding:   ScreenTools.defaultFontPixelHeight / 3
@@ -84,7 +87,7 @@ TextField {
 
     background: Rectangle {
         border.width:   control.validationError ? 2 : (control.activeFocus ? 2 : 0)
-        border.color:   control.validationError ? qgcPal.colorRed : (control.activeFocus ? qgcPal.brandingBlue : "transparent")
+        border.color:   control.validationError ? qgcPal.colorRed : (control.activeFocus ? control.activeFocusBorderColor : "transparent")
         radius:         ScreenTools.defaultBorderRadius * 2
         color:          qgcPal.textField
         implicitWidth:  ScreenTools.implicitTextFieldWidth

@@ -32,6 +32,8 @@ private slots:
     void _vehicleCoordinateChanged(QGeoCoordinate coordinate);
 
 private:
+    void _forceClear(void);
+
     Vehicle*        _vehicle;
     QVariantList    _points;
     QGeoCoordinate  _lastPoint;

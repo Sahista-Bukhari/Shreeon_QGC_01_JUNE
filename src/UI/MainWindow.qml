@@ -101,6 +101,39 @@ ApplicationWindow {
     //-------------------------------------------------------------------------
     //-- Global Scope Functions
 
+    // Tracks which mission editor owns the active Fly View plan.
+    // Values: routeMapping | agricultureSpraying | seedSpreader | customMission | planView
+    property string activeMissionEditor: "routeMapping"
+
+    function setActiveMissionEditor(editorType) {
+        if (editorType && editorType !== "") {
+            activeMissionEditor = editorType
+        }
+    }
+
+    function showActiveMissionEditor(forEdit) {
+        switch (activeMissionEditor) {
+        case "agricultureSpraying":
+            showAgricultureSprayingMissionView(forEdit)
+            console.log("Agriculture Spraying file open")
+            break
+
+        case "seedSpreader":
+            showSeedSpraderMissionView(forEdit)
+            break
+        case "customMission":
+            showCustomMissionView(forEdit)
+            break
+        case "planView":
+            showPlanView()
+            break
+        case "routeMapping":
+        default:
+            showRouteMappingView(forEdit)
+            break
+        }
+    }
+
     // This function is used to prevent view switching if there are validation errors
     function allowViewSwitch(previousValidationErrorCount = 0) {
         // Run validation on active focus control to ensure it is valid before switching views
@@ -109,26 +142,226 @@ ApplicationWindow {
         }
         return globals.validationErrorCount <= previousValidationErrorCount
     }
-
+    // Plan view file
     function showPlanView() {
+        activeMissionEditor = "planView"
         flyView.visible = false
         routeMappingView.visible = false
+        customMissionView.visible = false
+        agricultureSprayingMissionView.visible = false
+        seedSpraderMision.visible = false
         planView.visible = true
         toolDrawer.visible = false
     }
-
-    function showRouteMappingView() {
+    // custom mission file
+    function showCustomMissionView(forEdit) {
+        activeMissionEditor = "customMission"
         flyView.visible = false
         planView.visible = false
+        routeMappingView.visible = false
+        agricultureSprayingMissionView.visible = false
+        seedSpraderMision.visible = false
+        customMissionView.visible = true
+        toolDrawer.visible = false
+
+        if (forEdit === true || (forEdit !== false && flyView.planController.containsItems)) {
+            customMissionView.resumePlanForEdit()
+        }
+    }
+    // Agriculture mission file
+    function showAgricultureSprayingMissionView(forEdit) {
+        activeMissionEditor = "agricultureSpraying"
+        flyView.visible = false
+        planView.visible = false
+        customMissionView.visible = false
+        routeMappingView.visible = false
+        seedSpraderMision.visible = false
+        agricultureSprayingMissionView.visible = true
+        toolDrawer.visible = false
+
+        if (forEdit === true || (forEdit !== false && flyView.planController.containsItems)) {
+            agricultureSprayingMissionView.resumeRouteMappingForEdit()
+        }
+    }
+    // Route mapping mission file
+    function showRouteMappingView(forEdit) {
+        activeMissionEditor = "routeMapping"
+        flyView.visible = false
+        planView.visible = false
+        customMissionView.visible = false
+        agricultureSprayingMissionView.visible = false
+        seedSpraderMision.visible = false
         routeMappingView.visible = true
         toolDrawer.visible = false
+
+        if (forEdit === true || (forEdit !== false && flyView.planController.containsItems)) {
+            routeMappingView.resumeRouteMappingForEdit()
+        }
+    }
+
+    function showSeedSpraderMissionView(forEdit) {
+        activeMissionEditor = "seedSpreader"
+        flyView.visible = false
+        planView.visible = false
+        customMissionView.visible = false
+        routeMappingView.visible = false
+        agricultureSprayingMissionView.visible = false
+        seedSpraderMision.visible = true
+        toolDrawer.visible = false
+
+        if (forEdit === true || (forEdit !== false && flyView.planController.containsItems)) {
+            seedSpraderMision.resumeRouteMappingForEdit()
+        }
     }
 
     function showFlyView() {
         flyView.visible = true
         planView.visible = false
+        customMissionView.visible = false
+        agricultureSprayingMissionView.visible = false
         routeMappingView.visible = false
+        seedSpraderMision.visible = false
         toolDrawer.visible = false
+    }
+
+    function resetRouteMappingPlanState(removeFromVehicle) {
+        routeMappingView.resetRouteMappingPlanState()
+
+        if (planView._planMasterController.containsItems) {
+            planView._planMasterController.removeAll()
+            planView._planMasterController.dirty = false
+        }
+
+        if (customMissionView._planMasterController.containsItems) {
+            customMissionView._planMasterController.removeAll()
+            customMissionView._planMasterController.dirty = false
+        }
+
+        flyView.clearRouteMappingOverlay(true)
+        flyView.hideVehicleMissionForUnuploadedRoute = false
+        flyView.clearFlyViewFlightTraces()
+        flyView.planEditMode = false
+
+        var flyPlanController = flyView.planController
+        if (flyPlanController) {
+            if (flyPlanController.containsItems) {
+                flyPlanController.removeAll()
+            }
+            if (removeFromVehicle && !flyPlanController.offline) {
+                flyPlanController.removeAllFromVehicle()
+            }
+            flyPlanController.dirty = false
+            flyPlanController.missionController.setCurrentPlanViewSeqNum(0, true)
+        }
+
+        if (removeFromVehicle && QGroundControl.utmspSupported) {
+            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(false)
+            UTMSPStateStorage.startTimeStamp = ""
+            UTMSPStateStorage.showActivationTab = false
+            UTMSPStateStorage.flightID = ""
+            UTMSPStateStorage.enableMissionUploadButton = false
+            UTMSPStateStorage.indicatorPendingStatus = true
+            UTMSPStateStorage.indicatorApprovedStatus = false
+            UTMSPStateStorage.indicatorActivatedStatus = false
+            UTMSPStateStorage.currentStateIndex = 0
+        }
+    }
+
+    // Clears Fly View / Route Mapping / Plan View when the vehicle fully
+    // disconnects. Do NOT clear on temporary communicationLost — that can fire
+    // during mission upload and would remove the plan / hide Start Mission.
+    function clearPlansOnVehicleLost() {
+        var preserveUploadedRoute = routeMappingView._routeMappingPlanUploaded
+                                     && routeMappingView._uploadedRouteMappingOverlayData
+                                     && routeMappingView._uploadedRouteMappingOverlayData.transectPath
+                                     && routeMappingView._uploadedRouteMappingOverlayData.transectPath.length >= 2
+
+        if (preserveUploadedRoute) {
+            routeMappingView.clearEditorStateForVehicleDisconnect()
+        } else {
+            routeMappingView.resetRouteMappingPlanState()
+        }
+
+        if (planView._planMasterController.containsItems) {
+            planView._planMasterController.removeAll()
+            planView._planMasterController.dirty = false
+        }
+
+        if (customMissionView._planMasterController.containsItems) {
+            customMissionView._planMasterController.removeAll()
+            customMissionView._planMasterController.dirty = false
+        }
+
+        flyView.hideVehicleMissionForUnuploadedRoute = false
+        flyView.planEditMode = false
+
+        var flyPlanController = flyView.planController
+        if (flyPlanController) {
+            if (flyPlanController.containsItems) {
+                flyPlanController.removeAll()
+            }
+            flyPlanController.dirty = false
+            flyPlanController.missionController.setCurrentPlanViewSeqNum(0, true)
+        }
+
+        if (!preserveUploadedRoute) {
+            flyView.clearRouteMappingOverlay(true)
+        }
+        flyView.clearFlyViewFlightTraces()
+    }
+
+    Connections {
+        target: QGroundControl.multiVehicleManager
+
+        function onActiveVehicleChanged(activeVehicle) {
+            if (!activeVehicle) {
+                mainWindow.clearPlansOnVehicleLost()
+            }
+        }
+
+        function onVehicleRemoved(vehicle) {
+            mainWindow.clearPlansOnVehicleLost()
+        }
+    }
+
+    function hasRouteMappingPlanToClear() {
+        if (routeMappingView._hasRouteMappingContent || flyView._hasFlyViewPlanContent) {
+            return true
+        }
+
+        var activeVehicle = QGroundControl.multiVehicleManager.activeVehicle
+        if (activeVehicle && activeVehicle.trajectoryPoints) {
+            var tracePoints = activeVehicle.trajectoryPoints.list()
+            if (tracePoints.length > 0) {
+                return true
+            }
+        }
+
+        return false
+    }
+
+    function confirmClearRouteMappingPlan() {
+        if (!hasRouteMappingPlanToClear()) {
+            showMessageDialog(
+                        qsTr("Clear"),
+                        qsTr("There is no plan to clear."),
+                        Dialog.Ok,
+                        null,
+                        null,
+                        true,
+                        true)
+            return
+        }
+
+        showMessageDialog(
+                    qsTr("Clear"),
+                    qsTr("Are you sure you want to remove all items from the route mapping plan?"),
+                    Dialog.Yes | Dialog.Cancel,
+                    function() {
+                        var activeVehicle = QGroundControl.multiVehicleManager.activeVehicle
+                        var removeFromVehicle = activeVehicle !== null
+                        resetRouteMappingPlanState(removeFromVehicle)
+                    })
     }
 
     function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav) {
@@ -173,8 +406,16 @@ ApplicationWindow {
     //-------------------------------------------------------------------------
     //-- Global simple message dialog
 
-    function showMessageDialog(dialogTitle, dialogText, buttons = Dialog.Ok, acceptFunction = null, closeFunction = null) {
-        simpleMessageDialogComponent.createObject(mainWindow, { title: dialogTitle, text: dialogText, buttons: buttons, acceptFunction: acceptFunction, closeFunction: closeFunction }).open()
+    function showMessageDialog(dialogTitle, dialogText, buttons = Dialog.Ok, acceptFunction = null, closeFunction = null, compact = false, largeTitleText = false) {
+        simpleMessageDialogComponent.createObject(mainWindow, {
+            title: dialogTitle,
+            text: dialogText,
+            buttons: buttons,
+            acceptFunction: acceptFunction,
+            closeFunction: closeFunction,
+            compact: compact,
+            largeTitleText: largeTitleText
+        }).open()
     }
 
     // This variant is only meant to be called by QGCApplication
@@ -282,12 +523,31 @@ ApplicationWindow {
         anchors.fill:   parent
         visible:        false
     }
+    SeedSpraderMissionView{
+        id:  seedSpraderMision
+        anchors.fill: parent
+        visible:  false
+    }
 
+    CustomMissionView {
+        id:             customMissionView
+        anchors.fill:   parent
+        visible:        false
+    }
+
+    AgricultureSprayingMissionView {
+        id:             agricultureSprayingMissionView
+        anchors.fill:   parent
+        visible:        false
+    }
+
+    // This is the route mapping redirect file
     RouteMappingView {
         id:             routeMappingView
         anchors.fill:   parent
         visible:        false
     }
+
 
     footer: LogReplayStatusBar {
         visible: QGroundControl.settingsManager.flyViewSettings.showLogReplayStatusBar.rawValue

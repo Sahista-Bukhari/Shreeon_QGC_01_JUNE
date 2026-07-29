@@ -9,6 +9,7 @@ import QGroundControl.Controls
 QGCPopupDialog {
     title:   qsTr("Altitude Mode")
     buttons: Dialog.Close
+    minimumContentHeight: ScreenTools.defaultFontPixelHeight * 12
 
     property var rgRemoveModes
     property var updateAltModeFn
@@ -64,11 +65,14 @@ QGCPopupDialog {
     }
 
     Column {
-        spacing: ScreenTools.defaultFontPixelWidth
+        width:      parent ? parent.width : implicitWidth
+        spacing:    ScreenTools.defaultFontPixelHeight * 0.55
 
         QGCLabel {
-            text: qsTr("Altitude mode for mission items")
-            font.pointSize: ScreenTools.smallFontPointSize
+            width:               parent.width
+            text:                qsTr("Altitude mode for mission items")
+            font.pointSize:      ScreenTools.smallFontPointSize
+            horizontalAlignment: Text.AlignHCenter
         }
 
         Repeater {
@@ -77,6 +81,11 @@ QGCPopupDialog {
             Button {
                 hoverEnabled:   true
                 checked:        modeValue == currentAltMode
+                width:          parent.width
+                leftPadding:    ScreenTools.defaultFontPixelWidth
+                rightPadding:   ScreenTools.defaultFontPixelWidth
+                topPadding:     ScreenTools.defaultFontPixelHeight * 0.35
+                bottomPadding:  ScreenTools.defaultFontPixelHeight * 0.35
 
                 background: Rectangle {
                     radius: ScreenTools.defaultFontPixelHeight / 2
@@ -84,16 +93,19 @@ QGCPopupDialog {
                 }
 
                 contentItem: Column {
-                    spacing: 0
+                    width:   parent.width
+                    spacing: ScreenTools.defaultFontPixelHeight * 0.05
 
                     QGCLabel {
-                        id:     modeNameLabel
-                        text:   modeName
-                        color:  pressed | hovered | checked ? QGroundControl.globalPalette.buttonHighlightText: QGroundControl.globalPalette.buttonText
+                        id:                  modeNameLabel
+                        width:               parent.width
+                        text:                modeName
+                        color:               pressed | hovered | checked ? QGroundControl.globalPalette.buttonHighlightText: QGroundControl.globalPalette.buttonText
+                        horizontalAlignment: Text.AlignLeft
                     }
 
                     QGCLabel {
-                        width:              ScreenTools.defaultFontPixelWidth * 40
+                        width:              parent.width
                         text:               help
                         wrapMode:           Label.WordWrap
                         font.pointSize:     ScreenTools.smallFontPointSize

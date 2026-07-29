@@ -33,6 +33,7 @@ qt_add_qml_module(FlyViewModule
         FlyViewGripperDropPanel.qml
         FlyViewMap.qml
         FlyViewMapTools.qml
+        FlyViewMappingProgressPanel.qml
         FlyViewMissionCompleteDialog.qml
         FlyViewMissionPanel.qml
         FlyViewPlanRightPanel.qml
@@ -43,6 +44,8 @@ qt_add_qml_module(FlyViewModule
         FlyViewTopRightPanel.qml
         FlyViewVideo.qml
         FlyViewWidgetLayer.qml
+        GuidedActionChangeAltitude.qml
+        GuidedActionChangeSpeed.qml
         GuidedActionConfirm.qml
         GuidedActionLand.qml
         GuidedActionPause.qml

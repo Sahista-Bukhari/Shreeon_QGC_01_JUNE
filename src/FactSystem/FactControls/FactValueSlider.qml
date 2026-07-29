@@ -69,8 +69,9 @@ Rectangle {
         id: editDialogComponent
 
         ParameterEditorDialog {
-            fact:       _fact
-            setFocus:   ScreenTools.isMobile ? false : true // Works around strange android bug where wrong virtual keyboard is displayed
+            fact:                _fact
+            compactValueDetails: true
+            setFocus:            ScreenTools.isMobile ? false : true // Works around strange android bug where wrong virtual keyboard is displayed
         }
     }
 

@@ -11,31 +11,95 @@ Item {
     id: root
 
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
+    property var _guidedController: globals.guidedControllerFlyView
     property var blurSourceItem: null
-    property real _altitude: _activeVehicle && _activeVehicle.altitudeRelative ? _activeVehicle.altitudeRelative.rawValue : 0
-    property real _distanceToHome: _activeVehicle && _activeVehicle.distanceToHome ? _activeVehicle.distanceToHome.rawValue : 0
+    property real _altitude: {
+        if (!_activeVehicle || !_activeVehicle.altitudeRelative)
+            return 0
+        var v = Number(_activeVehicle.altitudeRelative.rawValue)
+        return isFinite(v) ? v : 0
+    }
+    property real _distanceToHome: {
+        if (!_activeVehicle || !_activeVehicle.distanceToHome)
+            return 0
+        var v = Number(_activeVehicle.distanceToHome.rawValue)
+        return isFinite(v) ? v : 0
+    }
 
-    // Flow rate
-    property real _flowRate: 18.0
-    property real _groundSpeed: _activeVehicle && _activeVehicle.groundSpeed ? _activeVehicle.groundSpeed.rawValue : 0
-    property real _heading: _activeVehicle && _activeVehicle.heading ? _activeVehicle.heading.rawValue : 0
+    // Flow rate (L/min) — live from tank.flowRateLpm
+    property real _flowRate: 0
+
+    Connections {
+        target: (root._activeVehicle && root._activeVehicle.tank) ? root._activeVehicle.tank.flowRateLpm : null
+        function onRawValueChanged(value) {
+            var v = Number(value)
+            root._flowRate = isFinite(v) ? v : 0
+        }
+    }
+    property real _groundSpeed: {
+        if (!_activeVehicle || !_activeVehicle.groundSpeed)
+            return 0
+        var v = Number(_activeVehicle.groundSpeed.rawValue)
+        return isFinite(v) ? v : 0
+    }
+    property bool _showCommandedAltitude: _guidedController && isFinite(_guidedController.commandedAltitudeMeters)
+    property bool _showCommandedSpeed: _guidedController && isFinite(_guidedController.commandedSpeedMetersSecond)
+    property real _displayAltitude: _showCommandedAltitude ? Number(_guidedController.commandedAltitudeMeters) : _altitude
+    property real _displayGroundSpeed: _showCommandedSpeed ? Number(_guidedController.commandedSpeedMetersSecond) : _groundSpeed
+    property real _heading: {
+        if (!_activeVehicle || !_activeVehicle.heading)
+            return 0
+        var v = Number(_activeVehicle.heading.rawValue)
+        return isFinite(v) ? v : 0
+    }
     property real _margins: ScreenTools.defaultFontPixelWidth
     property Fact _mpcAltModeFact: paramLoader.item ? paramLoader.item.fact : null
-    property bool _obstacleAvoidanceActive: false
+    property Fact _cpDistFact: paramLoader.item ? paramLoader.item.cpDistFact : null
+    property bool _obstacleAvoidanceActive: _cpDistFact ? _cpDistFact.rawValue > 0 : false
     property bool _terrainFlowIconActive: false
     property bool _paramExists: paramLoader.item ? paramLoader.item.paramExists : false
-    property real _pitch: _activeVehicle && _activeVehicle.pitch ? _activeVehicle.pitch.rawValue : 0
-    property real _roll: _activeVehicle && _activeVehicle.roll ? _activeVehicle.roll.rawValue : 0
-    property bool _greenLoopRunning: root.visible && root._activeVehicle && root._activeVehicle.flying
+    property real _pitch: {
+        if (!_activeVehicle || !_activeVehicle.pitch)
+            return 0
+        var v = Number(_activeVehicle.pitch.rawValue)
+        return isFinite(v) ? v : 0
+    }
+    property real _roll: {
+        if (!_activeVehicle || !_activeVehicle.roll)
+            return 0
+        var v = Number(_activeVehicle.roll.rawValue)
+        return isFinite(v) ? v : 0
+    }
+    property bool _greenLoopRunning: root.visible
+                                     && root._activeVehicle
+                                     && root._activeVehicle.flying
+                                     && !root._activeVehicle.communicationLost
+
+    Timer {
+        interval: 1000
+        repeat: true
+        running: root._showCommandedAltitude || root._showCommandedSpeed
+        onTriggered: {
+            if (root._guidedController && root._showCommandedAltitude && Math.abs(root._altitude - root._guidedController.commandedAltitudeMeters) < 0.3) {
+                root._guidedController.commandedAltitudeMeters = NaN
+            }
+            if (root._guidedController && root._showCommandedSpeed && Math.abs(root._groundSpeed - root._guidedController.commandedSpeedMetersSecond) < 0.3) {
+                root._guidedController.commandedSpeedMetersSecond = NaN
+            }
+        }
+    }
 
     // Tank (kg)
     // _tankCapacityMax : fixed UI max for fill-bar percentage (20 kg)
     // _tankCurrentLevel: live value from PX4 NAMED_VALUE_FLOAT name "LC_WEIGHT"
     //                    via VehicleTankFactGroup -> activeVehicle.tank.weightKg
     property real _tankCapacityMax: 20.0
-    property real _tankCurrentLevel: _activeVehicle && _activeVehicle.tank && _activeVehicle.tank.weightKg
-        ? _activeVehicle.tank.weightKg.rawValue
-        : 0
+    property real _tankCurrentLevel: {
+        if (!_activeVehicle || !_activeVehicle.tank || !_activeVehicle.tank.weightKg)
+            return 0
+        var v = Number(_activeVehicle.tank.weightKg.rawValue)
+        return isFinite(v) ? v : 0
+    }
     property bool _terrainFlowActive: _mpcAltModeFact ? _mpcAltModeFact.rawValue === 1 : false
 
     // Action buttons model for horizontal panel above bottom bar
@@ -54,8 +118,29 @@ Item {
     property alias terrainFlowActive: root._terrainFlowActive
 
     function toggleObstacleAvoidance() {
-        _obstacleAvoidanceActive = !_obstacleAvoidanceActive;
-        console.log("Obstacle Avoidance toggle: " + _obstacleAvoidanceActive);
+        if (_cpDistFact) {
+            var enabling = _cpDistFact.rawValue <= 0
+            _cpDistFact.value = enabling ? 5 : -1
+            QGroundControl.settingsManager.flyViewSettings.showObstacleDistanceOverlay.value = enabling ? 1 : 0
+            console.log("Obstacle Avoidance toggle: CP_DIST=" + _cpDistFact.rawValue)
+            return
+        }
+
+        if (!_activeVehicle || !_activeVehicle.objectAvoidance) {
+            console.log("Obstacle Avoidance toggle FAILED: no vehicle or CP_DIST parameter")
+            return
+        }
+
+        var oa = _activeVehicle.objectAvoidance
+        if (oa.enabled) {
+            oa.stop()
+            QGroundControl.settingsManager.flyViewSettings.showObstacleDistanceOverlay.value = 0
+            console.log("Obstacle Avoidance toggle: OFF")
+        } else {
+            oa.start(5)
+            QGroundControl.settingsManager.flyViewSettings.showObstacleDistanceOverlay.value = 1
+            console.log("Obstacle Avoidance toggle: ON (CP_DIST=5)")
+        }
     }
     function toggleTerrainFlow() {
         if (_mpcAltModeFact) {
@@ -94,9 +179,15 @@ Item {
     on_ActiveVehicleChanged: {
         console.log("TerrainFlow: Active vehicle changed, reloading controller...");
         _terrainFlowIconActive = false;
-        _obstacleAvoidanceActive = false;
         paramLoader.active = false;
         paramLoader.active = true;
+
+        if (_activeVehicle && _activeVehicle.tank && _activeVehicle.tank.flowRateLpm) {
+            var v = Number(_activeVehicle.tank.flowRateLpm.rawValue)
+            _flowRate = isFinite(v) ? v : 0
+        } else {
+            _flowRate = 0
+        }
     }
 
     // === TERRAIN FLOW PARAMETER ===
@@ -130,6 +221,12 @@ Item {
                 // Fallback to strict component 1
                 return controller.getParameterFact(1, "MPC_ALT_MODE");
             }
+            property Fact cpDistFact: {
+                if (!paramsReady && !controller.parameterExists(-1, "CP_DIST"))
+                    return null;
+
+                return controller.getParameterFact(-1, "CP_DIST");
+            }
             property bool paramExists: fact !== null
             // Re-evaluate when parameters become ready
             property bool paramsReady: _activeVehicle && _activeVehicle.parameterManager ? _activeVehicle.parameterManager.parametersReady : false
@@ -149,6 +246,16 @@ Item {
 
                 ignoreUnknownSignals: true
                 target: fact
+            }
+
+            Connections {
+                function onRawValueChanged() {
+                    console.log("Obstacle Avoidance: CP_DIST changed to " + cpDistFact.rawValue);
+                    paramLoader.item.cpDistFactChanged();
+                }
+
+                ignoreUnknownSignals: true
+                target: cpDistFact
             }
         }
     }
@@ -426,6 +533,8 @@ Item {
                         property string label
                         property string unit
                         property string value
+                        property bool clickable: false
+                        property var onStatClicked: null
 
                         Layout.fillHeight: true
                         implicitHeight: statCol.height
@@ -490,10 +599,23 @@ Item {
                                 }
                             }
                         }
+
+                        QGCMouseArea {
+                            id: statMouseArea
+                            anchors.fill: parent
+                            enabled: statRoot.clickable && typeof statRoot.onStatClicked === "function"
+                            hoverEnabled: enabled
+                            cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (typeof statRoot.onStatClicked === "function") {
+                                    statRoot.onStatClicked()
+                                }
+                            }
+                        }
                     }
                 }
 
-                // 1. ALTITUDE
+                // 1. ALTITUDE — tap while flying to change target altitude
                 Loader {
                     Layout.fillHeight: true
                     sourceComponent: statItemComponent
@@ -503,13 +625,21 @@ Item {
                         item.icon = "↑";
                         item.iconColor = "#00ff88";
                         item.value = Qt.binding(function () {
-                            return root._altitude.toFixed(1);
+                            return root._displayAltitude.toFixed(1);
                         });
                         item.unit = "m";
+                        item.clickable = Qt.binding(function () {
+                            return !!(root._guidedController && root._guidedController.showChangeAlt);
+                        });
+                        item.onStatClicked = function () {
+                            if (root._guidedController && root._guidedController.showChangeAlt) {
+                                root._guidedController.confirmAction(root._guidedController.actionChangeAlt);
+                            }
+                        };
                     }
                 }
 
-                // 2. GROUND SPEED
+                // 2. GROUND SPEED — tap while flying to change max cruise speed
                 Loader {
                     Layout.fillHeight: true
                     sourceComponent: statItemComponent
@@ -519,9 +649,17 @@ Item {
                         item.icon = "◎"; // Speedometer
                         item.iconColor = "#00ff88";
                         item.value = Qt.binding(function () {
-                            return root._groundSpeed.toFixed(1);
+                            return root._displayGroundSpeed.toFixed(1);
                         });
                         item.unit = "m/s";
+                        item.clickable = Qt.binding(function () {
+                            return !!(root._guidedController && root._guidedController.showChangeSpeed);
+                        });
+                        item.onStatClicked = function () {
+                            if (root._guidedController && root._guidedController.showChangeSpeed) {
+                                root._guidedController.confirmAction(root._guidedController.actionChangeSpeed);
+                            }
+                        };
                     }
                 }
 
@@ -553,7 +691,7 @@ Item {
                         item.value = Qt.binding(function () {
                             return root._flowRate.toFixed(1);
                         });
-                        item.unit = "L/m";
+                        item.unit = "L/min";
                     }
                 }
             } // End telemetryRow
@@ -591,7 +729,7 @@ Item {
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.32
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.50
                         text: root._tankCapacityMax.toFixed(0) + "kg"
                     }
                     Rectangle {
@@ -631,13 +769,13 @@ Item {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.colorBlue
                         font.bold: true
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.34
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.50
                         text: root._tankCurrentLevel.toFixed(1) + "kg"
                     }
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter
                         color: qgcPal.buttonText
-                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.28
+                        font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.50
                         text: "0kg"
                     }
                 }
@@ -785,6 +923,7 @@ Item {
                         z: 10
 
                         Canvas {
+                            id: obstacleAvoidCompassCanvas
                             anchors.fill: parent
                             property bool active: root._obstacleAvoidanceActive
 
@@ -818,12 +957,21 @@ Item {
                             anchors.fill: parent
                             cursorShape: Qt.PointingHandCursor
                             hoverEnabled: true
+                            enabled: root._cpDistFact || (root._activeVehicle && root._activeVehicle.objectAvoidance)
                             onClicked: root.toggleObstacleAvoidance()
 
                             ToolTip.visible: containsMouse
-                            ToolTip.text: root._obstacleAvoidanceActive
+                            ToolTip.text: !enabled ? qsTr("Obstacle Avoidance: Not Available")
+                                          : root._obstacleAvoidanceActive
                                           ? qsTr("Obstacle Avoidance: Active")
                                           : qsTr("Obstacle Avoidance: Off")
+                        }
+                    }
+
+                    Connections {
+                        target: root._activeVehicle ? root._activeVehicle.objectAvoidance : null
+                        function onObjectAvoidanceChanged() {
+                            obstacleAvoidCompassCanvas.requestPaint()
                         }
                     }
 

@@ -84,6 +84,7 @@
         <file alias="analyze-icon.svg">resources/icons/analyze-icon.svg</file>
         <file alias="vehicle-config-icon.svg">resources/icons/vehicle-config-icon.svg</file>
         <file alias="settings-icon.svg">resources/icons/settings-icon.svg</file>
+        <file alias="routeimg.png">resources/routeimg.png</file>
         <file alias="modern-icons/MaterialSymbolsAddLocationAlt.svg">resources/modern-icons/MaterialSymbolsAddLocationAlt.svg</file>
         <file alias="modern-icons/MaterialSymbolsEditLocationAlt.svg">resources/modern-icons/MaterialSymbolsEditLocationAlt.svg</file>
         <file alias="modern-icons/MaterialSymbolsLock.svg">resources/modern-icons/MaterialSymbolsLock.svg</file>
@@ -96,6 +97,9 @@
         <file alias="modern-icons/MaterialSymbolsExitToAppRounded.svg">resources/modern-icons/MaterialSymbolsExitToAppRounded.svg</file>
         <file alias="modern-icons/MaterialSymbolsLightDirectorySync.svg">resources/modern-icons/MaterialSymbolsLightDirectorySync.svg</file>
         <file alias="modern-icons/MaterialSymbolsStacksRounded.svg">resources/modern-icons/MaterialSymbolsStacksRounded.svg</file>
+        <file alias="modern-icons/MappingProgressRoute.svg">resources/modern-icons/MappingProgressRoute.svg</file>
+        <file alias="modern-icons/MappingProgressPhotos.svg">resources/modern-icons/MappingProgressPhotos.svg</file>
+        <file alias="modern-icons/MappingProgressReconstruction.svg">resources/modern-icons/MappingProgressReconstruction.svg</file>
         <file alias="map-type-previews/street-map.png">resources/map-type-previews/street-map.png</file>
         <file alias="map-type-previews/satellite.png">resources/map-type-previews/satellite.png</file>
         <file alias="map-type-previews/terrain.png">resources/map-type-previews/terrain.png</file>

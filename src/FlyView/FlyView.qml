@@ -31,12 +31,193 @@ Item {
     property int    _editingLayer:          _layerMission
     // Removed: _centerTargetMode - crosshair is now always visible in plan edit mode
     property bool   _showMissionStats:      false   // Show mission stats panel for Stats button
+    property bool   _importPlanForMission: false
     property var    routeMappingBoundaryPath: []
     property var    routeMappingTransectPath: []
+    property var    routeMappingTakeoffCoordinate: QtPositioning.coordinate()
     property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
     property var    routeMappingExitCoordinate: QtPositioning.coordinate()
     property real   routeMappingEntryHeading: 0
     property real   routeMappingExitHeading: 0
+    property int    routeMappingPlannedPhotoCount: 0
+    property bool   hideVehicleMissionForUnuploadedRoute: false
+    // Once a survey overlay has been painted (transfer/import), keep its geometry
+    // frozen for the whole mission. Only the drone position and progress update.
+    property bool   _routeMappingOverlayLocked: false
+
+    readonly property bool _hasFlyViewPlanContent: _planController.containsItems
+                                                   || routeMappingBoundaryPath.length > 0
+                                                   || routeMappingTransectPath.length > 0
+    function clearRouteMappingOverlay(force) {
+        // Locked survey geometry must survive mission progress, MAVLink rewrites,
+        // and airborne state unless the user explicitly clears the plan.
+        var vehicle = QGroundControl.multiVehicleManager.activeVehicle
+        if (!force && (_routeMappingOverlayLocked || (vehicle && (vehicle.flying || vehicle.armed)))) {
+            return
+        }
+        _routeMappingOverlayLocked = false
+        routeMappingBoundaryPath = []
+        routeMappingTransectPath = []
+        routeMappingTakeoffCoordinate = QtPositioning.coordinate()
+        routeMappingEntryCoordinate = QtPositioning.coordinate()
+        routeMappingExitCoordinate = QtPositioning.coordinate()
+        routeMappingEntryHeading = 0
+        routeMappingExitHeading = 0
+        routeMappingPlannedPhotoCount = 0
+        mapControl.resetRouteMappingProgress()
+    }
+
+    function clearFlyViewFlightTraces() {
+        var vehicle = QGroundControl.multiVehicleManager.activeVehicle
+        if (!vehicle) {
+            return
+        }
+        // Do not erase the red completed path while still airborne.
+        if (vehicle.flying) {
+            return
+        }
+        if (vehicle.trajectoryPoints) {
+            vehicle.trajectoryPoints.clear()
+        }
+        if (vehicle.clearCameraTriggerPoints) {
+            vehicle.clearCameraTriggerPoints()
+        }
+    }
+
+    function confirmAndClearPlan() {
+        mainWindow.confirmClearRouteMappingPlan()
+    }
+
+    function _routeMappingOverlayFromMission() {
+        // Never regenerate / rotate / shift a locked survey graphic. Mission
+        // progress and drone telemetry must not rewrite planned coordinates.
+        var vehicle = QGroundControl.multiVehicleManager.activeVehicle
+        if (_routeMappingOverlayLocked
+                || (vehicle && (vehicle.flying || vehicle.armed)
+                    && routeMappingTransectPath
+                    && routeMappingTransectPath.length >= 2)) {
+            return
+        }
+
+        var surveyItem = null
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var visualItem = _missionController.visualItems.get(i)
+            if (visualItem && visualItem.surveyAreaPolygon) {
+                surveyItem = visualItem
+                break
+            }
+        }
+
+        if (!surveyItem || !surveyItem.surveyAreaPolygon || !surveyItem.surveyAreaPolygon.isValid) {
+            // Keep any previously painted overlay; do not clear after vehicle
+            // flatten wipes SurveyComplexItem from visualItems.
+            return
+        }
+
+        var boundary = []
+        var polygonPath = surveyItem.surveyAreaPolygon.path
+        for (var b = 0; b < polygonPath.length; b++) {
+            var boundaryCoord = polygonPath[b]
+            boundary.push(QtPositioning.coordinate(boundaryCoord.latitude,
+                                                   boundaryCoord.longitude,
+                                                   boundaryCoord.altitude))
+        }
+        if (boundary.length >= 3) {
+            boundary.push(boundary[0])
+        }
+
+        var transectPath = []
+        var visualTransectPoints = surveyItem.visualTransectPoints
+        for (var j = 0; j < visualTransectPoints.length; j++) {
+            var transectCoord = visualTransectPoints[j]
+            transectPath.push(QtPositioning.coordinate(transectCoord.latitude,
+                                                       transectCoord.longitude,
+                                                       transectCoord.altitude))
+        }
+
+
+        var entryHeading = 0
+        var exitHeading = 0
+        if (visualTransectPoints.length >= 2) {
+            entryHeading = visualTransectPoints[0].azimuthTo(visualTransectPoints[1])
+            exitHeading = visualTransectPoints[visualTransectPoints.length - 2].azimuthTo(
+                        visualTransectPoints[visualTransectPoints.length - 1])
+        }
+
+        var takeoffCoord = QtPositioning.coordinate()
+        for (var t = 0; t < _missionController.visualItems.count; t++) {
+            var takeoffItem = _missionController.visualItems.get(t)
+            if (takeoffItem && takeoffItem.isTakeoffItem && takeoffItem.coordinate
+                    && takeoffItem.coordinate.isValid) {
+                takeoffCoord = QtPositioning.coordinate(takeoffItem.coordinate.latitude,
+                                                        takeoffItem.coordinate.longitude,
+                                                        takeoffItem.coordinate.altitude)
+                break
+            }
+        }
+
+        routeMappingBoundaryPath = boundary
+        routeMappingTransectPath = transectPath
+        routeMappingTakeoffCoordinate = takeoffCoord
+        routeMappingEntryCoordinate = surveyItem.coordinate
+        routeMappingExitCoordinate = surveyItem.exitCoordinate
+        routeMappingEntryHeading = entryHeading
+        routeMappingExitHeading = exitHeading
+        routeMappingPlannedPhotoCount = surveyItem.cameraShots ? surveyItem.cameraShots : 0
+        if (transectPath.length >= 2) {
+            _routeMappingOverlayLocked = true
+        }
+    }
+
+    function importFlyViewPlan(file) {
+        _planController.loadFromFile(file)
+        _missionController.setCurrentPlanViewSeqNum(0, true)
+        planEditMode = false
+        _editingLayer = _layerMission
+
+        missionImportFinalizeTimer.restart()
+    }
+
+    function openFlyViewPlanImportDialog() {
+       function openFilePicker(){
+           _importPlanForMission = true
+           planFileDialog.title = qsTr("Import your plan")
+           planFileDialog.planFiles = true
+           planFileDialog.nameFilters = _planController.loadNameFilters
+           planFileDialog.openForLoad()
+       }
+        if(_hasFlyViewPlanContent){
+            mainWindow.showMessageDialog(
+                        qsTr("import plan"),
+                        qsTr(" A plan is already loaded. Please clear the current plan first."),
+                        Dialog.Ok)
+            return
+        }
+        if(_planController.dirty){
+            mainWindow.showMessageDialog(
+                        qsTr("Open plan"),
+                        qsTr("You have unsaved/unsent changes. Loading a new Plan will lose these changes. Are you sure?"),
+                        Dialog.Ok | Dialog.Cancel,
+                        openFilePicker
+                        )
+            return
+        }
+        openFilePicker()
+
+    }
+    Timer {
+        id: missionImportFinalizeTimer
+        interval: 0
+        repeat: false
+        onTriggered: {
+            _routeMappingOverlayFromMission()
+            if (_planController.containsItems && !_planController.offline) {
+                if (_planController.readyForSaveState() === VisualMissionItem.ReadyForSave) {
+                    _planController.upload()
+                }
+            }
+        }
+    }
 
     readonly property int _layerMission:    1
     readonly property int _layerFence:      2
@@ -47,7 +228,10 @@ Item {
 
     PlanMasterController {
         id:                     _planController
-        flyView:                false   // Must be false for proper plan editing with correct terrain calculations
+        // Must be true so currentMissionIndex / Start Mission / altitude-resume
+        // track the live vehicle. Survey geometry stays frozen via the locked
+        // route-mapping overlay + skip-reload while armed/flying — not via flyView:false.
+        flyView:                true
         Component.onCompleted:  start()
 
         property var _missionController: _planController.missionController
@@ -146,8 +330,13 @@ Item {
         }
 
         onAcceptedForLoad: (file) => {
-            _planController.loadFromFile(file)
-            _missionController.setCurrentPlanViewSeqNum(0, true)
+            if (_importPlanForMission) {
+                _importPlanForMission = false
+                _root.importFlyViewPlan(file)
+            } else {
+                _planController.loadFromFile(file)
+                _missionController.setCurrentPlanViewSeqNum(0, true)
+            }
             close()
         }
     }
@@ -155,6 +344,11 @@ Item {
     property bool   _mainWindowIsMap:       mapControl.pipState.state === mapControl.pipState.fullState
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? mapControl.isSatelliteMap : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
+    // QmlObjectListModel.count is notified for every confirmed camera capture,
+    // so this remains live for the complete flight and resets when arming.
+    readonly property int routeMappingPhotosTaken: (_activeVehicle && _activeVehicle.cameraTriggerPoints)
+                                                   ? _activeVehicle.cameraTriggerPoints.count : 0
+    readonly property bool missionRunning:  _guidedController ? _guidedController._missionActive : false
     property var    _missionController:     _planController.missionController
     property var    _geoFenceController:    _planController.geoFenceController
     property var    _rallyPointController:  _planController.rallyPointController
@@ -167,7 +361,7 @@ Item {
     property real   _rightPanelWidth:       ScreenTools.defaultFontPixelWidth * 30
     property var    _mapControl:            mapControl
     property real   _widgetMargin:          ScreenTools.defaultFontPixelWidth * 0.75
-
+    property bool   _missionResyncPending:  false
 
     property real   _fullItemZorder:    0
     property real   _pipItemZorder:     QGroundControl.zOrderWidgets
@@ -180,6 +374,104 @@ Item {
 
         function onNewItemsFromVehicle() {
             _missionController.setCurrentPlanViewSeqNum(0, true)
+            if (_missionResyncPending) {
+                _missionResyncPending = false
+                missionResyncTimeoutTimer.stop()
+                _handleMissionResyncComplete()
+            }
+        }
+    }
+
+    Connections {
+        target: _activeVehicle ? _activeVehicle.vehicleLinkManager : null
+
+        function onCommunicationLostChanged(lost) {
+            if (!lost) {
+                _scheduleMissionResyncFromVehicle()
+            }
+        }
+    }
+
+    Connections {
+        target: QGroundControl.multiVehicleManager
+
+        function onActiveVehicleChanged(vehicle) {
+            if (vehicle && !vehicle.flying) {
+                _scheduleMissionResyncFromVehicle()
+            }
+        }
+    }
+
+    Connections {
+        target: _activeVehicle
+        ignoreUnknownSignals: true
+
+        function onInitialPlanRequestCompleteChanged(complete) {
+            if (complete) {
+                _scheduleMissionResyncFromVehicle()
+            }
+        }
+    }
+
+    Timer {
+        id: missionResyncDebounceTimer
+        interval: 1000
+        repeat: false
+        onTriggered: _beginMissionResyncFromVehicle()
+    }
+
+    Timer {
+        id: missionResyncTimeoutTimer
+        interval: 8000
+        repeat: false
+        onTriggered: {
+            if (_root._missionResyncPending) {
+                _root._missionResyncPending = false
+                _root._handleMissionResyncComplete()
+            }
+        }
+    }
+
+    function _scheduleMissionResyncFromVehicle() {
+        if (!_activeVehicle || _activeVehicle.flying) {
+            return
+        }
+        missionResyncDebounceTimer.restart()
+    }
+
+    function _beginMissionResyncFromVehicle() {
+        if (!_activeVehicle || _planController.offline || _activeVehicle.flying
+                || _planController.syncInProgress) {
+            return
+        }
+        if (!_activeVehicle.initialPlanRequestComplete) {
+            return
+        }
+        _missionResyncPending = true
+        _planController.reloadMissionFromVehicle()
+        missionResyncTimeoutTimer.restart()
+    }
+
+    // After link loss / reconnect, refresh from the vehicle. If the autopilot
+    // has no mission (reboot, partial loss), re-upload the last Route Mapping plan.
+    function _handleMissionResyncComplete() {
+        if (!_activeVehicle || _planController.syncInProgress) {
+            return
+        }
+
+        _planController.showPlanFromManagerVehicle()
+
+        if (routeMappingView.vehicleMissionIsStartable(_missionController)) {
+            routeMappingView.onFlyViewMissionResyncedFromVehicle()
+            return
+        }
+
+        if (routeMappingView.tryReuploadRouteMappingPlanAfterReconnect()) {
+            return
+        }
+
+        if (_planController.containsItems) {
+            _planController.upload()
         }
     }
 
@@ -261,11 +553,12 @@ Item {
             rallyPointController:   _root._rallyPointController
             routeMappingBoundaryPath: _root.routeMappingBoundaryPath
             routeMappingTransectPath: _root.routeMappingTransectPath
+            routeMappingTakeoffCoordinate: _root.routeMappingTakeoffCoordinate
             routeMappingEntryCoordinate: _root.routeMappingEntryCoordinate
             routeMappingExitCoordinate: _root.routeMappingExitCoordinate
             routeMappingEntryHeading: _root.routeMappingEntryHeading
             routeMappingExitHeading: _root.routeMappingExitHeading
-
+            hideVehicleMissionForUnuploadedRoute: _root.hideVehicleMissionForUnuploadedRoute
             onWaypointAdded: function(coordinate) {
                 _root.insertSimpleItemAfterCurrent(coordinate)
             }
@@ -284,7 +577,7 @@ Item {
 
         PipView {
             id:                     _pipView
-            anchors.left:           parent.left
+            anchors.left:           guidedValueSlider.visible && guidedValueSlider.leftSide ? guidedValueSlider.right : parent.left
             anchors.bottom:         parent.bottom
             anchors.margins:        _toolsMargin
             item1IsFullSettingsKey: "MainFlyWindowIsMap"
@@ -299,7 +592,7 @@ Item {
             width:                  height * (16/9)
             cornerRadius:           height * 0.15 // Decent squircle rounding
 
-            property real leftEdgeBottomInset: visible ? width + anchors.margins : 0
+            property real leftEdgeBottomInset: visible ? x + width : 0
             property real bottomEdgeLeftInset: visible ? height + anchors.margins : 0
 
             // Slide down with the bottom bar when entering plan edit mode
@@ -313,8 +606,8 @@ Item {
             id:                     widgetLayer
             anchors.top:            parent.top
             anchors.bottom:         parent.bottom
-            anchors.left:           parent.left
-            anchors.right:          guidedValueSlider.visible ? guidedValueSlider.left : parent.right
+            anchors.left:           guidedValueSlider.visible && guidedValueSlider.leftSide ? guidedValueSlider.right : parent.left
+            anchors.right:          guidedValueSlider.visible && !guidedValueSlider.leftSide ? guidedValueSlider.left : parent.right
             anchors.margins:        _widgetMargin
             anchors.topMargin:      toolbar.height + _widgetMargin
             z:                      (widgetLayer.bottomBar.terrainFlowActive || widgetLayer.bottomBar.obstacleAvoidanceActive) ? QGroundControl.zOrderTopMost + 1 : _fullItemZorder + 2
@@ -339,8 +632,8 @@ Item {
             id:                     widgetLayerInsetViewer
             anchors.top:            parent.top
             anchors.bottom:         parent.bottom
-            anchors.left:           parent.left
-            anchors.right:          guidedValueSlider.visible ? guidedValueSlider.left : parent.right
+            anchors.left:           guidedValueSlider.visible && guidedValueSlider.leftSide ? guidedValueSlider.right : parent.left
+            anchors.right:          guidedValueSlider.visible && !guidedValueSlider.leftSide ? guidedValueSlider.left : parent.right
             z:                      widgetLayer.z + 1
             insetsToView:           widgetLayer.totalToolInsets
             visible:                false
@@ -355,10 +648,12 @@ Item {
         //-- Guided value slider (e.g. altitude)
         GuidedValueSlider {
             id:                 guidedValueSlider
-            anchors.right:      parent.right
-            anchors.top:        parent.top
-            anchors.bottom:     parent.bottom
-            anchors.topMargin:  toolbar.height
+            x:                  leftSide ? 0 : parent.width - width
+            height:             compactMode
+                                    ? Math.max(0, Math.min(ScreenTools.defaultFontPixelHeight * 18,
+                                                           parent.height - toolbar.height - (_widgetMargin * 2)))
+                                    : Math.max(0, parent.height - toolbar.height)
+            y:                  compactMode ? toolbar.height + ((parent.height - toolbar.height - height) / 2) : toolbar.height
             z:                  QGroundControl.zOrderTopMost
             visible:            false
         }
@@ -595,13 +890,13 @@ Item {
         }
     }
 
-    // "+ Add" / "Edit" / "Course Lock" button on right side center
-    // Shows "Add" when no plan, "Edit" when plan exists, "Course Lock" when mission is running
+    // "+ Add" / "Edit" / "Editing Locked" button on right side center
+    // Shows "Add" when no plan, "Edit" when plan exists, "Editing Locked" when mission is running
     Rectangle {
         id: addButton
         
-        property bool _missionRunning: _root._activeVehicle ? _root._activeVehicle.flying && _root._activeVehicle.flightMode === _root._activeVehicle.missionFlightMode : false
-        property bool _hasPlan: _root._missionController ? _root._missionController.visualItems.count > 1 : false
+        property bool _missionRunning: _root.missionRunning
+        property bool _hasPlan: _root._hasFlyViewPlanContent
         
         // Match the Route Mapping Save button.
         height: ScreenTools.defaultFontPixelHeight * 2
@@ -640,7 +935,7 @@ Item {
             // Text Label
             QGCLabel {
                 text: {
-                    if (addButton._missionRunning) return qsTr("Course Lock")
+                    if (addButton._missionRunning) return qsTr("Editing Locked")
                     if (addButton._hasPlan) return qsTr("Edit")
                     return qsTr("Add")
                 }
@@ -656,7 +951,7 @@ Item {
             anchors.fill: parent
             cursorShape: addButton._missionRunning ? Qt.ForbiddenCursor : Qt.PointingHandCursor
             enabled: !addButton._missionRunning
-            onClicked: mainWindow.showRouteMappingView()
+            onClicked: mainWindow.showActiveMissionEditor(addButton._hasPlan)
             onPressed: addButton.scale = 0.96
             onReleased: addButton.scale = 1.0
         }
@@ -670,10 +965,32 @@ Item {
         anchors.topMargin:  toolbar.height + ScreenTools.defaultFontPixelHeight * 0.5
         anchors.right:      parent.right
         anchors.rightMargin: ScreenTools.defaultFontPixelWidth
+        flyViewRoot:        _root
         planMasterController: _planController
         planEditMode:       _root.planEditMode
         visible:            !QGroundControl.videoManager.fullScreen && _root._mainWindowIsMap
         z:                  QGroundControl.zOrderTopMost + 10
+    }
+    // This is the flyviewmaiing progress bar code
+    FlyViewMappingProgressPanel {
+        id:                 mappingProgressPanel
+        anchors.top:        mapTools.bottom
+        anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 0.5
+        anchors.right:      parent.right
+        anchors.rightMargin: ScreenTools.defaultFontPixelWidth
+        z:                  QGroundControl.zOrderTopMost + 10
+
+        routePercent: mapControl ? mapControl.routeMappingProgressPercent : 0
+        photosTaken: _root.routeMappingPhotosTaken
+        photosPlanned: _root.routeMappingPlannedPhotoCount
+        reconstructionText: qsTr("Pending")
+
+        visible: !_root.planEditMode
+                 && !QGroundControl.videoManager.fullScreen
+                 && !mainWindow.modeSelectionVisible
+                 && _root._mainWindowIsMap
+                 && _root.routeMappingTransectPath
+                 && _root.routeMappingTransectPath.length >= 2
     }
 
     // Plan View Action Buttons (Bottom Right)

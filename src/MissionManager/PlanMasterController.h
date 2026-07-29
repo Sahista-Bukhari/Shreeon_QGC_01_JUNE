@@ -70,6 +70,8 @@ public:
     static void sendPlanToVehicle(Vehicle* vehicle, const QString& filename);
 
     Q_INVOKABLE void loadFromVehicle(void);
+    /// Fly View: force a fresh mission download from the vehicle (e.g. after reconnect).
+    Q_INVOKABLE void reloadMissionFromVehicle(void);
     Q_INVOKABLE void sendToVehicle(void);
     Q_INVOKABLE void loadFromFile(const QString& filename);
     Q_INVOKABLE void saveToCurrent();

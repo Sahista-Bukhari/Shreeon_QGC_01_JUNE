@@ -15,6 +15,7 @@ Rectangle {
     property var planMasterController
 
     signal missionUploaded()
+    signal exitPlanEditMode()
 
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property real _controllerProgressPct: planMasterController.missionController.progressPct
@@ -31,56 +32,62 @@ Rectangle {
         visible: qgcPal.globalTheme === QGCPalette.Light
     }
 
-    QGCToolBarButton {
-        id: qgcButton
-        height: parent.height
-        icon.source: "/res/QGCLogoFull.svg"
-        logo: true
-        onClicked: {
-            var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
-            mainWindow.showModeSelection(point)
-        }
-    }
+    RowLayout {
+        anchors.bottomMargin: 1
+        anchors.rightMargin: ScreenTools.defaultFontPixelWidth / 2
+        anchors.fill: parent
+        spacing: ScreenTools.defaultFontPixelWidth
 
-    // Back button to exit plan edit mode
-    signal exitPlanEditMode()
-    
-    Rectangle {
-        id: backButton
-        anchors.left: qgcButton.right
-        anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.5
-        anchors.verticalCenter: parent.verticalCenter
-        width: ScreenTools.defaultFontPixelWidth * 7
-        height: parent.height * 0.7
-        radius: ScreenTools.defaultFontPixelWidth * 0.3
-        color: backMouseArea.pressed ? qgcPal.buttonHighlight : qgcPal.button
-        
-        Row {
-            anchors.centerIn: parent
-            spacing: ScreenTools.defaultFontPixelWidth * 0.3
-            
-            Text {
-                text: "←"
-                font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
-                color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
-                anchors.verticalCenter: parent.verticalCenter
-            }
-            Text {
-                text: qsTr("Back")
-                font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.9
-                color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
-                anchors.verticalCenter: parent.verticalCenter
+        QGCToolBarButton {
+            id: qgcButton
+            Layout.fillHeight: true
+            icon.source: "/res/QGCLogoFull.svg"
+            logo: true
+            onClicked: {
+                var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
+                mainWindow.showModeSelection(point)
             }
         }
-        
-        MouseArea {
-            id: backMouseArea
-            anchors.fill: parent
-            onClicked: _root.exitPlanEditMode()
+
+        Rectangle {
+            id: backButton
+            Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 7
+            Layout.preferredHeight: parent.height * 0.7
+            Layout.alignment: Qt.AlignVCenter
+            radius: ScreenTools.defaultFontPixelWidth * 0.3
+            color: backMouseArea.pressed ? qgcPal.buttonHighlight : qgcPal.button
+
+            Row {
+                anchors.centerIn: parent
+                spacing: ScreenTools.defaultFontPixelWidth * 0.3
+
+                Text {
+                    text: "←"
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
+                    color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+                Text {
+                    text: qsTr("Back")
+                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.9
+                    color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
+                    anchors.verticalCenter: parent.verticalCenter
+                }
+            }
+
+            MouseArea {
+                id: backMouseArea
+                anchors.fill: parent
+                onClicked: _root.exitPlanEditMode()
+            }
+        }
+
+        PlanToolBarIndicators {
+            Layout.fillWidth: true
+            Layout.fillHeight: true
+            planMasterController: _root.planMasterController
         }
     }
-
-
 
     // Small mission download progress bar
     Rectangle {

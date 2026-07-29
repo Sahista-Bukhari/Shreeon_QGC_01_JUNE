@@ -131,9 +131,9 @@ Item {
     property bool showStartMission:         _guidedActionsEnabled && _missionAvailable && !_missionActive && !_vehicleFlying && _canStartMission
     property bool showContinueMission:      _guidedActionsEnabled && _missionAvailable && !_missionActive && _vehicleArmed && _vehicleFlying && (_currentMissionIndex < _missionItemCount - 1)
     property bool showPause:                _guidedActionsEnabled && _vehicleArmed && _activeVehicle.pauseVehicleSupported && _vehicleFlying && !_vehiclePaused && !_fixedWingOnApproach
-    property bool showChangeAlt:            _guidedActionsEnabled && _vehicleFlying && _activeVehicle.guidedModeSupported && _vehicleArmed && !_missionActive
+    property bool showChangeAlt:            _guidedActionsEnabled && _vehicleFlying && _activeVehicle.guidedModeSupported && _vehicleArmed
     property bool showChangeLoiterRadius:   _guidedActionsEnabled && _vehicleFlying && _activeVehicle.guidedModeSupported && _vehicleArmed && !_missionActive && _vehicleInFwdFlight && fwdFlightGotoMapCircle.visible
-    property bool showChangeSpeed:          _guidedActionsEnabled && _vehicleFlying && _activeVehicle.guidedModeSupported && _vehicleArmed && !_missionActive && _speedLimitsAvailable
+    property bool showChangeSpeed:          _guidedActionsEnabled && _vehicleFlying && _activeVehicle.guidedModeSupported && _vehicleArmed && _speedLimitsAvailable
     property bool showOrbit:                _guidedActionsEnabled && _vehicleFlying && __orbitSupported && !_missionActive && _activeVehicle.homePosition.isValid && !isNaN(_activeVehicle.homePosition.altitude)
     property bool showROI:                  _guidedActionsEnabled && _vehicleFlying && __roiSupported
     property bool showLandAbort:            _guidedActionsEnabled && _vehicleFlying && _fixedWingOnApproach
@@ -181,6 +181,26 @@ Item {
     property bool __roiSupported:           _activeVehicle ? !_hideROI && _activeVehicle.roiModeSupported : false
     property bool __orbitSupported:         _activeVehicle ? !_hideOrbit && _activeVehicle.orbitModeSupported : false
     property bool __flightMode:             _flightMode
+    property real commandedAltitudeMeters:  NaN
+    property real commandedSpeedMetersSecond: NaN
+    // Persistent cruise speed set by the pilot via Change Speed. Kept for the whole flight
+    // so mid-mission altitude resume can restore it after Mission mode reloads plan speed.
+    property real _userCruiseSpeedMetersSecond: NaN
+    // When Change Altitude exits Mission→Hold, showContinueMission becomes true and
+    // (by default) auto-opens Continue Mission. Confirming that resumes the plan and
+    // immediately flies the old mission altitudes again. Suppress that popup temporarily.
+    property bool _suppressAutoContinueMission: false
+    property bool _pendingAltMissionResume: false
+    property int  _pendingAltResumeIndex: -1
+    property int  _pendingAltResumeFromIndex: -1
+    property real _pendingAltResumeSpeed: NaN
+    property real _pendingAltTargetMeters: NaN
+    property int  _pendingAltPollCount: 0
+    property int  _restoreSpeedRetryCount: 0
+    property int  _pendingAltStartSequence: -1
+    property int  _pendingAltStartPollCount: 0
+    property real _pendingAltStartSpeed: NaN
+    property bool _pendingAltStartWriteOk: true
 
     // Allow custom builds to add custom actions by overriding CustomGuidedActionsController.qml
     CustomGuidedActionsController {
@@ -208,28 +228,52 @@ Item {
                 qsTr("Height (rel)"))
         } else if (actionCode === actionChangeSpeed) {
             if (_vehicleInFwdFlight) {
+                var currentAirspeed = _activeVehicle.airSpeed
+                                      ? _activeVehicle.airSpeed.rawValue
+                                      : _activeVehicle.minimumEquivalentAirspeed()
+                if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1) {
+                    currentAirspeed = commandedSpeedMetersSecond
+                } else if (isFinite(_userCruiseSpeedMetersSecond) && _userCruiseSpeedMetersSecond > 0.1) {
+                    currentAirspeed = _userCruiseSpeedMetersSecond
+                }
                 guidedValueSlider.setupSlider(
                     GuidedValueSlider.SliderType.Speed,
                     _unitsConversion.metersSecondToAppSettingsSpeedUnits(_activeVehicle.minimumEquivalentAirspeed()).toFixed(1),
                     _unitsConversion.metersSecondToAppSettingsSpeedUnits(_activeVehicle.maximumEquivalentAirspeed()).toFixed(1),
-                    _unitsConversion.metersSecondToAppSettingsSpeedUnits(_activeVehicle.airSpeed.rawValue),
+                    _unitsConversion.metersSecondToAppSettingsSpeedUnits(currentAirspeed),
                     qsTr("Airspeed"))
             } else if (!_vehicleInFwdFlight && _activeVehicle.haveMRSpeedLimits) {
+                // Prefer last commanded / pilot cruise speed, then live ground speed,
+                // so the slider opens on the value currently shown in the bottom bar.
+                var currentSpeedMs = NaN
+                if (isFinite(_userCruiseSpeedMetersSecond) && _userCruiseSpeedMetersSecond > 0.1) {
+                    currentSpeedMs = _userCruiseSpeedMetersSecond
+                } else if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1) {
+                    currentSpeedMs = commandedSpeedMetersSecond
+                } else if (_activeVehicle.groundSpeed && _activeVehicle.groundSpeed.rawValue > 0.1) {
+                    currentSpeedMs = _activeVehicle.groundSpeed.rawValue
+                } else {
+                    currentSpeedMs = _activeVehicle.maximumHorizontalSpeedMultirotor() / 2
+                }
                 guidedValueSlider.setupSlider(
                     GuidedValueSlider.SliderType.Speed,
                     _unitsConversion.metersSecondToAppSettingsSpeedUnits(0.1).toFixed(1),
                     _unitsConversion.metersSecondToAppSettingsSpeedUnits(_activeVehicle.maximumHorizontalSpeedMultirotor()).toFixed(1),
-                    _unitsConversion.metersSecondToAppSettingsSpeedUnits(_activeVehicle.maximumHorizontalSpeedMultirotor()/2).toFixed(1),
+                    _unitsConversion.metersSecondToAppSettingsSpeedUnits(currentSpeedMs),
                     qsTr("Speed"))
             } else {
                 console.error("setupSlider called for inapproproate change speed action", _vehicleInFwdFlight, _activeVehicle.haveMRSpeedLimits)
             }
         } else if (actionCode === actionChangeAlt || actionCode === actionOrbit || actionCode === actionGoto || actionCode === actionPause) {
+            var currentAlt = _activeVehicle.altitudeRelative.value
+            if (isFinite(commandedAltitudeMeters)) {
+                currentAlt = _unitsConversion.metersToAppSettingsVerticalDistanceUnits(commandedAltitudeMeters)
+            }
             guidedValueSlider.setupSlider(
                 GuidedValueSlider.SliderType.Altitude,
                 _flyViewSettings.guidedMinimumAltitude.value,
                 _flyViewSettings.guidedMaximumAltitude.value,
-                _activeVehicle.altitudeRelative.value,
+                currentAlt,
                 qsTr("Alt (rel)"))
         }
     }
@@ -276,10 +320,11 @@ Item {
     }
     onShowContinueMissionChanged: {
         if (_isGuidedActionsControllerLogEnabled()) {
-            console.log("showContinueMission", showContinueMission)
+            console.log("showContinueMission", showContinueMission, "suppress", _suppressAutoContinueMission)
         }
         _outputState()
         if (showContinueMission &&
+            !_suppressAutoContinueMission &&
             _flyViewSettings.enableAutomaticMissionPopups.rawValue) {
             confirmAction(actionContinueMission)
         }
@@ -326,6 +371,8 @@ Item {
             // We use _vehicleWasFLying to help trigger Resume Mission only if the vehicle actually flew and came back down.
             // Otherwise it may trigger during the Start Mission sequence due to signal ordering or armed and resume mission index.
             _vehicleWasFlying = true
+            _userCruiseSpeedMetersSecond = NaN
+            restoreSpeedAfterAltTimer.stop()
         }
     }
 
@@ -370,6 +417,242 @@ Item {
     function closeAll() {
         confirmDialog.visible = false
         guidedValueSlider.visible = false
+    }
+
+    Timer {
+        id: commandedAltitudeClearTimer
+        interval: 15000
+        repeat: false
+        onTriggered: _root.commandedAltitudeMeters = NaN
+    }
+
+    Timer {
+        id: commandedSpeedClearTimer
+        interval: 15000
+        repeat: false
+        onTriggered: _root.commandedSpeedMetersSecond = NaN
+    }
+
+    Timer {
+        id: suppressAutoContinueClearTimer
+        interval: 60000
+        repeat: false
+        onTriggered: {
+            if (!_root._pendingAltMissionResume) {
+                _root._suppressAutoContinueMission = false
+            }
+        }
+    }
+
+    // Wait until vehicle reaches commanded altitude, then update mission alts + resume
+    Timer {
+        id: altReachedPollTimer
+        interval: 500
+        repeat: true
+        running: false
+        onTriggered: {
+            if (!_root._pendingAltMissionResume || !_activeVehicle) {
+                stop()
+                return
+            }
+            _root._pendingAltPollCount++
+            var currentAlt = _activeVehicle.altitudeRelative.rawValue
+            var reached = Math.abs(currentAlt - _root._pendingAltTargetMeters) < 1.5
+            var timedOut = _root._pendingAltPollCount > 90 // ~45s
+            if (reached || timedOut) {
+                stop()
+                _root._finishAltitudeChangeAndResumeMission()
+            }
+        }
+    }
+
+    // Do not switch back to Mission until the autopilot reports the requested
+    // forward sequence. The first SET_CURRENT can arrive while PX4 is still
+    // finalizing the rewritten mission, so retry it while the vehicle is safely
+    // paused instead of only waiting for a confirmation that may never arrive.
+    Timer {
+        id: altResumeSequenceConfirmTimer
+        interval: 200
+        repeat: true
+        running: false
+        onTriggered: {
+            if (!_activeVehicle || _root._pendingAltStartSequence < 0) {
+                stop()
+                return
+            }
+
+            var currentSequence = (_activeVehicle.missionItemIndex)
+                                  ? Number(_activeVehicle.missionItemIndex.rawValue) : -1
+            // PX4 may immediately skip a reached item and report a later one.
+            // A later sequence is also safe; only an earlier sequence is rejected.
+            var validCurrentSequence = isFinite(currentSequence)
+                                       && currentSequence >= 0
+                                       && currentSequence < _root._missionItemCount
+            if (validCurrentSequence
+                    && currentSequence >= _root._pendingAltStartSequence) {
+                stop()
+                _root._startMissionAtConfirmedAltitudeSequence()
+                return
+            }
+
+            _root._pendingAltStartPollCount++
+            if ((_root._pendingAltStartPollCount % 5) === 0) {
+                // Retry once per second. MISSION_SET_CURRENT has no command ACK,
+                // and PX4 can ignore the first request at the end of an upload.
+                _activeVehicle.setCurrentMissionSequence(_root._pendingAltStartSequence)
+            }
+
+            if (_root._pendingAltStartPollCount >= 75) { // 15 seconds
+                stop()
+                _root._pendingAltStartSequence = -1
+                _root._pendingAltStartPollCount = 0
+                _root._pendingAltStartSpeed = NaN
+                _root._pendingAltStartWriteOk = true
+                _root._suppressAutoContinueMission = false
+                mainWindow.showMessageDialog(
+                    qsTr("Altitude Change"),
+                    qsTr("The next forward mission point could not be confirmed. The vehicle will remain paused to prevent it from flying backward."))
+            }
+        }
+    }
+
+    Connections {
+        target: _activeVehicle
+        enabled: _activeVehicle !== null
+        ignoreUnknownSignals: true
+        function onRemainingMissionAltitudeUpdated(success) {
+            if (!_root._pendingAltMissionResume) {
+                return
+            }
+            _root._resumeMissionAfterAltitudeChange(success)
+        }
+    }
+
+    function _finishAltitudeChangeAndResumeMission() {
+        if (!_activeVehicle || !_pendingAltMissionResume) {
+            return
+        }
+        // Rewrite remaining onboard waypoints to the new altitude (and cruise speed if set)
+        // so resume does not pull the old plan height/speed.
+        var speedForMission = isFinite(_pendingAltResumeSpeed) ? _pendingAltResumeSpeed : Number.NaN
+        _activeVehicle.updateRemainingMissionAltitudeRelative(_pendingAltTargetMeters, speedForMission)
+        // Safety timeout if write never completes
+        altMissionWriteTimeout.restart()
+    }
+
+    function _applyUserCruiseSpeed(metersSecondSpeed) {
+        if (!_activeVehicle || !isFinite(metersSecondSpeed) || metersSecondSpeed <= 0.1) {
+            return
+        }
+        commandedSpeedMetersSecond = metersSecondSpeed
+        commandedSpeedClearTimer.restart()
+        if (_vehicleInFwdFlight) {
+            _activeVehicle.guidedModeChangeEquivalentAirspeedMetersSecond(metersSecondSpeed)
+        } else {
+            _activeVehicle.guidedModeChangeGroundSpeedMetersSecond(metersSecondSpeed)
+        }
+    }
+
+    function _startMissionAtConfirmedAltitudeSequence() {
+        if (!_activeVehicle || _pendingAltStartSequence < 0) {
+            return
+        }
+
+        var resumeSpeed = _pendingAltStartSpeed
+        var altitudeWriteOk = _pendingAltStartWriteOk
+        _pendingAltStartSequence = -1
+        _pendingAltStartPollCount = 0
+        _pendingAltStartSpeed = NaN
+        _pendingAltStartWriteOk = true
+
+        _activeVehicle.startMission()
+
+        // Mission mode re-applies plan cruise shortly after startMission. Re-send the
+        // pilot's speed several times so it wins over the plan default.
+        if (isFinite(resumeSpeed) && resumeSpeed > 0.1) {
+            _pendingAltResumeSpeed = resumeSpeed
+            _restoreSpeedRetryCount = 0
+            restoreSpeedAfterAltTimer.restart()
+        }
+
+        // Allow Continue Mission popup again after we ourselves resumed.
+        suppressAutoContinueClearTimer.restart()
+        if (!altitudeWriteOk) {
+            mainWindow.showMessageDialog(
+                qsTr("Altitude Change"),
+                qsTr("Mission resumed, but updating remaining waypoints altitudes failed. The vehicle may return to the previous plan altitude."))
+        }
+    }
+
+    function _resumeMissionAfterAltitudeChange(altitudeWriteOk) {
+        altMissionWriteTimeout.stop()
+        if (!_activeVehicle || !_pendingAltMissionResume) {
+            return
+        }
+        var resumeFromIndex = _pendingAltResumeFromIndex
+        var resumeIndex = _pendingAltResumeIndex
+        var resumeSpeed = _pendingAltResumeSpeed
+        _pendingAltResumeSpeed = NaN
+        _pendingAltMissionResume = false
+        _pendingAltResumeIndex = -1
+        _pendingAltResumeFromIndex = -1
+        _pendingAltPollCount = 0
+
+        // Climb stays at current position (guided altitude). On resume, set current
+        // to the next WP ahead of the vehicle — never takeoff / never earlier WP.
+        // Re-evaluate after climb from the original floor so near WPs are skipped.
+        var fromIdx = resumeFromIndex >= 0 ? resumeFromIndex : resumeIndex
+        if (_activeVehicle.altitudeChangeResumeMissionSequence) {
+            var aheadIdx = _activeVehicle.altitudeChangeResumeMissionSequence(fromIdx)
+            if (aheadIdx >= 0) {
+                resumeIndex = aheadIdx
+            }
+        }
+        if (resumeIndex < 0) {
+            _suppressAutoContinueMission = false
+            mainWindow.showMessageDialog(
+                qsTr("Altitude Change"),
+                qsTr("No forward mission point remains. The vehicle will stay paused instead of flying backward."))
+            return
+        }
+
+        _pendingAltStartSequence = resumeIndex
+        _pendingAltStartPollCount = 0
+        _pendingAltStartSpeed = resumeSpeed
+        _pendingAltStartWriteOk = altitudeWriteOk
+        _activeVehicle.setCurrentMissionSequence(resumeIndex)
+        altResumeSequenceConfirmTimer.restart()
+    }
+
+    Timer {
+        id: restoreSpeedAfterAltTimer
+        interval: 800
+        repeat: true
+        running: false
+        onTriggered: {
+            if (!_activeVehicle || !isFinite(_root._pendingAltResumeSpeed) || _root._pendingAltResumeSpeed <= 0.1) {
+                stop()
+                return
+            }
+            _root._applyUserCruiseSpeed(_root._pendingAltResumeSpeed)
+            _root._restoreSpeedRetryCount++
+            // Apply a few times after mission mode settles (0.8s, 1.6s, 2.4s, 3.2s, 4.0s)
+            if (_root._restoreSpeedRetryCount >= 5) {
+                stop()
+                _root._pendingAltResumeSpeed = NaN
+            }
+        }
+    }
+
+    Timer {
+        id: altMissionWriteTimeout
+        interval: 20000
+        repeat: false
+        onTriggered: {
+            if (_root._pendingAltMissionResume) {
+                _root._resumeMissionAfterAltitudeChange(false)
+            }
+        }
     }
 
     // Called when an action is about to be executed in order to confirm
@@ -517,9 +800,9 @@ Item {
             confirmDialog.hideTrigger = Qt.binding(function() { return !showROI })
             break;
         case actionChangeSpeed:
-            confirmDialog.hideTrigger = true
             confirmDialog.title = changeSpeedTitle
             confirmDialog.message = changeSpeedMessage
+            confirmDialog.hideTrigger = Qt.binding(function() { return !showChangeSpeed })
             guidedValueSlider.visible = true
             break
         case actionSetHome:
@@ -611,7 +894,46 @@ Item {
         case actionChangeAlt:
             var valueInMeters = _unitsConversion.appSettingsVerticalDistanceUnitsToMeters(sliderOutputValue)
             var altitudeChangeInMeters = valueInMeters - _activeVehicle.altitudeRelative.rawValue
-            _activeVehicle.guidedModeChangeAltitude(altitudeChangeInMeters, false /* pauseVehicle */)
+            commandedAltitudeMeters = valueInMeters
+            commandedAltitudeClearTimer.restart()
+            // Changing altitude leaves Mission for Hold (drone slows/stops while climbing).
+            // After the new altitude is reached we update remaining waypoint altitudes and
+            // auto-resume Mission so the route continues at the new height.
+            if (_vehicleInMissionMode) {
+                _suppressAutoContinueMission = true
+                suppressAutoContinueClearTimer.restart()
+                _pendingAltMissionResume = true
+                // Capture the live index now (before Hold / mission rewrite clears it).
+                // Resume continues forward from here to the next WP ahead — never takeoff/back.
+                var fromIdx = (_activeVehicle && _activeVehicle.missionItemIndex)
+                              ? _activeVehicle.missionItemIndex.rawValue : _currentMissionIndex
+                _pendingAltResumeFromIndex = fromIdx
+                _pendingAltResumeIndex = fromIdx
+                if (_activeVehicle.altitudeChangeResumeMissionSequence) {
+                    var aheadIdx = _activeVehicle.altitudeChangeResumeMissionSequence(fromIdx)
+                    if (aheadIdx >= 0) {
+                        _pendingAltResumeIndex = aheadIdx
+                    }
+                }
+                _pendingAltTargetMeters = valueInMeters
+                _pendingAltPollCount = 0
+                // Prefer the last speed the pilot set, then live commanded display, then current GS.
+                if (isFinite(_userCruiseSpeedMetersSecond) && _userCruiseSpeedMetersSecond > 0.1) {
+                    _pendingAltResumeSpeed = _userCruiseSpeedMetersSecond
+                } else if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1) {
+                    _pendingAltResumeSpeed = commandedSpeedMetersSecond
+                } else if (_activeVehicle.groundSpeed && _activeVehicle.groundSpeed.rawValue > 0.5) {
+                    _pendingAltResumeSpeed = _activeVehicle.groundSpeed.rawValue
+                } else {
+                    _pendingAltResumeSpeed = NaN
+                }
+                altReachedPollTimer.restart()
+            }
+            // Hold the live vehicle position before applying the altitude target.
+            // Without this pause PX4 can retain the active mission waypoint as
+            // the horizontal reposition target and climb away from the current
+            // aircraft position.
+            _activeVehicle.guidedModeChangeAltitude(altitudeChangeInMeters, true /* pauseVehicle */)
             break
         case actionChangeLoiterRadius:
             _activeVehicle.guidedModeGotoLocation(
@@ -656,6 +978,9 @@ Item {
             if (_activeVehicle) {
                 // We need to convert back to m/s as that is what mavlink standard uses for MAV_CMD_DO_CHANGE_SPEED
                 var metersSecondSpeed = _unitsConversion.appSettingsSpeedUnitsToMetersSecond(sliderOutputValue)
+                commandedSpeedMetersSecond = metersSecondSpeed
+                _userCruiseSpeedMetersSecond = metersSecondSpeed
+                commandedSpeedClearTimer.restart()
                 if (_vehicleInFwdFlight) {
                    _activeVehicle.guidedModeChangeEquivalentAirspeedMetersSecond(metersSecondSpeed)
                 } else {

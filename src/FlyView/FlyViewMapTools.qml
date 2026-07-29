@@ -16,6 +16,7 @@ Item {
     
     // Properties
     required property var planMasterController
+    required property var flyViewRoot
     
     // Internal shortcuts
     property var _planMasterController: planMasterController
@@ -27,6 +28,7 @@ Item {
     property bool _hasPlanItems: _planMasterController.containsItems
     property bool _utmspEnabled: QGroundControl.utmspSupported
     property bool planEditMode: false
+    property bool _missionRunning: flyViewRoot ? flyViewRoot.missionRunning : false
 
     // Map settings
     property var  _settingsManager:     QGroundControl.settingsManager
@@ -39,15 +41,6 @@ Item {
     implicitHeight: Math.round(ScreenTools.defaultFontPixelHeight * 2.8)
 
     // Signal handlers (Copied from PlanToolBarIndicators logic)
-    function _uploadClicked() {
-        if (_utmspEnabled) {
-            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(true);
-            UTMSPStateStorage.removeFlightPlanState = true
-            UTMSPStateStorage.indicatorDisplayStatus = true
-        }
-        _planMasterController.upload();
-    }
-
     function _downloadClicked() {
         if (_planMasterController.dirty) {
             mainWindow.showMessageDialog(qsTr("Download"),
@@ -59,55 +52,26 @@ Item {
         }
     }
 
-    function _openButtonClicked() {
-        if (_planMasterController.dirty) {
-            mainWindow.showMessageDialog(qsTr("Open Plan"),
-                                        qsTr("You have unsaved/unsent changes. Loading a new Plan will lose these changes. Are you sure?"),
-                                        Dialog.Yes | Dialog.Cancel,
-                                        function() { _planMasterController.loadFromSelectedFile() } )
-        } else {
-            _planMasterController.loadFromSelectedFile()
-        }
-    }
-
     function _saveButtonClicked() {
         if(_planMasterController.currentPlanFile !== "") {
             _planMasterController.saveToCurrent()
             mainWindow.showMessageDialog(qsTr("Save"),
-                                        qsTr("Plan saved to `%1`").arg(_planMasterController.currentPlanFile),
-                                        Dialog.Ok)
+                                         qsTr("Plan saved to `%1`").arg(_planMasterController.currentPlanFile),
+                                         Dialog.Ok)
         } else {
             _planMasterController.saveToSelectedFile()
         }
     }
 
     function _clearClicked() {
-        if (_planMasterController.offline) {
-             mainWindow.showMessageDialog(qsTr("Clear"),
-                                     qsTr("Are you sure you want to remove all the items from the plan editor?"),
-                                     Dialog.Yes | Dialog.Cancel,
-                                     function() { _planMasterController.removeAll(); })
-        } else {
-            mainWindow.showMessageDialog(qsTr("Clear"),
-                                     qsTr("Are you sure you want to remove the plan from the vehicle and the plan editor?"),
-                                     Dialog.Yes | Dialog.Cancel,
-                                     function() {
-                                        _planMasterController.removeAllFromVehicle();
-                                        if (_utmspEnabled) {
-                                            _resetRegisterFlightPlan = true;
-                                            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(false);
-                                            UTMSPStateStorage.startTimeStamp = "";
-                                            UTMSPStateStorage.showActivationTab = false;
-                                            UTMSPStateStorage.flightID = "";
-                                            UTMSPStateStorage.enableMissionUploadButton = false;
-                                            UTMSPStateStorage.indicatorPendingStatus = true;
-                                            UTMSPStateStorage.indicatorApprovedStatus = false;
-                                            UTMSPStateStorage.indicatorActivatedStatus = false;
-                                            UTMSPStateStorage.currentStateIndex = 0}})
+        if (_missionRunning) {
+            return
+        }
+
+        if (flyViewRoot) {
+            flyViewRoot.confirmAndClearPlan()
         }
     }
-
-
 
     // UI Implementation - Scalable Container for the Strip
     Item {
@@ -133,12 +97,13 @@ Item {
                 signal clicked()
                 property bool highlighted: false
                 property bool isMapButton: false
+                property bool buttonEnabled: true
 
                 width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
                 height: width
                 
                 // Hide this button if it's the Map Button and we are in "Expanded Mode"
-                opacity: (isMapButton && root._mapSettingsVisible) ? 0.0 : (enabled ? 1.0 : 0.35)
+                opacity: (isMapButton && root._mapSettingsVisible) ? 0.0 : (buttonEnabled ? 1.0 : 0.35)
                 visible: true
                 
                 Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -172,10 +137,10 @@ Item {
                 MouseArea {
                     anchors.fill: parent
                     hoverEnabled: true
-                    enabled: parent.enabled && parent.visible
-                    cursorShape: Qt.PointingHandCursor
+                    enabled: parent.buttonEnabled && parent.visible
+                    cursorShape: parent.buttonEnabled ? Qt.PointingHandCursor : Qt.ForbiddenCursor
                     onClicked: parent.clicked()
-                    onEntered: btnIcon.opacity = 0.7
+                    onEntered: if (parent.buttonEnabled) btnIcon.opacity = 0.7
                     onExited:  btnIcon.opacity = 1.0
                 }
             }
@@ -196,34 +161,37 @@ Item {
             }
 
 
-            // Open
+            // Open / import plan (uploads to vehicle after load)
             IconButton {
                 iconSource: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
-                enabled: !root._planMasterController.syncInProgress
-                onClicked: root._openButtonClicked()
+                buttonEnabled: !root._missionRunning && !root._planMasterController.syncInProgress
+                onClicked: {
+                    if (root.flyViewRoot) {
+                        root.flyViewRoot.openFlyViewPlanImportDialog()
+                    }
+                }
             }
             
             // Save
             IconButton {
                 iconSource: "/res/modern-icons/MaterialSymbolsSave.svg"
-                enabled: !root._syncInProgress && root._hasPlanItems
+                buttonEnabled: !root._syncInProgress && root._hasPlanItems
                 onClicked: root._saveButtonClicked()
             }
             
             // Download
             IconButton {
                 iconSource: "/res/modern-icons/MaterialSymbolsDownload2Rounded.svg"
-                enabled: root._utmspEnabled ? (!root._syncInProgress && UTMSPStateStorage.enableMissionDownloadButton) : !root._syncInProgress
+                buttonEnabled: root._utmspEnabled ? (!root._syncInProgress && UTMSPStateStorage.enableMissionDownloadButton) : !root._syncInProgress
                 onClicked: root._downloadClicked()
             }
 
             // Clear
             IconButton {
                 iconSource: "/res/modern-icons/MaterialSymbolsLightDirectorySync.svg"
-                enabled: !root._syncInProgress
+                buttonEnabled: !root._missionRunning && !root._syncInProgress
                 onClicked: root._clearClicked()
             }
-
         }
     }
 
@@ -237,6 +205,5 @@ Item {
         mapTypeFact:        root._mapTypeFact
     }
     */
-
 
 }

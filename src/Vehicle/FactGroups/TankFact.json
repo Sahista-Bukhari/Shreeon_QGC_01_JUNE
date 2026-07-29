@@ -10,6 +10,14 @@
     "type":             "double",
     "decimalPlaces":    1,
     "units":            "kg"
+},
+{
+    "name":             "flowRateLpm",
+    "shortDesc":        "Flow rate",
+    "longDesc":         "Spray flow rate derived from LC_WEIGHT change over time (L/min, water ≈ 1 kg/L)",
+    "type":             "double",
+    "decimalPlaces":    1,
+    "units":            "L/min"
 }
 ]
 }

@@ -15,6 +15,8 @@ Item {
     property bool   largeMapView            ///< true: map takes up entire view, false: map is in small window
     property var    planMasterController    ///< Reference to PlanMasterController for vehicle
     property var    vehicle                 ///< Vehicle associated with these items
+    property bool   routeMappingOverlayActive: false
+    property bool   hideMissionVisuals: false
 
     property var    _map:                       map
     property var    _vehicle:                   vehicle
@@ -25,7 +27,13 @@ Item {
     property var    _missionLineViewComponent
 
     property string fmode: vehicle.flightMode
+    // Keep mission items available so the native Takeoff icon can remain
+    // visible over a preserved route-mapping overlay. Only the flattened
+    // waypoint lines and non-takeoff items are suppressed by that overlay.
     property bool   _showMissionVisuals: largeMapView && !_map.planView
+                                         && !hideMissionVisuals
+    property bool   _showMissionLines: _showMissionVisuals
+                                        && !routeMappingOverlayActive
 
     function _closedSurveyBoundaryPath(path) {
         var boundary = []
@@ -41,6 +49,21 @@ Item {
         return boundary
     }
 
+    // Keep Takeoff and end-of-mission Land/RTL visible over the frozen
+    // route-mapping overlay. Flattened survey waypoints stay hidden so they
+    // do not fight the yellow pattern. RTL is command 20 and is not always
+    // flagged isLandCommand in MAVLink UI metadata.
+    function _keepMissionItemWithOverlay(item) {
+        if (!item) {
+            return false
+        }
+        if (item.isTakeoffItem || item.isLandCommand) {
+            return true
+        }
+        // MAV_CMD_NAV_RETURN_TO_LAUNCH
+        return item.command === 20
+    }
+
     // Add the mission item visuals to the map
     Repeater {
         model: _showMissionVisuals ? _missionController.visualItems : 0
@@ -48,7 +71,9 @@ Item {
         delegate: MissionItemMapVisual {
             map:        _map
             vehicle:    _vehicle
-            opacity:    object && object.surveyAreaPolygon ? 0 : 1
+            opacity:    routeMappingOverlayActive
+                        ? (_root._keepMissionItemWithOverlay(object) ? 1 : 0)
+                        : (object && object.surveyAreaPolygon ? 0 : 1)
             onClicked:  _guidedController.confirmAction(_guidedController.actionSetWaypoint, Math.max(object.sequenceNumber, 1))
         }
     }
@@ -73,11 +98,11 @@ Item {
 
         MapItemGroup {
             MissionLineView {
-                model: _showMissionVisuals ? _missionController.simpleFlightPathSegments : null
+                model: _showMissionLines ? _missionController.simpleFlightPathSegments : null
             }
 
             MapItemView {
-                model: _showMissionVisuals ? _missionController.visualItems : 0
+                model: _showMissionLines ? _missionController.visualItems : 0
 
                 delegate: MapPolyline {
                     line.color: "white"
@@ -89,7 +114,7 @@ Item {
             }
 
             MapItemView {
-                model: _showMissionVisuals ? _missionController.visualItems : 0
+                model: _showMissionLines ? _missionController.visualItems : 0
 
                 delegate: MapQuickItem {
                     coordinate: object && object.surveyAreaPolygon ? object.coordinate : QtPositioning.coordinate()

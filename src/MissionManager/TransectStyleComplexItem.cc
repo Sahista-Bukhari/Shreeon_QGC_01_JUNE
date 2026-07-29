@@ -24,6 +24,7 @@ TransectStyleComplexItem::TransectStyleComplexItem(PlanMasterController* masterC
     , _cameraTriggerInTurnAroundFact    (settingsGroup, _metaDataMap[cameraTriggerInTurnAroundName])
     , _hoverAndCaptureFact              (settingsGroup, _metaDataMap[hoverAndCaptureName])
     , _refly90DegreesFact               (settingsGroup, _metaDataMap[refly90DegreesName])
+    , _patternFlightSpeedFact           (settingsGroup, _metaDataMap[patternFlightSpeedName])
     , _terrainAdjustToleranceFact       (settingsGroup, _metaDataMap[terrainAdjustToleranceName])
     , _terrainAdjustMaxClimbRateFact    (settingsGroup, _metaDataMap[terrainAdjustMaxClimbRateName])
     , _terrainAdjustMaxDescentRateFact  (settingsGroup, _metaDataMap[terrainAdjustMaxDescentRateName])
@@ -42,6 +43,17 @@ TransectStyleComplexItem::TransectStyleComplexItem(PlanMasterController* masterC
     connect(&_terrainAdjustMaxClimbRateFact,            &Fact::valueChanged,                this, &TransectStyleComplexItem::_rebuildTransects);
     connect(&_terrainAdjustMaxDescentRateFact,          &Fact::valueChanged,                this, &TransectStyleComplexItem::_rebuildTransects);
     connect(&_terrainAdjustToleranceFact,               &Fact::valueChanged,                this, &TransectStyleComplexItem::_rebuildTransects);
+    // Pattern speed affects shot timing, mission-time estimate, and terrain rate
+    // calculations. Rebuild generated items only when the user has enabled the
+    // local speed override.
+    connect(&_patternFlightSpeedFact,                    &Fact::valueChanged,                this, [this]() {
+        if (_specifyPatternFlightSpeed) {
+            _rebuildTransects();
+            setDirty(true);
+            emit timeBetweenShotsChanged();
+            emit specifiedFlightSpeedChanged();
+        }
+    });
     connect(&_surveyAreaPolygon,                        &QGCMapPolygon::pathChanged,        this, &TransectStyleComplexItem::_rebuildTransects);
     connect(&_cameraTriggerInTurnAroundFact,            &Fact::valueChanged,                this, &TransectStyleComplexItem::_rebuildTransects);
     connect(_cameraCalc.adjustedFootprintSide(),        &Fact::valueChanged,                this, &TransectStyleComplexItem::_rebuildTransects);
@@ -126,13 +138,19 @@ void TransectStyleComplexItem::_save(QJsonObject& complexObject)
     innerObject[cameraTriggerInTurnAroundName] =    _cameraTriggerInTurnAroundFact.rawValue().toBool();
     innerObject[hoverAndCaptureName] =              _hoverAndCaptureFact.rawValue().toBool();
     innerObject[refly90DegreesName] =               _refly90DegreesFact.rawValue().toBool();
+    // Persist both the value and enable state so editing an uploaded plan keeps
+    // exactly the same survey behavior.
+    innerObject[patternFlightSpeedName] =           _patternFlightSpeedFact.rawValue().toDouble();
+    innerObject[specifyPatternFlightSpeedName] =    _specifyPatternFlightSpeed;
     innerObject[_jsonCameraShotsKey] =              _cameraShots;
 
     if (_cameraCalc.distanceMode() == QGroundControlQmlGlobal::AltitudeModeCalcAboveTerrain) {
         innerObject[terrainAdjustToleranceName]         = _terrainAdjustToleranceFact.rawValue().toDouble();
         innerObject[terrainAdjustMaxClimbRateName]      = _terrainAdjustMaxClimbRateFact.rawValue().toDouble();
         innerObject[terrainAdjustMaxDescentRateName]    = _terrainAdjustMaxDescentRateFact.rawValue().toDouble();
-        innerObject[_jsonTerrainFlightSpeed]            = _vehicleSpeed;
+        innerObject[_jsonTerrainFlightSpeed]            = _specifyPatternFlightSpeed
+                                                            ? _patternFlightSpeedFact.rawValue().toDouble()
+                                                            : _vehicleSpeed;
     }
 
     QJsonObject cameraCalcObject;
@@ -213,6 +231,8 @@ bool TransectStyleComplexItem::_load(const QJsonObject& complexObject, bool forP
         { cameraTriggerInTurnAroundName,    QJsonValue::Bool,   true },
         { hoverAndCaptureName,              QJsonValue::Bool,   true },
         { refly90DegreesName,               QJsonValue::Bool,   true },
+        { patternFlightSpeedName,           QJsonValue::Double, false },
+        { specifyPatternFlightSpeedName,    QJsonValue::Bool,   false },
         { _jsonCameraCalcKey,               QJsonValue::Object, true },
         { _jsonVisualTransectPointsKey,     QJsonValue::Array,  !forPresets },
         { _jsonItemsKey,                    QJsonValue::Array,  !forPresets },
@@ -255,6 +275,11 @@ bool TransectStyleComplexItem::_load(const QJsonObject& complexObject, bool forP
     _cameraTriggerInTurnAroundFact.setRawValue  (innerObject[cameraTriggerInTurnAroundName].toBool());
     _hoverAndCaptureFact.setRawValue            (innerObject[hoverAndCaptureName].toBool());
     _refly90DegreesFact.setRawValue             (innerObject[refly90DegreesName].toBool());
+    if (innerObject.contains(patternFlightSpeedName)) {
+        _patternFlightSpeedFact.setRawValue(innerObject[patternFlightSpeedName].toDouble());
+    }
+    _specifyPatternFlightSpeed = innerObject.contains(specifyPatternFlightSpeedName)
+                                    && innerObject[specifyPatternFlightSpeedName].toBool();
 
     // These two keys where not included in initial implementation so they are optional. Without them the values will be
     // incorrect when loaded though.
@@ -329,10 +354,45 @@ void TransectStyleComplexItem::setMissionFlightStatus(MissionController::Mission
     ComplexMissionItem::setMissionFlightStatus(missionFlightStatus);
     if (!QGC::fuzzyCompare(_vehicleSpeed, missionFlightStatus.vehicleSpeed)) {
         _vehicleSpeed = missionFlightStatus.vehicleSpeed;
-        // Vehicle speed change affects max climb/descent rates calcs for terrain so we need to re-adjust
+        // Never regenerate survey lateral geometry while the vehicle is flying
+        // (or for Fly View items). Speed only affects shot timing in that case.
+        Vehicle* vehicle = _masterController ? _masterController->managerVehicle() : nullptr;
+        if (_flyView || (vehicle && vehicle->flying())) {
+            emit timeBetweenShotsChanged();
+            return;
+        }
         _rebuildTransects();
         emit timeBetweenShotsChanged();
     }
+}
+
+void TransectStyleComplexItem::setSpecifyPatternFlightSpeed(bool specifyPatternFlightSpeed)
+{
+    if (_specifyPatternFlightSpeed == specifyPatternFlightSpeed) {
+        return;
+    }
+
+    // Changing the enable state adds/removes two generated mission commands,
+    // so both transects and sequence numbers must be refreshed.
+    _specifyPatternFlightSpeed = specifyPatternFlightSpeed;
+    emit specifyPatternFlightSpeedChanged(_specifyPatternFlightSpeed);
+    emit specifiedFlightSpeedChanged();
+    _rebuildTransects();
+    setDirty(true);
+    emit lastSequenceNumberChanged(lastSequenceNumber());
+    emit timeBetweenShotsChanged();
+}
+
+double TransectStyleComplexItem::specifiedFlightSpeed(void)
+{
+    // When the Route Mapping / survey pattern speed override is enabled, feed
+    // that speed into MissionController so Est. Flight Time matches stock QGC
+    // mission-time math (distance / specified speed).
+    if (_specifyPatternFlightSpeed) {
+        const double speed = _patternFlightSpeedFact.rawValue().toDouble();
+        return speed > 0.0 ? speed : std::numeric_limits<double>::quiet_NaN();
+    }
+    return std::numeric_limits<double>::quiet_NaN();
 }
 
 void TransectStyleComplexItem::_setDirty(void)
@@ -376,6 +436,14 @@ bool TransectStyleComplexItem::hoverAndCaptureAllowed(void) const
 void TransectStyleComplexItem::_rebuildTransects(void)
 {
     if (_ignoreRecalc) {
+        return;
+    }
+
+    // Survey pattern must stay fixed once airborne. Progress, heading, and
+    // MAVLink updates must not regenerate/rotate/shift transects mid-flight.
+    Vehicle* vehicle = _masterController ? _masterController->managerVehicle() : nullptr;
+    if (vehicle && vehicle->flying()) {
+        qCDebug(TransectStyleComplexItemLog) << "_rebuildTransects: skipped while vehicle flying";
         return;
     }
 
@@ -746,7 +814,9 @@ void TransectStyleComplexItem::_adjustForMaxRates(void)
 {
     double maxClimbRate     = _terrainAdjustMaxClimbRateFact.rawValue().toDouble();
     double maxDescentRate   = _terrainAdjustMaxDescentRateFact.rawValue().toDouble();
-    double flightSpeed      = _vehicleSpeed;
+    double flightSpeed      = _specifyPatternFlightSpeed
+                                ? _patternFlightSpeedFact.rawValue().toDouble()
+                                : _vehicleSpeed;
 
     if (qIsNaN(flightSpeed) || (maxClimbRate == 0 && maxDescentRate == 0)) {
         if (qIsNaN(flightSpeed)) {
@@ -1068,6 +1138,8 @@ int TransectStyleComplexItem::lastSequenceNumber(void) const
             }
         }
 
+        // One command applies pattern speed and one restores mission speed.
+        itemCount += _specifyPatternFlightSpeed ? 2 : 0;
         return _sequenceNumber + itemCount - 1;
     } else {
         // We can end up hear if we are follow terrain and the flight path isn't ready yet. So we just return an inaccurate number until
@@ -1078,6 +1150,7 @@ int TransectStyleComplexItem::lastSequenceNumber(void) const
             itemCount += rgCoordInfo.count();
         }
 
+        itemCount += _specifyPatternFlightSpeed && itemCount > 0 ? 2 : 0;
         return _sequenceNumber + itemCount - 1;
     }
 }
@@ -1112,11 +1185,13 @@ void TransectStyleComplexItem::_appendWaypoint(QList<MissionItem*>& items, QObje
 {
     double altitude = _cameraCalc.distanceMode() == QGroundControlQmlGlobal::AltitudeModeCalcAboveTerrain ? coordinate.altitude() : _cameraCalc.distanceToSurface()->rawValue().toDouble();
 
+    // Match stock QGC: param2 = 0 means use the vehicle default acceptance radius
+    // (NAV_ACC_RAD / WP_RADIUS). Do not override per-waypoint radius here.
     MissionItem* item = new MissionItem(seqNum++,
                                         MAV_CMD_NAV_WAYPOINT,
                                         mavFrame,
                                         holdTime,
-                                        0.0,                                         // No acceptance radius specified
+                                        0.0,                                         // Acceptance radius (vehicle default)
                                         0.0,                                         // Pass through waypoint
                                         std::numeric_limits<double>::quiet_NaN(),    // Yaw unchanged
                                         coordinate.latitude(),
@@ -1140,6 +1215,24 @@ void TransectStyleComplexItem::_appendSinglePhotoCapture(QList<MissionItem*>& it
                                         qQNaN(), qQNaN(), qQNaN(),      // param 5-7 reserved
                                         true,                           // autoContinue
                                         false,                          // isCurrentItem
+                                        missionItemParent);
+    items.append(item);
+}
+
+void TransectStyleComplexItem::_appendFlightSpeed(QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum, double flightSpeed)
+{
+    // MAVLink param1: 1 = ground speed for multirotors, 0 = airspeed for
+    // fixed-wing vehicles. Param2 carries the requested speed in m/s.
+    MissionItem* item = new MissionItem(seqNum++,
+                                        MAV_CMD_DO_CHANGE_SPEED,
+                                        MAV_FRAME_MISSION,
+                                        _masterController->controllerVehicle()->multiRotor() ? 1 : 0,
+                                        flightSpeed,
+                                        -1,
+                                        0,
+                                        0, 0, 0,
+                                        true,
+                                        false,
                                         missionItemParent);
     items.append(item);
 }
@@ -1228,6 +1321,11 @@ void TransectStyleComplexItem::_buildAndAppendMissionItems(QList<MissionItem*>& 
         break;
     }
 
+    // Apply the user-selected speed immediately before the survey commands.
+    if (_specifyPatternFlightSpeed && !_rgFlightPathCoordInfo.isEmpty()) {
+        _appendFlightSpeed(items, missionItemParent, seqNum, _patternFlightSpeedFact.rawValue().toDouble());
+    }
+
     // Note: The code below is written to be understable as opposed to being compact and/or remove all duplicate code
     for (int coordIndex=0; coordIndex<_rgFlightPathCoordInfo.count(); coordIndex++) {
         const CoordInfo_t& coordInfo = _rgFlightPathCoordInfo[coordIndex];
@@ -1283,6 +1381,12 @@ void TransectStyleComplexItem::_buildAndAppendMissionItems(QList<MissionItem*>& 
             }
             break;
         }
+    }
+
+    // Restore the speed that was active before entering the survey so later
+    // mission items are unaffected by the pattern setting.
+    if (_specifyPatternFlightSpeed && !_rgFlightPathCoordInfo.isEmpty()) {
+        _appendFlightSpeed(items, missionItemParent, seqNum, _vehicleSpeed);
     }
 }
 

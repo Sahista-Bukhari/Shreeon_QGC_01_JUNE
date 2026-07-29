@@ -154,8 +154,8 @@ Item {
                 id:                 pillSlider
                 text:               control.action === guidedController.actionSetFlightMode ? qsTr("Set Mode to %1").arg(control.actionData) : control.title
                 implicitWidth:      Math.max(400, ScreenTools.defaultFontPixelWidth * 42)
-                implicitHeight:     ScreenTools.defaultFontPixelHeight * 3.2
-                accentColor:        "#26ad5f"
+                implicitHeight:     ScreenTools.defaultFontPixelHeight * 2.6
+                accentColor:        "#23a800"
                 enabled:            _utmspEnabled === true ? utmspSliderTrigger : true
 
                 onAccepted: {

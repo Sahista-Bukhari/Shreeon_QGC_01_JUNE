@@ -26,6 +26,10 @@ public:
     Q_PROPERTY(Fact*            cameraTriggerInTurnAround   READ cameraTriggerInTurnAround                          CONSTANT)
     Q_PROPERTY(Fact*            hoverAndCapture             READ hoverAndCapture                                    CONSTANT)
     Q_PROPERTY(Fact*            refly90Degrees              READ refly90Degrees                                     CONSTANT)
+    /// Optional survey-local speed override. It is emitted as mission commands
+    /// around the transect items and does not replace the mission cruise speed.
+    Q_PROPERTY(Fact*            patternFlightSpeed          READ patternFlightSpeed                                 CONSTANT)
+    Q_PROPERTY(bool             specifyPatternFlightSpeed   READ specifyPatternFlightSpeed WRITE setSpecifyPatternFlightSpeed NOTIFY specifyPatternFlightSpeedChanged)
 
     Q_PROPERTY(int              cameraShots                 READ cameraShots                                        NOTIFY cameraShotsChanged)
     Q_PROPERTY(double           timeBetweenShots            READ timeBetweenShots                                   NOTIFY timeBetweenShotsChanged)
@@ -45,6 +49,7 @@ public:
     Fact* cameraTriggerInTurnAround     (void) { return &_cameraTriggerInTurnAroundFact; }
     Fact* hoverAndCapture               (void) { return &_hoverAndCaptureFact; }
     Fact* refly90Degrees                (void) { return &_refly90DegreesFact; }
+    Fact* patternFlightSpeed            (void) { return &_patternFlightSpeedFact; }
     Fact* terrainAdjustTolerance        (void) { return &_terrainAdjustToleranceFact; }
     Fact* terrainAdjustMaxDescentRate   (void) { return &_terrainAdjustMaxDescentRateFact; }
     Fact* terrainAdjustMaxClimbRate     (void) { return &_terrainAdjustMaxClimbRateFact; }
@@ -54,6 +59,8 @@ public:
     int             cameraShots             (void) const { return _cameraShots; }
     double          coveredArea             (void) const;
     bool            hoverAndCaptureAllowed  (void) const;
+    bool            specifyPatternFlightSpeed(void) const { return _specifyPatternFlightSpeed; }
+    void            setSpecifyPatternFlightSpeed(bool specifyPatternFlightSpeed);
 
     virtual double  timeBetweenShots        (void) { return 0; } // Most be overridden. Implementation here is needed for unit testing.
 
@@ -84,7 +91,7 @@ public:
     QGeoCoordinate      coordinate                  (void) const final { return _coordinate; }
     QGeoCoordinate      exitCoordinate              (void) const final { return _exitCoordinate; }
     int                 sequenceNumber              (void) const final { return _sequenceNumber; }
-    double              specifiedFlightSpeed        (void) final { return std::numeric_limits<double>::quiet_NaN(); }
+    double              specifiedFlightSpeed        (void) final;
     double              specifiedGimbalYaw          (void) final { return std::numeric_limits<double>::quiet_NaN(); }
     double              specifiedGimbalPitch        (void) final { return std::numeric_limits<double>::quiet_NaN(); }
     void                setMissionFlightStatus      (MissionController::MissionFlightStatus_t& missionFlightStatus) final;
@@ -106,11 +113,14 @@ public:
     static constexpr const char* cameraTriggerInTurnAroundName         = "CameraTriggerInTurnAround";
     static constexpr const char* hoverAndCaptureName                   = "HoverAndCapture";
     static constexpr const char* refly90DegreesName                    = "Refly90Degrees";
+    static constexpr const char* patternFlightSpeedName                = "PatternFlightSpeed";
+    static constexpr const char* specifyPatternFlightSpeedName         = "SpecifyPatternFlightSpeed";
     static constexpr const char* terrainAdjustToleranceName            = "TerrainAdjustTolerance";
     static constexpr const char* terrainAdjustMaxClimbRateName         = "TerrainAdjustMaxClimbRate";
     static constexpr const char* terrainAdjustMaxDescentRateName       = "TerrainAdjustMaxDescentRate";
 
 signals:
+    void specifyPatternFlightSpeedChanged(bool specifyPatternFlightSpeed);
     void cameraShotsChanged             (void);
     void timeBetweenShotsChanged        (void);
     void visualTransectPointsChanged    (void);
@@ -140,6 +150,8 @@ protected:
     void    _appendSinglePhotoCapture       (QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum);
     void    _appendConditionGate            (QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum, MAV_FRAME mavFrame, const QGeoCoordinate& coordinate);
     void    _appendCameraTriggerDistance    (QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum, float triggerDistance);
+    /// Appends MAV_CMD_DO_CHANGE_SPEED using the correct air/ground speed type.
+    void    _appendFlightSpeed               (QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum, double flightSpeed);
     void    _appendCameraTriggerDistanceUpdatePoint(QList<MissionItem*>& items, QObject* missionItemParent, int& seqNum, MAV_FRAME mavFrame, const QGeoCoordinate& coordinate, bool useConditionGate, float triggerDistance);
     void    _buildAndAppendMissionItems     (QList<MissionItem*>& items, QObject* missionItemParent);
     void    _appendLoadedMissionItems       (QList<MissionItem*>& items, QObject* missionItemParent);
@@ -189,9 +201,12 @@ protected:
     SettingsFact _cameraTriggerInTurnAroundFact;
     SettingsFact _hoverAndCaptureFact;
     SettingsFact _refly90DegreesFact;
+    SettingsFact _patternFlightSpeedFact;
     SettingsFact _terrainAdjustToleranceFact;
     SettingsFact _terrainAdjustMaxClimbRateFact;
     SettingsFact _terrainAdjustMaxDescentRateFact;
+    ///< True after the user explicitly selects a pattern speed.
+    bool         _specifyPatternFlightSpeed = false;
 
     static constexpr const char* _jsonTransectStyleComplexItemKey      = "TransectStyleComplexItem";
     static constexpr const char* _jsonCameraCalcKey                    = "CameraCalc";

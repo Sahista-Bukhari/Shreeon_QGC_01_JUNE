@@ -131,6 +131,17 @@ void MissionController::_newMissionItemsAvailableFromVehicle(bool removeAllReque
 {
     qCDebug(MissionControllerLog) << "_newMissionItemsAvailableFromVehicle flyView:count" << _flyView << _missionManager->missionItems().count();
 
+    // While flying, never wipe Fly/PlanMapItems survey visuals with flattened
+    // vehicle waypoints — that regenerates the yellow survey pattern mid-mission.
+    // Explicit reloads (_itemsRequested) and removeAll still go through so Route
+    // Mapping upload / Exit can sync Fly View like stock QGC on the ground.
+    if (_flyView && _managerVehicle && _managerVehicle->flying()
+            && !removeAllRequested && !_itemsRequested && !isEmpty()) {
+        qCDebug(MissionControllerLog) << "_newMissionItemsAvailableFromVehicle: skip reload while flying";
+        _itemsRequested = false;
+        return;
+    }
+
     // Fly view always reloads on _loadComplete
     // Plan view only reloads if:
     //  - Load was specifically requested
@@ -1624,8 +1635,18 @@ void MissionController::_recalcMissionFlightStatus()
                         _missionFlightStatus.maxTelemetryDistance = qMax(_missionFlightStatus.maxTelemetryDistance, complexItem->greatestDistanceTo(complexItem->exitCoordinate()));
 
                         if (!pastLandCommand) {
-                            double hoverTime = distance / _missionFlightStatus.hoverSpeed;
-                            double cruiseTime = distance / _missionFlightStatus.cruiseSpeed;
+                            // If the complex item specifies its own flight speed (e.g. Route Mapping
+                            // survey pattern speed), use that for its interior distance. Stock speed
+                            // sections apply after the item; survey pattern speed applies inside it.
+                            double hoverSpeed = _missionFlightStatus.hoverSpeed;
+                            double cruiseSpeed = _missionFlightStatus.cruiseSpeed;
+                            const double itemSpeed = item->specifiedFlightSpeed();
+                            if (!qIsNaN(itemSpeed) && itemSpeed > 0.0) {
+                                hoverSpeed = itemSpeed;
+                                cruiseSpeed = itemSpeed;
+                            }
+                            double hoverTime = distance / hoverSpeed;
+                            double cruiseTime = distance / cruiseSpeed;
                             _addTimeDistance(_missionFlightStatus.vtolMode == QGCMAVLink::VehicleClassMultiRotor, hoverTime, cruiseTime, 0, distance, item->sequenceNumber());
                         }
 
@@ -2295,10 +2316,23 @@ bool MissionController::showPlanFromManagerVehicle (void)
 
 void MissionController::_managerSendComplete(bool error)
 {
-    // Fly view always reloads on send complete
-    if (!error && _flyView) {
-        showPlanFromManagerVehicle();
+    // Mid-flight altitude/speed rewrites set skipPlanReloadAfterMissionWrite so
+    // Fly View / PlanMapItems keep the planned survey instead of flattening to
+    // vehicle waypoints (which redraws the yellow pattern as a zigzag / rotate).
+    if (error || !_flyView) {
+        return;
     }
+    if (_managerVehicle && _managerVehicle->skipPlanReloadAfterMissionWrite()) {
+        return;
+    }
+    // While flying, never replace map plan visuals from vehicle mission items —
+    // survey geometry must stay frozen for the whole mission. On the ground
+    // (including armed), reload like stock QGC so Start Mission stays in sync.
+    if (_managerVehicle && _managerVehicle->flying()) {
+        qCDebug(MissionControllerLog) << "_managerSendComplete: skip plan reload while flying";
+        return;
+    }
+    showPlanFromManagerVehicle();
 }
 
 void MissionController::_managerRemoveAllComplete(bool error)

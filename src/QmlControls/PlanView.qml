@@ -40,7 +40,8 @@ Item {
     property bool   _resetGeofencePolygon: false   //Reset the Geofence Polygon
     property bool   _triggerSubmit
     property bool   _resetRegisterFlightPlan
-    property bool   _centerTargetMode: true         // Center target mode for adding waypoints (default enabled)
+    property bool   _addWaypointOnClick: false
+    property bool   _addROIOnClick: false
 
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
@@ -233,6 +234,7 @@ Item {
         id: planToolBar
         planMasterController: _planMasterController
         visible: !mainWindow.modeSelectionVisible
+        onExitPlanEditMode: mainWindow.showFlyView()
     }
 
     Item {
@@ -278,23 +280,31 @@ Item {
                 if (!mainWindow.allowViewSwitch()) {
                     return
                 }
-                
-                // In center target mode, don't add waypoints on click
-                if (_centerTargetMode) {
-                    return
-                }
-                
+
                 var coordinate = editorMap.toCoordinate(Qt.point(mouse.x, mouse.y), false /* clipToViewPort */)
                 coordinate.latitude = coordinate.latitude.toFixed(_decimalPlaces)
                 coordinate.longitude = coordinate.longitude.toFixed(_decimalPlaces)
                 coordinate.altitude = coordinate.altitude.toFixed(_decimalPlaces)
-				if(_utmspEnabled){
-                	QGroundControl.utmspManager.utmspVehicle.updateLastCoordinates(coordinate.latitude, coordinate.longitude)
+                if (_utmspEnabled) {
+                    QGroundControl.utmspManager.utmspVehicle.updateLastCoordinates(coordinate.latitude, coordinate.longitude)
                 }
 
                 switch (_editingLayer) {
                 case _layerMission:
-                    insertSimpleItemAfterCurrent(coordinate)
+                    if (_addROIOnClick) {
+                        _addROIOnClick = false
+                        if (_missionController.isROIActive) {
+                            var pos = Qt.point(mouse.x, mouse.y)
+                            // For some strange reason using mainWindow in mapToItem doesn't work, so we use globals.parent instead which also gets us mainWindow
+                            pos = editorMap.mapToItem(globals.parent, pos)
+                            var dropPanel = insertOrCancelROIDropPanelComponent.createObject(mainWindow, { mapClickCoord: coordinate, clickRect: Qt.rect(pos.x, pos.y, 0, 0) })
+                            dropPanel.open()
+                        } else {
+                            insertROIAfterCurrent(coordinate)
+                        }
+                    } else if (_addWaypointOnClick) {
+                        insertSimpleItemAfterCurrent(coordinate)
+                    }
                     break
                 case _layerRally:
                     if (_rallyPointController.supported) {
@@ -440,139 +450,6 @@ Item {
                 opacity: _editingLayer != _layerUTMSP ? editorMap._nonInteractiveOpacity : 1
                 resetCheck: _resetGeofencePolygon
             }
-            
-            // Center crosshair target for waypoint placement
-            Item {
-                id: centerTarget
-                anchors.centerIn: parent
-                width: ScreenTools.defaultFontPixelHeight * 2.5
-                height: width
-                visible: _centerTargetMode && _editingLayer == _layerMission
-                z: QGroundControl.zOrderWidgets + 10
-                
-                property real lineLength: width * 0.45
-                property real centerGap: ScreenTools.defaultFontPixelHeight * 0.5
-                
-                // DJI-style crosshair with center gap
-                // Vertical line - top part with shadow
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: parent.verticalCenter
-                    anchors.bottomMargin: centerTarget.centerGap / 2
-                    width: 3
-                    height: centerTarget.lineLength
-                    color: "black"
-                    opacity: 0.4
-                    radius: 1.5
-                }
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.bottom: parent.verticalCenter
-                    anchors.bottomMargin: centerTarget.centerGap / 2
-                    width: 2
-                    height: centerTarget.lineLength
-                    color: "white"
-                }
-                
-                // Vertical line - bottom part with shadow
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.verticalCenter
-                    anchors.topMargin: centerTarget.centerGap / 2
-                    width: 3
-                    height: centerTarget.lineLength
-                    color: "black"
-                    opacity: 0.4
-                    radius: 1.5
-                }
-                Rectangle {
-                    anchors.horizontalCenter: parent.horizontalCenter
-                    anchors.top: parent.verticalCenter
-                    anchors.topMargin: centerTarget.centerGap / 2
-                    width: 2
-                    height: centerTarget.lineLength
-                    color: "white"
-                }
-                
-                // Horizontal line - left part with shadow
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.right: parent.horizontalCenter
-                    anchors.rightMargin: centerTarget.centerGap / 2
-                    width: centerTarget.lineLength
-                    height: 3
-                    color: "black"
-                    opacity: 0.4
-                    radius: 1.5
-                }
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.right: parent.horizontalCenter
-                    anchors.rightMargin: centerTarget.centerGap / 2
-                    width: centerTarget.lineLength
-                    height: 2
-                    color: "white"
-                }
-                
-                // Horizontal line - right part with shadow
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.horizontalCenter
-                    anchors.leftMargin: centerTarget.centerGap / 2
-                    width: centerTarget.lineLength
-                    height: 3
-                    color: "black"
-                    opacity: 0.4
-                    radius: 1.5
-                }
-                Rectangle {
-                    anchors.verticalCenter: parent.verticalCenter
-                    anchors.left: parent.horizontalCenter
-                    anchors.leftMargin: centerTarget.centerGap / 2
-                    width: centerTarget.lineLength
-                    height: 2
-                    color: "white"
-                }
-            }
-            
-            // Add waypoint button (floating button when in center target mode)
-            Rectangle {
-                id: addWaypointButton
-                anchors.horizontalCenter: parent.horizontalCenter
-                anchors.bottom: parent.bottom
-                anchors.bottomMargin: _toolsMargin * 3
-                width: ScreenTools.defaultFontPixelHeight * 6
-                height: ScreenTools.defaultFontPixelHeight * 3
-                radius: height / 2
-                color: qgcPal.button
-                border.color: qgcPal.buttonText
-                border.width: 1
-                visible: _centerTargetMode && _editingLayer == _layerMission
-                z: QGroundControl.zOrderWidgets + 10
-                
-                QGCLabel {
-                    anchors.centerIn: parent
-                    text: qsTr("+ Add Waypoint")
-                    color: qgcPal.buttonText
-                    font.pointSize: ScreenTools.mediumFontPointSize
-                }
-                
-                QGCMouseArea {
-                    anchors.fill: parent
-                    onClicked: {
-                        var centerCoord = editorMap.center
-                        centerCoord.latitude = centerCoord.latitude.toFixed(_decimalPlaces)
-                        centerCoord.longitude = centerCoord.longitude.toFixed(_decimalPlaces)
-                        centerCoord.altitude = centerCoord.altitude.toFixed(_decimalPlaces)
-                        
-                        if(_utmspEnabled){
-                            QGroundControl.utmspManager.utmspVehicle.updateLastCoordinates(centerCoord.latitude, centerCoord.longitude)
-                        }
-                        
-                        insertSimpleItemAfterCurrent(centerCoord)
-                    }
-                }
-            }
         }
 
         //-----------------------------------------------------------
@@ -586,16 +463,20 @@ Item {
             maxHeight: parent.height - toolStrip.y
             visible: _editingLayer == _layerMission
 
-            readonly property int fileButtonIndex: 0
-            readonly property int takeoffButtonIndex: 1
-            readonly property int waypointButtonIndex: 2
-            readonly property int roiButtonIndex: 3
-            readonly property int patternButtonIndex: 4
-            readonly property int landButtonIndex: 5
-            readonly property int centerButtonIndex: 6
-
             property bool _isRallyLayer: _editingLayer == _layerRally
             property bool _isMissionLayer: _editingLayer == _layerMission
+
+            Binding {
+                target: waypointButton
+                property: "checked"
+                value: _addWaypointOnClick
+            }
+
+            Binding {
+                target: roiButton
+                property: "checked"
+                value: _addROIOnClick
+            }
 
             ToolStripActionList {
                 id: toolStripActionList
@@ -606,6 +487,7 @@ Item {
                         enabled: _missionController.isInsertTakeoffValid
                         visible: toolStrip._isMissionLayer && !_planMasterController.controllerVehicle.rover
                         onTriggered: {
+                            toolStrip.allAddClickBoolsOff()
                             insertTakeoffItemAfterCurrent()
                             _triggerSubmit = true
                         }
@@ -617,8 +499,42 @@ Item {
                         visible: toolStrip._isMissionLayer
                         dropPanelComponent: _singleComplexItem ? undefined : patternDropPanel
                         onTriggered: {
+                            toolStrip.allAddClickBoolsOff()
                             if (_singleComplexItem) {
                                 insertComplexItemAfterCurrent(_missionController.complexMissionItemNames[0])
+                            }
+                        }
+                    },
+                    ToolStripAction {
+                        id: waypointButton
+                        text: qsTr("Waypoint")
+                        iconSource: "/qmlimages/MapAddMission.svg"
+                        enabled: _missionController.flyThroughCommandsAllowed
+                        visible: toolStrip._isMissionLayer
+                        checkable: true
+                        onTriggered: {
+                            _addWaypointOnClick = !_addWaypointOnClick
+                            if (_addWaypointOnClick) {
+                                _addROIOnClick = false
+                            }
+                        }
+                    },
+                    ToolStripAction {
+                        id: roiButton
+                        text: _missionController.isROIActive ? qsTr("Cancel ROI") : qsTr("ROI")
+                        iconSource: "/qmlimages/roi.svg"
+                        enabled: !_missionController.onlyInsertTakeoffValid
+                        visible: toolStrip._isMissionLayer && _planMasterController.controllerVehicle.roiModeSupported
+                        checkable: true
+                        onTriggered: {
+                            if (_missionController.isROIActive) {
+                                toolStrip.allAddClickBoolsOff()
+                                insertCancelROIAfterCurrent()
+                            } else {
+                                _addROIOnClick = !_addROIOnClick
+                                if (_addROIOnClick) {
+                                    _addWaypointOnClick = false
+                                }
                             }
                         }
                     },
@@ -632,17 +548,8 @@ Item {
                         enabled: _missionController.isInsertLandValid
                         visible: toolStrip._isMissionLayer
                         onTriggered: {
+                            toolStrip.allAddClickBoolsOff()
                             insertLandItemAfterCurrent()
-                        }
-                    },
-                    ToolStripAction {
-                        text: qsTr("Add")
-                        iconSource: "/res/target-crosshair.svg"
-                        visible: toolStrip._isMissionLayer
-                        checkable: true
-                        checked: true  // Default to center target mode
-                        onTriggered: {
-                            _centerTargetMode = !_centerTargetMode
                         }
                     },
                     ToolStripAction {
@@ -655,6 +562,13 @@ Item {
             }
 
             model: toolStripActionList.model
+
+            function allAddClickBoolsOff() {
+                _addWaypointOnClick = false
+                _addROIOnClick = false
+            }
+
+            onDropped: allAddClickBoolsOff()
         }
 
         MapScale {
