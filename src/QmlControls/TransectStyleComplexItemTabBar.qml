@@ -5,6 +5,7 @@ import QGroundControl.Controls
 
 QGCTabBar {
     id: tabBar
+    spacing: ScreenTools.defaultFontPixelWidth * 0.45
 
     Component.onCompleted: currentIndex = QGroundControl.settingsManager.planViewSettings.displayPresetsTabFirst.rawValue ? 2 : 0
 

@@ -52,7 +52,7 @@ Popup {
     property real maxContentAvailableHeight:   mainWindow.height - titleLabel.implicitHeight - buttonRow.implicitHeight - _contentMargin * 7
 
     readonly property real headerMinWidth: Math.max(titleLabel.implicitWidth + _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 28 : 40))
-    readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 34 : 54))
+    readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 36 : 54))
     readonly property real messageMinHeight: minimumContentHeight >= 0 ? minimumContentHeight : ScreenTools.defaultFontPixelHeight * (compact ? 1.4 : 3.5)
     readonly property real buttonRowHeight: ScreenTools.defaultFontPixelHeight * (compact ? 2.35 : 3)
 
@@ -65,6 +65,18 @@ Popup {
     property bool   _acceptAllowed:     acceptButton.visible
     property bool   _rejectAllowed:     rejectButton.visible
     property int    _previousValidationErrorCount: 0
+    readonly property bool _customMissionChrome: typeof mainWindow !== "undefined"
+                                                 && mainWindow.activeMissionEditor === "customMission"
+
+    // Match RouteMappingTaskSettings light form colors on white popup surfaces.
+    readonly property color _accentGreen:            "#23a800"
+    readonly property color _accentSoftGreen:        "#efffee"
+    readonly property color _titleColor:             "#3f3f3f"
+    readonly property color _bodyColor:              "#6a6a6a"
+    readonly property color _hintColor:              "#8a8a8a"
+    readonly property color _cardBorderIdle:         "#e2e2e2"
+    readonly property color _dialogContentTextColor: _titleColor
+    readonly property real  _dialogControlRadius:    ScreenTools.defaultFontPixelWidth * 0.75
 
     background: QGCMouseArea {
         width:  mainWindow.width
@@ -82,6 +94,97 @@ Popup {
         }
     }
 
+    function _isThemedButtonChrome(item) {
+        // Skip Button content (e.g. Alt Mode rows) — those sit on dark button fills.
+        // Keep CheckBox / RadioButton so their labels on white get fixed.
+        if (!item) {
+            return false
+        }
+        return (item instanceof Button) && !(item instanceof CheckBox) && !(item instanceof RadioButton)
+            && item.backgroundColor === undefined
+    }
+
+    function _styleDialogContentControls(item) {
+        if (!item || _isThemedButtonChrome(item)) {
+            return
+        }
+
+        // Custom Mission: dark glass dialogs need light text (gated — other modes unchanged).
+        if (_customMissionChrome) {
+            if (item.textColor !== undefined && item.primary === undefined) {
+                item.textColor = "#ffffff"
+            }
+
+            if (item.color !== undefined && typeof item.text === "string") {
+                const c = item.color
+                const isWarning = Qt.colorEqual(c, qgcPal.warningText)
+                const isGreen = Qt.colorEqual(c, qgcPal.colorGreen) || Qt.colorEqual(c, _accentGreen)
+                if (!isWarning && !isGreen) {
+                    item.color = "#ffffff"
+                }
+            }
+
+            const glassKids = item.children
+            if (glassKids) {
+                for (let g = 0; g < glassKids.length; g++) {
+                    _styleDialogContentControls(glassKids[g])
+                }
+            }
+            return
+        }
+
+        // QGCButton: green selected chip style from Route Mapping (Medium/High).
+        const isQgcButton = item.backgroundColor !== undefined && item.textColor !== undefined && item.primary !== undefined
+        if (isQgcButton) {
+            item.backgroundColor = _accentGreen
+            item.textColor = "white"
+            if (item.showBorder !== undefined) {
+                item.showBorder = false
+            }
+            if (item.backRadius !== undefined) {
+                item.backRadius = _dialogControlRadius
+            }
+            // Do not restyle white label text inside the green button.
+            return
+        }
+
+        if (item.textColor !== undefined) {
+            item.textColor = _dialogContentTextColor
+        }
+
+        if (item.uncheckedBorderColor !== undefined) {
+            item.uncheckedBorderColor = _cardBorderIdle
+        }
+
+        // FactTextField / QGCTextField: green focus + dark value text.
+        if (item.activeFocusBorderColor !== undefined) {
+            item.activeFocusBorderColor = _accentGreen
+        }
+        if (item.fieldTextColor !== undefined) {
+            item.fieldTextColor = _dialogContentTextColor
+        }
+
+        if (item.color !== undefined && typeof item.text === "string") {
+            // Keep intentional accents (warnings / green) — only rewrite theme/white text.
+            const c = item.color
+            const isWarning = Qt.colorEqual(c, qgcPal.warningText)
+            const isGreen = Qt.colorEqual(c, qgcPal.colorGreen) || Qt.colorEqual(c, _accentGreen)
+            const isThemeOrWhite = Qt.colorEqual(c, qgcPal.text)
+                    || Qt.colorEqual(c, qgcPal.buttonText)
+                    || (c.r > 0.9 && c.g > 0.9 && c.b > 0.9)
+            if (!isWarning && !isGreen && isThemeOrWhite) {
+                item.color = _dialogContentTextColor
+            }
+        }
+
+        const kids = item.children
+        if (kids) {
+            for (let i = 0; i < kids.length; i++) {
+                _styleDialogContentControls(kids[i])
+            }
+        }
+    }
+
     Component.onCompleted: {
         // Re-parent externally supplied dialog content into dialogContentParent.
         // Skip internal popup frame items so content is consistently visible.
@@ -91,11 +194,13 @@ Popup {
                 child.parent = dialogContentParent
             }
         }
+        Qt.callLater(function() { _styleDialogContentControls(dialogContentParent) })
     }
 
     onAboutToShow: {
         _previousValidationErrorCount = globals.validationErrorCount
         setupDialogButtons(buttons)
+        Qt.callLater(function() { _styleDialogContentControls(dialogContentParent) })
     }
 
     onClosed: {
@@ -207,9 +312,20 @@ Popup {
         width: dialogPreferredWidth
         height: dialogColumn.implicitHeight
         implicitHeight: dialogColumn.implicitHeight
-        color: "white"
-        radius: ScreenTools.defaultFontPixelWidth * 0.8
+        color: _customMissionChrome ? "transparent" : "white"
+        radius: ScreenTools.defaultFontPixelWidth * (_customMissionChrome ? 1.4 : 0.8)
         clip: true
+
+        LiquidGlassSurface {
+            anchors.fill: parent
+            visible: root._customMissionChrome
+            cornerRadius: dialogFrame.radius
+            blurAmount: 18
+            tintColor: Qt.rgba(0.10, 0.12, 0.12, 0.78)
+            rimColor: Qt.rgba(1, 1, 1, 0.30)
+            innerGlow: "transparent"
+            showGlint: false
+        }
 
         ColumnLayout {
             id: dialogColumn
@@ -224,7 +340,7 @@ Popup {
                 Layout.rightMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
                 Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.45 : 0.75)
                 text: root.title
-                color: "#202124"
+                color: root._customMissionChrome ? "#ffffff" : root._titleColor
                 font.pointSize: (compact && largeTitleText) ? ScreenTools.largeFontPointSize
                                               : (compact ? ScreenTools.smallFontPointSize : ScreenTools.mediumFontPointSize)
                 font.weight: Font.DemiBold
@@ -239,11 +355,11 @@ Popup {
                 Layout.preferredHeight: Math.max(
                                             totalContentHeight,
                                             messageMinHeight)
-                color: "white"
+                color: root._customMissionChrome ? "transparent" : "white"
 
                 property real contentWidth: dialogPreferredWidth - _contentMargin * 4
                 property real totalContentWidth: Math.max(dialogContentParent.childrenRect.width, contentWidth)
-                property real totalContentHeight: dialogContentParent.childrenRect.height + _contentMargin * 2
+                property real totalContentHeight: dialogContentParent.childrenRect.height + _contentMargin * (compact ? 1.4 : 2.8)
 
                 QGCFlickable {
                     anchors.left: parent.left
@@ -275,7 +391,7 @@ Popup {
             Rectangle {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 1
-                color: "#dedede"
+                color: root._customMissionChrome ? Qt.rgba(1, 1, 1, 0.18) : root._cardBorderIdle
             }
 
             RowLayout {
@@ -289,13 +405,22 @@ Popup {
                     property bool enabled: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: buttonRowHeight
-                    color: rejectMouseArea.pressed ? "#f1f1f1" : "white"
+                    color: {
+                        if (root._customMissionChrome)
+                            return rejectMouseArea.pressed ? Qt.rgba(1, 1, 1, 0.12) : "transparent"
+                        return rejectMouseArea.pressed ? "#f1f1f1" : "white"
+                    }
                     visible: false
 
                     QGCLabel {
                         anchors.centerIn: parent
                         text: rejectButton.text
-                        color: rejectButton.enabled ? "#5f6368" : "#a8a8a8"
+                        color: {
+                            if (!rejectButton.enabled)
+                                return root._customMissionChrome ? Qt.rgba(1, 1, 1, 0.35) : root._hintColor
+                            return root._customMissionChrome ? "#ffffff" : root._bodyColor
+                        }
+                        font.weight: Font.Medium
                     }
 
                     QGCMouseArea {
@@ -309,7 +434,7 @@ Popup {
                 Rectangle {
                     Layout.preferredWidth: 1
                     Layout.fillHeight: true
-                    color: "#dedede"
+                    color: root._customMissionChrome ? Qt.rgba(1, 1, 1, 0.18) : root._cardBorderIdle
                     visible: acceptButton.visible && rejectButton.visible
                 }
 
@@ -319,13 +444,21 @@ Popup {
                     property bool enabled: true
                     Layout.fillWidth: true
                     Layout.preferredHeight: buttonRowHeight
-                    color: acceptMouseArea.pressed ? "#f1f1f1" : "white"
+                    color: {
+                        if (root._customMissionChrome)
+                            return acceptMouseArea.pressed ? Qt.rgba(0.14, 0.69, 0.36, 0.28) : "transparent"
+                        return acceptMouseArea.pressed ? root._accentSoftGreen : "white"
+                    }
                     visible: false
 
                     QGCLabel {
                         anchors.centerIn: parent
                         text: acceptButton.text
-                        color: acceptButton.enabled ? "#23a800" : "#a8a8a8"
+                        color: {
+                            if (!acceptButton.enabled)
+                                return root._customMissionChrome ? Qt.rgba(1, 1, 1, 0.35) : root._hintColor
+                            return root._customMissionChrome ? "#8cff7a" : root._accentGreen
+                        }
                         font.weight: Font.DemiBold
                     }
 

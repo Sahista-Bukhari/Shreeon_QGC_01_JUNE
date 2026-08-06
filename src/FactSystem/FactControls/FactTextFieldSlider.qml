@@ -103,11 +103,15 @@ Rectangle {
             id: sliderComponent
 
             QGCSlider {
-                id:                 slider
-                Layout.fillWidth:   true
-                from:               control.fact.userMin
-                to:                 control.fact.userMax
-                showBoundaryValues: true
+                id:                     slider
+                Layout.fillWidth:       true
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.55 + (showBoundaryValues ? ScreenTools.smallFontPixelHeight : 0)
+                from:                   control.fact.userMin
+                to:                     control.fact.userMax
+                showBoundaryValues:     true
+                barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.10)
+                handleRadius:           ScreenTools.defaultFontPixelHeight * 0.38
+                live:                   true
 
                 onMoved: {
                     if (control._loadComplete) {

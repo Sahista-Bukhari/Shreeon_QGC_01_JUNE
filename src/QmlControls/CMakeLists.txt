@@ -258,6 +258,11 @@ qt_add_qml_module(QGroundControlControlsModule
     QML_FILES CustomMissionView.qml
     QML_FILES AgricultureSprayingMissionView.qml
     QML_FILES SeedSpraderMissionView.qml
+    QML_FILES CustomHomePage.qml
+    QML_FILES UserManualViewer.qml
+    QML_FILES LiquidGlassSurface.qml
+    QML_FILES RippleEffect.qml
+    QML_FILES MissionStatusToolButton.qml
 )
 
 # ----------------------------------------------------------------------------

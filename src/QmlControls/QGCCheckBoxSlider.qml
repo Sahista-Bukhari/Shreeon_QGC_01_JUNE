@@ -25,6 +25,8 @@ AbstractButton   {
             anchors.left:   parent.left
             anchors.verticalCenter: parent.verticalCenter
             text:           control.text
+            color:          (typeof mainWindow !== "undefined" && mainWindow && mainWindow.activeMissionEditor === "customMission")
+                            ? "#ffffff" : qgcPal.text
             visible:        control.text !== ""
         }
 

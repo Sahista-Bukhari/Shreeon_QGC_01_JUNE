@@ -12,11 +12,12 @@ import QGroundControl.FactControls
 Rectangle {
     id:             _root
     height:         _currentItem ? (editorLoader.y + editorLoader.height + _innerMargin) : (topRowLayout.y + topRowLayout.height + _margin)
-    color:          _currentItem ? qgcPal.buttonHighlight : qgcPal.windowShade
+    color:          "transparent"
     radius:         _radius
-    opacity:        _currentItem ? 1.0 : 0.7
-    border.width:   _readyForSave ? 0 : 2
-    border.color:   qgcPal.warningText
+    opacity:        1.0
+    border.width:   1
+    border.color:   _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.85)
+                                 : (_readyForSave ? Qt.rgba(1, 1, 1, 0.28) : "#23a800")
 
     property var    map                 ///< Map control
     property var    masterController
@@ -30,16 +31,16 @@ Rectangle {
     property var    _masterController:          masterController
     property var    _missionController:         _masterController.missionController
     property bool   _currentItem:               missionItem.isCurrentItem
-    property color  _outerTextColor:            _currentItem ? qgcPal.buttonHighlightText : qgcPal.text
+    property color  _outerTextColor:            "#ffffff"
     property bool   _noMissionItemsAdded:       ListView.view.model.count === 1
     property real   _sectionSpacer:             ScreenTools.defaultFontPixelWidth / 2  // spacing between section headings
     property bool   _singleComplexItem:         _missionController.complexMissionItemNames.length === 1
     property bool   _readyForSave:              missionItem.readyForSaveState === VisualMissionItem.ReadyForSave
 
     readonly property real  _editFieldWidth:    Math.min(width - _innerMargin * 2, ScreenTools.defaultFontPixelWidth * 12)
-    readonly property real  _margin:            ScreenTools.defaultFontPixelWidth / 2
-    readonly property real  _innerMargin:       2
-    readonly property real  _radius:            ScreenTools.defaultFontPixelWidth / 2
+    readonly property real  _margin:            ScreenTools.defaultFontPixelWidth * 0.7
+    readonly property real  _innerMargin:       ScreenTools.defaultFontPixelWidth * 0.55
+    readonly property real  _radius:            ScreenTools.defaultFontPixelHeight * 0.55
     readonly property real  _hamburgerSize:     commandPicker.height * 0.75
     readonly property real  _trashSize:         commandPicker.height * 0.75
     readonly property bool  _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
@@ -49,13 +50,31 @@ Rectangle {
         colorGroupEnabled: enabled
     }
 
+    LiquidGlassSurface {
+        anchors.fill: parent
+        cornerRadius: _root._radius
+        blurAmount: 16
+        tintColor: _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.22) : Qt.rgba(0.08, 0.10, 0.10, 0.55)
+        rimColor: "transparent"
+        innerGlow: "transparent"
+        showGlint: false
+    }
+
+    RippleEffect {
+        id: itemRipple
+        rippleColor: Qt.rgba(1, 1, 1, 0.32)
+        duration: 520
+        clipRadius: _radius
+    }
+
     FocusScope {
         id:             currentItemScope
         anchors.fill:   parent
 
         MouseArea {
             anchors.fill:   parent
-            onClicked: {
+            onClicked: function(mouse) {
+                itemRipple.tap(mouse.x, mouse.y)
                 if (mainWindow.allowViewSwitch()) {
                     currentItemScope.focus = true
                     _root.clicked()
@@ -86,7 +105,7 @@ Rectangle {
             width:                  _hamburgerSize
             height:                 width
             border.width:           1
-            border.color:           qgcPal.warningText
+            border.color:           "#23a800"
             color:                  "white"
             radius:                 width / 2
             visible:                !_readyForSave
@@ -96,7 +115,7 @@ Rectangle {
                 anchors.centerIn:   parent
                 //: Indicator in Plan view to show mission item is not ready for save/send
                 text:               qsTr("?")
-                color:              qgcPal.warningText
+                color:              "#23a800"
                 font.pointSize:     ScreenTools.smallFontPointSize
             }
         }
@@ -110,7 +129,7 @@ Rectangle {
             fillMode:               Image.PreserveAspectFit
             mipmap:                 true
             smooth:                 true
-            color:                  qgcPal.buttonHighlightText
+            color:                  "#ffffff"
             visible:                _currentItem && missionItem.sequenceNumber !== 0
             source:                 "/res/TrashDelete.svg"
 
@@ -134,7 +153,12 @@ Rectangle {
 
                 property real _padding: ScreenTools.comboBoxPadding
 
-                QGCLabel { text: missionItem.commandName }
+                QGCLabel {
+                    text:           missionItem.commandName
+                    color:          _outerTextColor
+                    font.bold:      true
+                    font.pointSize: ScreenTools.mediumFontPointSize
+                }
 
                 QGCColoredImage {
                     height:             ScreenTools.defaultFontPixelWidth
@@ -142,7 +166,7 @@ Rectangle {
                     fillMode:           Image.PreserveAspectFit
                     smooth:             true
                     antialiasing:       true
-                    color:              qgcPal.text
+                    color:              _outerTextColor
                     source:             "/qmlimages/arrow-down.png"
                 }
             }
@@ -174,6 +198,8 @@ Rectangle {
             verticalAlignment:      Text.AlignVCenter
             text:                   missionItem.commandName
             color:                  _outerTextColor
+            font.bold:              true
+            font.pointSize:         ScreenTools.mediumFontPointSize
         }
     }
 
@@ -252,6 +278,7 @@ Rectangle {
 
                     QGCLabel {
                         text:       qsTr("Item #%1").arg(missionItem.sequenceNumber)
+                        color:      "#ffffff"
                         enabled:    false
                     }
                 }
@@ -270,16 +297,31 @@ Rectangle {
         sourceSize.height:      _hamburgerSize
         source:                 "qrc:/qmlimages/Hamburger.svg"
         visible:                missionItem.isCurrentItem && missionItem.sequenceNumber !== 0
-        color:                  qgcPal.buttonHighlightText
+        color:                  "#ffffff"
 
         QGCMouseArea {
             fillItem:   hamburger
             onClicked: (position) => {
                 currentItemScope.focus = true
-                position = Qt.point(position.x, position.y)
-                // For some strange reason using mainWindow in mapToItem doesn't work, so we use globals.parent instead which also gets us mainWindow
-                position = mapToItem(globals.parent, position)
-                var dropPanel = hamburgerMenuDropPanelComponent.createObject(mainWindow, { clickRect: Qt.rect(position.x, position.y, 0, 0) })
+                // Custom Mission: open beside the mission list (over the map), not on top of the cards.
+                var customMission = typeof mainWindow !== "undefined"
+                                    && mainWindow
+                                    && mainWindow.activeMissionEditor === "customMission"
+                var dropPanel
+                if (customMission) {
+                    var origin = _root.mapToItem(globals.parent, 0, 0)
+                    dropPanel = hamburgerMenuDropPanelComponent.createObject(mainWindow, {
+                        clickRect: Qt.rect(origin.x, origin.y, 0, Math.max(_root.height, hamburger.height)),
+                        preferLeft: true
+                    })
+                } else {
+                    position = Qt.point(position.x, position.y)
+                    // For some strange reason using mainWindow in mapToItem doesn't work, so we use globals.parent instead which also gets us mainWindow
+                    position = mapToItem(globals.parent, position)
+                    dropPanel = hamburgerMenuDropPanelComponent.createObject(mainWindow, {
+                        clickRect: Qt.rect(position.x, position.y, 0, 0)
+                    })
+                }
                 dropPanel.open()
             }
         }

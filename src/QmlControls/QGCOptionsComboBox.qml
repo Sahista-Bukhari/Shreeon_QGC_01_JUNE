@@ -17,15 +17,18 @@ ComboBox {
     property bool   _flashChecked
     property string _flashText
     property bool   _showFlash:     false
+    readonly property bool _glassTheme: typeof mainWindow !== "undefined"
+                                        && mainWindow.activeMissionEditor === "customMission"
 
     Component.onCompleted: indicator.color = Qt.binding(function() { return _controlQGCPal.text })
 
     background: Rectangle {
         implicitWidth:                  ScreenTools.implicitComboBoxWidth
         implicitHeight:                 ScreenTools.implicitComboBoxHeight
-        color:                          _controlQGCPal.window
+        radius:                         control._glassTheme ? height / 2 : 0
+        color:                          control._glassTheme ? Qt.rgba(1, 1, 1, 0.14) : _controlQGCPal.window
         border.width:                   enabled ? 1 : 0
-        border.color:                   "#999"
+        border.color:                   control._glassTheme ? Qt.rgba(1, 1, 1, 0.30) : "#999"
     }
 
     /*! Adding the Combobox list item to the theme.  */
@@ -104,7 +107,7 @@ ComboBox {
             id:                         text
             anchors.verticalCenter:     parent.verticalCenter
             text:                       labelText
-            color:                      _controlQGCPal.text
+            color:                      control._glassTheme ? "#ffffff" : _controlQGCPal.text
             visible:                    !_showFlash
         }
 

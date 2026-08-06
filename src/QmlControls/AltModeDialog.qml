@@ -73,6 +73,7 @@ QGCPopupDialog {
             text:                qsTr("Altitude mode for mission items")
             font.pointSize:      ScreenTools.smallFontPointSize
             horizontalAlignment: Text.AlignHCenter
+            color:               "#3f3f3f"
         }
 
         Repeater {

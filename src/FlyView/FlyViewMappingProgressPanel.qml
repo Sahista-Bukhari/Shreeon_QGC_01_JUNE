@@ -10,12 +10,15 @@ Rectangle {
     property int routePercent: 0
     property int photosTaken: 0
     property int photosPlanned: 0
+    property bool photosVisible: true
     property string reconstructionText: qsTr("Pending")
 
     readonly property int _photosPercent: photosPlanned > 0
                                           ? Math.min(100, Math.floor((photosTaken / photosPlanned) * 100))
                                           : 0
-    readonly property int totalPercent: Math.floor((routePercent + _photosPercent) / 2)
+    readonly property int totalPercent: photosVisible
+                                        ? Math.floor((routePercent + _photosPercent) / 2)
+                                        : routePercent
 
     readonly property real _hPad: ScreenTools.defaultFontPixelWidth * 1.8
     readonly property real _vPad: ScreenTools.defaultFontPixelHeight * 0.5
@@ -154,12 +157,14 @@ Rectangle {
             }
 
             MetricItem {
+                visible: root.photosVisible
                 iconSource: "/res/modern-icons/MappingProgressPhotos.svg"
                 labelText: qsTr("Photos")
                 valueText: root.photosTaken + " / " + root.photosPlanned
             }
 
             MetricItem {
+                visible: root.photosVisible
                 iconSource: "/res/modern-icons/MappingProgressReconstruction.svg"
                 labelText: qsTr("Reconstruction")
                 valueText: root.reconstructionText

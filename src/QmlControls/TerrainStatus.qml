@@ -4,11 +4,8 @@ import QtCharts
 import QGroundControl
 import QGroundControl.Controls
 
-Rectangle {
+Item {
     id:         root
-    radius:     ScreenTools.defaultFontPixelWidth * 0.5
-    color:      qgcPal.window
-    opacity:    0.80
     clip:       true
 
     property var missionController
@@ -26,12 +23,25 @@ Rectangle {
 
     QGCPalette { id: qgcPal }
 
+    readonly property color _hudGlassFill:   Qt.rgba(0.12, 0.12, 0.14, 0.15)
+    readonly property color _hudGlassBorder: Qt.rgba(1.00, 1.00, 1.00, 0.28)
+    readonly property real  _hudGlassRadius: ScreenTools.defaultFontPixelHeight * 0.5
+
+    Rectangle {
+        anchors.fill: parent
+        radius:       root._hudGlassRadius
+        color:        root._hudGlassFill
+        border.width: 1
+        border.color: root._hudGlassBorder
+    }
+
     QGCLabel {
         id:                     titleLabel
         anchors.top:            parent.bottom
         width:                  parent.height
         font.pointSize:         ScreenTools.smallFontPointSize
         text:                   qsTr("Height AMSL (%1)").arg(_unitsConversion.appSettingsVerticalDistanceUnitsString)
+        color:                  "#ffffff"
         horizontalAlignment:    Text.AlignHCenter
         rotation:               -90
         transformOrigin:        Item.TopLeft
@@ -70,7 +80,7 @@ Rectangle {
                     labelsFont.pointSize:       ScreenTools.smallFontPointSize
                     labelsColor:                qgcPal.text
                     tickCount:                  5
-                    gridLineColor:              applyOpacity(qgcPal.text, 0.25)
+                    gridLineColor:              applyOpacity(qgcPal.text, 0.12)
                 }
 
                 ValueAxis {
@@ -82,7 +92,7 @@ Rectangle {
                     labelsFont.pointSize:       ScreenTools.smallFontPointSize
                     labelsColor:                qgcPal.text
                     tickCount:                  4
-                    gridLineColor:              applyOpacity(qgcPal.text, 0.25)
+                    gridLineColor:              applyOpacity(qgcPal.text, 0.12)
                 }
 
                 LineSeries {

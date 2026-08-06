@@ -27,6 +27,15 @@ public:
     /// Check for file existence of specified fully qualified file name
     Q_INVOKABLE static bool fileExists(const QString &filename);
 
+    /// Copy a local file or qrc resource to destPath. Overwrites existing dest.
+    Q_INVOKABLE static bool copyFile(const QString &sourcePath, const QString &destPath);
+
+    /// Resolve the bundled/user-manual PDF path (filesystem first, then qrc).
+    Q_INVOKABLE static QString resolveUserManualPdfPath();
+
+    /// Render PDF pages to PNG previews; returns file:// URLs for each page image.
+    Q_INVOKABLE static QStringList renderPdfPages(const QString &pdfPath, int dpi = 120);
+
     /// Deletes the file specified by the fully qualified file name
     Q_INVOKABLE static void deleteFile(const QString &filename);
 

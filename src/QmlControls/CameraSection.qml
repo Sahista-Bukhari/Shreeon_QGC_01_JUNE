@@ -11,6 +11,7 @@ Column {
     property alias buttonGroup: cameraSectionHeader.buttonGroup
     property alias showSpacer:  cameraSectionHeader.showSpacer
     property alias checked:     cameraSectionHeader.checked
+    property alias headerColor: cameraSectionHeader.color
     property bool showSectionHeader: true
 
     spacing: _margin

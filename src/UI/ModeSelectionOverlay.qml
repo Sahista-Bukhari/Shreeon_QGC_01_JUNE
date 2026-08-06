@@ -12,6 +12,8 @@ Item {
     height: 350
     width: 800
 
+    QGCPalette { id: qgcPal }
+
     readonly property real _cardGap: ScreenTools.defaultFontPixelWidth * 1.4
     readonly property real _cardRadius: ScreenTools.defaultFontPixelHeight * 0.85
     readonly property color _closeColor: "#AEAEB2"
@@ -418,14 +420,82 @@ Item {
                             height: ScreenTools.defaultFontPixelHeight * 0.75
                             source: "/res/chevron-down.svg"
                             width: height
+                            rotation: themeMenuPopup.visible ? 180 : 0
 
+                            Behavior on rotation { NumberAnimation { duration: 180 } }
                         }
-
                     }
+
                     MouseArea {
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: themeArrow.open()
+                        onClicked: {
+                            if (themeMenuPopup.visible)
+                                themeMenuPopup.close()
+                            else
+                                themeMenuPopup.open()
+                        }
+                    }
+
+                    Popup {
+                        id: themeMenuPopup
+                        x: 0
+                        y: standardModePill.height + ScreenTools.defaultFontPixelHeight * 0.35
+                        width: Math.max(standardModePill.width, ScreenTools.defaultFontPixelWidth * 16)
+                        padding: ScreenTools.defaultFontPixelWidth * 0.6
+                        modal: false
+                        focus: true
+                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
+
+                        background: Rectangle {
+                            color: "white"
+                            radius: ScreenTools.defaultFontPixelHeight * 0.45
+                            border.width: 1
+                            border.color: Qt.rgba(0, 0, 0, 0.12)
+                        }
+
+                        Column {
+                            width: parent.width
+                            spacing: ScreenTools.defaultFontPixelHeight * 0.25
+
+                            Repeater {
+                                model: [
+                                    { label: qsTr("Light"), theme: QGCPalette.Light },
+                                    { label: qsTr("Dark"),  theme: QGCPalette.Dark }
+                                ]
+
+                                Rectangle {
+                                    width: parent.width
+                                    height: ScreenTools.defaultFontPixelHeight * 2.1
+                                    radius: ScreenTools.defaultFontPixelHeight * 0.35
+                                    color: themeItemMouse.containsMouse
+                                           ? Qt.rgba(0, 0.5, 0, 0.10)
+                                           : (qgcPal.globalTheme === modelData.theme
+                                              ? Qt.rgba(0, 0.5, 0, 0.16)
+                                              : "transparent")
+
+                                    QGCLabel {
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.left: parent.left
+                                        anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.8
+                                        text: modelData.label
+                                        color: control._titleColor
+                                        font.weight: qgcPal.globalTheme === modelData.theme ? Font.DemiBold : Font.Normal
+                                    }
+
+                                    MouseArea {
+                                        id: themeItemMouse
+                                        anchors.fill: parent
+                                        hoverEnabled: true
+                                        cursorShape: Qt.PointingHandCursor
+                                        onClicked: {
+                                            qgcPal.globalTheme = modelData.theme
+                                            themeMenuPopup.close()
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 QGCLabel {
@@ -456,11 +526,8 @@ Item {
                         cursorShape: Qt.PointingHandCursor
                         hoverEnabled: true
 
-                        // onClicked: control.isOpen = false
-                        onClicked: {
-                            mainWindow.close()
-                            console.log("Window close properly")
-                            }
+                        // X closes mode picker and returns to Custom Home Page
+                        onClicked: mainWindow.showCustomHomePage()
                     }
                 }
             }

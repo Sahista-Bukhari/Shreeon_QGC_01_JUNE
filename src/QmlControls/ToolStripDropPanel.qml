@@ -12,7 +12,7 @@ Item {
     property real   radius:             ScreenTools.isMobile ? ScreenTools.defaultFontPixelHeight * 1.75 : ScreenTools.defaultFontPixelHeight * 1.25
     property real   viewportMargins:    0
     property var    toolStrip
-    property bool   dropToLeft:         toolStrip ? toolStrip.dropLeft : false  // Inherit from toolStrip
+    property bool   dropToLeft:         !!(toolStrip && toolStrip.dropLeft)
 
     // Should be an enum but that get's into the whole problem of creating a singleton which isn't worth the effort
     readonly property int dropLeft:     1
@@ -22,7 +22,7 @@ Item {
 
     readonly property real _arrowBaseHeight:    radius             // Height of vertical side of arrow
     readonly property real _arrowPointWidth:    radius * 0.666     // Distance from vertical side to point
-    readonly property real _dropMargin:         ScreenTools.defaultFontPixelWidth
+    readonly property real _dropMargin:         ScreenTools.defaultFontPixelWidth * 1.6
 
     property var    _dropEdgeTopPoint
     property alias  _dropDownComponent: panelLoader.sourceComponent
@@ -114,6 +114,43 @@ Item {
             anchors.fill: parent
         }
 
+        readonly property bool _customMission: typeof mainWindow !== "undefined"
+                                               && mainWindow
+                                               && mainWindow.activeMissionEditor === "customMission"
+        readonly property real _panelRadius: ScreenTools.defaultFontPixelHeight * 0.55
+        readonly property color _panelColor: _customMission
+                                             ? Qt.rgba(0.10, 0.12, 0.12, 0.58)
+                                             : Qt.rgba(0.30, 0.32, 0.32, 0.78)
+        readonly property color _panelBorder: Qt.rgba(1, 1, 1, 0.32)
+
+        Item {
+            id: panelBody
+            x: dropToLeft ? 0 : _arrowPointWidth
+            width: parent.width - _arrowPointWidth
+            height: parent.height
+
+            Rectangle {
+                anchors.fill: parent
+                visible: !dropDownItem._customMission
+                radius: dropDownItem._panelRadius
+                color: dropDownItem._panelColor
+                border.width: 1
+                border.color: dropDownItem._panelBorder
+            }
+
+            LiquidGlassSurface {
+                anchors.fill: parent
+                visible: dropDownItem._customMission
+                enableBlur: false
+                cornerRadius: dropDownItem._panelRadius
+                tintColor: Qt.rgba(0.10, 0.12, 0.12, 0.52)
+                rimColor: Qt.rgba(1, 1, 1, 0.38)
+                innerGlow: Qt.rgba(1, 1, 1, 0.12)
+                accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
+                showGlint: true
+            }
+        }
+
         Canvas {
             id:             arrowCanvas
             anchors.fill:   parent
@@ -123,37 +160,29 @@ Item {
             property point arrowBase2: Qt.point(0, 0)
 
             onPaint: {
-                var panelX = _arrowPointWidth
-                var panelY = 0
-                var panelWidth = parent.width - _arrowPointWidth
-                var panelHeight = parent.height
-
                 var context = getContext("2d")
                 context.reset()
                 context.beginPath()
-
-                context.moveTo(panelX, panelY)                              // top left
-                context.lineTo(panelX + panelWidth, panelY)                 // top right
-                context.lineTo(panelX + panelWidth, panelX + panelHeight)   // bottom right
-                context.lineTo(panelX, panelY + panelHeight)                // bottom left
-                context.lineTo(arrowBase2.x, arrowBase2.y)
+                context.moveTo(arrowBase1.x, arrowBase1.y)
                 context.lineTo(arrowPoint.x, arrowPoint.y)
-                context.lineTo(arrowBase1.x, arrowBase1.y)
-                context.lineTo(panelX, panelY)                              // top left
-
+                context.lineTo(arrowBase2.x, arrowBase2.y)
                 context.closePath()
-                context.fillStyle = qgcPal.windowShade
+                context.fillStyle = dropDownItem._panelColor
                 context.fill()
             }
-        } // Canvas - arrowCanvas
+        }
 
-        QGCFlickable {
+        Flickable {
             id:                 panelItemFlickable
             anchors.margins:    _dropMargin
-            anchors.leftMargin: _dropMargin + _arrowPointWidth
+            anchors.leftMargin: dropToLeft ? _dropMargin : (_dropMargin + _arrowPointWidth)
+            anchors.rightMargin: dropToLeft ? (_dropMargin + _arrowPointWidth) : _dropMargin
             anchors.fill:       parent
+            clip:               true
+            boundsBehavior:     Flickable.StopAtBounds
             flickableDirection: Flickable.VerticalFlick
-            contentWidth:       panelLoader.width
+            interactive:        contentHeight > height + 1
+            contentWidth:       width
             contentHeight:      panelLoader.height
 
             Loader {

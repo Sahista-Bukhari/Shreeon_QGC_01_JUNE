@@ -21,6 +21,9 @@
     "type":             "double",
     "decimalPlaces":    2,
     "units":            "m",
+    "min":              0,
+    "max":              10000,
+    "increment":        0.5,
     "default":     0.0
 }
 ]

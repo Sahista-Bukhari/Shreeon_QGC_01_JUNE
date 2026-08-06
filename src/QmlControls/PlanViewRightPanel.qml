@@ -38,52 +38,93 @@ Item {
 
     QGCPalette { id: qgcPal }
 
-    Rectangle {
-        id:             rightPanelBackground
-        anchors.fill:   parent
-        color:          qgcPal.window
-        opacity:        0.85
+    readonly property real  _glassRadius: ScreenTools.defaultFontPixelHeight * 0.9
+    readonly property color _glassTint:   Qt.rgba(0.06, 0.10, 0.09, 0.34)
+    readonly property color _glassRim:    Qt.rgba(1, 1, 1, 0.32)
+    readonly property color _accentGreen: "#23a800"
+    readonly property color _titleColor:  "#3f3f3f"
+    readonly property color _cardBorder:  "#e2e2e2"
+    readonly property real  _cardRadius:  ScreenTools.defaultFontPixelWidth * 0.75
+
+    LiquidGlassSurface {
+        id:               rightPanelBackground
+        anchors.fill:     parent
+        backgroundSource: editorMap
+        cornerRadius:     root._glassRadius
+        blurAmount:       20
+        tintColor:        root._glassTint
+        rimColor:         root._glassRim
+        accentColor:      Qt.rgba(0.14, 0.69, 0.36, 0.08)
+        showGlint:        false
     }
 
 
-    // Open/Close panel
+    // Open/Close panel — wider Task Settings tab with liquid glass
     Item {
         id:                     panelOpenCloseButton
         anchors.right:          parent.left
         anchors.verticalCenter: parent.verticalCenter
-        width:                  toggleButtonRect.width - toggleButtonRect.radius
+        width:                  toggleButtonRect.width - root._cardRadius
         height:                 toggleButtonRect.height
         clip:                   true
 
         property bool _expanded: root.anchors.right == root.parent.right
+        readonly property bool _highlighted: toggleMouse.containsMouse || toggleMouse.pressed
 
-        Rectangle {
+        Item {
             id:             toggleButtonRect
-            width:          ScreenTools.defaultFontPixelWidth * 2.25
-            height:         width * 3
-            radius:         ScreenTools.defaultBorderRadius
-            color:          rightPanelBackground.color
-            opacity:        rightPanelBackground.opacity
+            width:          ScreenTools.defaultFontPixelWidth * 4.6
+            height:         ScreenTools.defaultFontPixelHeight * 4.2
+
+            LiquidGlassSurface {
+                anchors.fill:     parent
+                backgroundSource: editorMap
+                cornerRadius:     root._cardRadius * 1.4
+                blurAmount:       18
+                // Idle state matches Mission Settings panel glass so the tab doesn't look like a different chrome
+                tintColor:        panelOpenCloseButton._highlighted
+                                  ? Qt.rgba(0.14, 0.66, 0.00, 0.32)
+                                  : root._glassTint
+                rimColor:         panelOpenCloseButton._highlighted
+                                  ? Qt.rgba(0.55, 1.0, 0.72, 0.55)
+                                  : root._glassRim
+                accentColor:      Qt.rgba(0.14, 0.69, 0.36, 0.08)
+                showGlint:        true
+                pressed:          toggleMouse.pressed
+            }
 
             QGCLabel {
                 id:                 toggleButtonLabel
                 anchors.centerIn:   parent
                 text:               panelOpenCloseButton._expanded ? ">" : "<"
-                color:              qgcPal.buttonText
+                color:              "white"
+                font.weight:        Font.DemiBold
+                font.pointSize:     ScreenTools.mediumFontPointSize
+                style:              Text.Outline
+                styleColor:         Qt.rgba(0, 0, 0, 0.28)
+                z:                  1
             }
 
+            RippleEffect {
+                id: toggleRipple
+                z:  2
+                rippleColor: Qt.rgba(1, 1, 1, 0.42)
+                clipRadius: root._cardRadius * 1.4
+            }
         }
 
         QGCMouseArea {
-            anchors.fill: parent
+            id:             toggleMouse
+            anchors.fill:   parent
+            hoverEnabled:   true
+            cursorShape:    Qt.PointingHandCursor
 
-            onClicked: {
+            onClicked: function(mouse) {
+                toggleRipple.tap(mouse.x, mouse.y)
                 if (panelOpenCloseButton._expanded) {
-                    // Close panel
                     root.anchors.right = undefined
                     root.anchors.left = root.parent.right
                 } else {
-                    // Open panel
                     root.anchors.left = undefined
                     root.anchors.right = root.parent.right
                 }
@@ -101,11 +142,13 @@ Item {
         }
 
         ColumnLayout {
-            anchors.fill:   parent
-            spacing:        ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.fill:       parent
+            anchors.margins:    ScreenTools.defaultFontPixelWidth * 0.55
+            spacing:            ScreenTools.defaultFontPixelHeight * 0.5
 
             QGCTabBar {
                 Layout.fillWidth: true
+                Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.15
 
                 QGCTabButton {
                     text:       qsTr("Mission")

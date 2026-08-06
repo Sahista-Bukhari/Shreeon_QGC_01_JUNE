@@ -1285,7 +1285,7 @@ void SurveyComplexItem::_recalcCameraShots(void)
                             } else {
                                 // Trigger stop
                                 waitingForTriggerStop = false;
-                                _cameraShots += qCeil(distanceEndCoord.distanceTo(distanceStartCoord) / triggerDistance);
+                                _cameraShots += qCeil(distanceEndCoord.distanceTo(distanceStartCoord) / triggerDistance) + 1;
                                 distanceStartCoord = QGeoCoordinate();
                                 distanceEndCoord = QGeoCoordinate();
                             }
@@ -1304,7 +1304,9 @@ void SurveyComplexItem::_recalcCameraShots(void)
                         firstCameraCoord = transect.first().coord;
                         lastCameraCoord = transect.last().coord;
                     }
-                    _cameraShots += qCeil(firstCameraCoord.distanceTo(lastCameraCoord) / triggerDistance);
+                    // Entry and exit commands both request an immediate image.
+                    // Count both endpoints in addition to distance-based shots.
+                    _cameraShots += qCeil(firstCameraCoord.distanceTo(lastCameraCoord) / triggerDistance) + 1;
                 }
             }
         }

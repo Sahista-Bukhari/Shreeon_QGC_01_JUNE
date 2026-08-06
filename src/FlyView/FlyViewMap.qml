@@ -48,11 +48,15 @@ FlightMap {
     property var    rallyPointController
     property var    routeMappingBoundaryPath: []
     property var    routeMappingTransectPath: []
+    property var    routeMappingPhotoCaptureTransectPoints: []
     property var    routeMappingTakeoffCoordinate: QtPositioning.coordinate()
     property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
     property var    routeMappingExitCoordinate: QtPositioning.coordinate()
     property real   routeMappingEntryHeading: 0
     property real   routeMappingExitHeading: 0
+    property real   routeMappingPhotoFootprintSide: 25
+    property real   routeMappingPhotoFootprintFrontal: 25
+    property var    routeMappingLivePhotoModel: null
     property bool   hideVehicleMissionForUnuploadedRoute: false
     readonly property var _routeMappingTakeoffPath: {
         if (!routeMappingTakeoffCoordinate || !routeMappingTakeoffCoordinate.isValid
@@ -153,6 +157,98 @@ FlightMap {
             return -1
         }
         return bestAlong
+    }
+
+    function routeMappingHeadingAtCoordinate(coord) {
+        var path = routeMappingTransectPath
+        if (!path || path.length < 2 || !coord || !coord.isValid) {
+            return routeMappingEntryHeading
+        }
+
+        var bestHeading = routeMappingEntryHeading
+        var minDistance = Number.MAX_VALUE
+        for (var i = 0; i < path.length - 1; i++) {
+            var projected = _projectPointOnSegment(coord, path[i], path[i + 1])
+            var distance = coord.distanceTo(projected)
+            if (distance < minDistance) {
+                minDistance = distance
+                bestHeading = path[i].azimuthTo(path[i + 1])
+            }
+        }
+        return bestHeading
+    }
+
+    function routeMappingDistanceAlongPath(coord) {
+        var path = routeMappingTransectPath
+        if (!path || path.length < 2 || !coord || !coord.isValid) {
+            return -1
+        }
+        return _distanceAlongTransect(path, coord)
+    }
+
+    function routeMappingPhotoCaptureInfo(coord) {
+        var points = routeMappingPhotoCaptureTransectPoints
+        if (!points || points.length < 2 || !coord || !coord.isValid) {
+            return {
+                valid: false,
+                segmentIndex: -1,
+                distanceToSegment: Number.MAX_VALUE,
+                alongSegment: 0,
+                segmentLength: 0,
+                heading: routeMappingEntryHeading
+            }
+        }
+
+        var bestInfo = null
+        for (var i = 0; i + 1 < points.length; i += 2) {
+            var segmentStart = points[i]
+            var segmentEnd = points[i + 1]
+            if (!segmentStart || !segmentStart.isValid
+                    || !segmentEnd || !segmentEnd.isValid) {
+                continue
+            }
+
+            var projected = _projectPointOnSegment(coord, segmentStart, segmentEnd)
+            var distanceToSegment = coord.distanceTo(projected)
+            if (!bestInfo || distanceToSegment < bestInfo.distanceToSegment) {
+                bestInfo = {
+                    valid: true,
+                    segmentIndex: Math.floor(i / 2),
+                    distanceToSegment: distanceToSegment,
+                    alongSegment: segmentStart.distanceTo(projected),
+                    segmentLength: segmentStart.distanceTo(segmentEnd),
+                    heading: segmentStart.azimuthTo(segmentEnd),
+                    startCoordinate: segmentStart,
+                    endCoordinate: segmentEnd,
+                    projectedCoordinate: projected
+                }
+            }
+        }
+
+        return bestInfo ? bestInfo : {
+            valid: false,
+            segmentIndex: -1,
+            distanceToSegment: Number.MAX_VALUE,
+            alongSegment: 0,
+            segmentLength: 0,
+            heading: routeMappingEntryHeading
+        }
+    }
+
+    function _photoFootprintPixels(coord, meters, azimuth) {
+        if (!coord || !coord.isValid || !meters || meters <= 0) {
+            return ScreenTools.defaultFontPixelHeight * 2
+        }
+
+        var halfDistance = meters / 2
+        var startCoord = coord.atDistanceAndAzimuth(-halfDistance, azimuth)
+        var endCoord = coord.atDistanceAndAzimuth(halfDistance, azimuth)
+        var startPoint = fromCoordinate(startCoord, false)
+        var endPoint = fromCoordinate(endCoord, false)
+        var dx = endPoint.x - startPoint.x
+        var dy = endPoint.y - startPoint.y
+        var pixelDistance = Math.sqrt(dx * dx + dy * dy)
+        return Math.max(8, Math.min(600, pixelDistance))
     }
 
     function _slicePathFromStart(path, endDistance) {
@@ -1287,6 +1383,110 @@ FlightMap {
         path: _routeMappingRemainingTransectPath
         visible: !planEditMode && _routeMappingRemainingTransectPath.length >= 2
         z: QGroundControl.zOrderWaypointLines + 2
+    }
+
+    // Each confirmed mapping capture becomes a georeferenced camera footprint.
+    // The image is a live frame saved at CAMERA_IMAGE_CAPTURED time and scales
+    // with map zoom so successive shots form an in-progress orthomosaic strip.
+    MapItemView {
+        model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
+
+        delegate: MapQuickItem {
+            id: mappingPhotoItem
+
+            required property real photoLatitude
+            required property real photoLongitude
+            required property real photoAltitude
+            required property real photoHeading
+            required property int photoSequence
+            required property string photoImageSource
+
+            property real footprintSide: _root.routeMappingPhotoFootprintSide
+            property real footprintFrontal: _root.routeMappingPhotoFootprintFrontal
+            property real mapZoom: _root.zoomLevel
+            property var mapCenter: _root.center
+            property real mapBearing: _root.bearing
+
+            function footprintPixels(meters, azimuth) {
+                return _root._photoFootprintPixels(coordinate, meters, azimuth)
+            }
+
+            coordinate: QtPositioning.coordinate(
+                            mappingPhotoItem.photoLatitude,
+                            mappingPhotoItem.photoLongitude,
+                            mappingPhotoItem.photoAltitude)
+            anchorPoint.x: mappingPhotoTile.width / 2
+            anchorPoint.y: mappingPhotoTile.height / 2
+            z: QGroundControl.zOrderWaypointLines + 1
+
+            sourceItem: Item {
+                id: mappingPhotoTile
+
+                property string stableImageSource: mappingPhotoItem.photoImageSource
+
+                width: {
+                    var unusedZoom = mappingPhotoItem.mapZoom
+                    var unusedCenter = mappingPhotoItem.mapCenter
+                    return mappingPhotoItem.footprintPixels(
+                                mappingPhotoItem.footprintSide,
+                                mappingPhotoItem.photoHeading + 90)
+                }
+                height: {
+                    var unusedZoom = mappingPhotoItem.mapZoom
+                    var unusedCenter = mappingPhotoItem.mapCenter
+                    return mappingPhotoItem.footprintPixels(
+                                mappingPhotoItem.footprintFrontal,
+                                mappingPhotoItem.photoHeading)
+                }
+
+                transform: Rotation {
+                    origin.x: mappingPhotoTile.width / 2
+                    origin.y: mappingPhotoTile.height / 2
+                    angle: mappingPhotoItem.photoHeading - mappingPhotoItem.mapBearing
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    color: "#263238"
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.75)
+                }
+
+                Image {
+                    id: mappingPhotoImage
+                    anchors.fill: parent
+                    source: mappingPhotoTile.stableImageSource
+                    fillMode: Image.Stretch
+                    asynchronous: true
+                    cache: false
+                    smooth: true
+                    mipmap: true
+                    opacity: status === Image.Ready ? 0.88 : 0
+                }
+
+                QGCLabel {
+                    anchors.centerIn: parent
+                    text: qsTr("Photo %1").arg(mappingPhotoItem.photoSequence)
+                    color: "white"
+                    font.bold: true
+                    font.pointSize: ScreenTools.smallFontPointSize
+                    visible: mappingPhotoImage.status !== Image.Ready
+                }
+
+                Timer {
+                    property int attempts: 0
+                    interval: 200
+                    repeat: true
+                    running: mappingPhotoImage.status !== Image.Ready && attempts < 25
+                    onTriggered: {
+                        attempts++
+                        mappingPhotoImage.source = ""
+                        mappingPhotoImage.source = mappingPhotoTile.stableImageSource
+                                + "?attempt=" + attempts
+                    }
+                }
+            }
+        }
     }
 
     MapQuickItem {

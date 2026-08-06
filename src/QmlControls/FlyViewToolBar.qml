@@ -84,14 +84,28 @@ Item {
                         height:     parent.height
                         spacing:    0
 
-                        QGCToolBarButton {
+                        Item {
                             id:                 qgcButton
                             Layout.fillHeight:  true
-                            icon.source:        "/res/QGCLogoFull.svg"
-                            logo:               true
-                            onClicked: {
-                                var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
-                                mainWindow.showModeSelection(point)
+                            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 3.2
+
+                            Image {
+                                anchors.centerIn: parent
+                                source: "qrc:/ModeSelection/shreeon_logo.png"
+                                width: ScreenTools.defaultFontPixelHeight * 2.4
+                                height: width
+                                fillMode: Image.PreserveAspectFit
+                                mipmap: true
+                                smooth: true
+                            }
+
+                            QGCMouseArea {
+                                anchors.fill: parent
+                                cursorShape: Qt.PointingHandCursor
+                                onClicked: {
+                                    var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
+                                    mainWindow.showModeSelection(point)
+                                }
                             }
                         }
                         MainStatusIndicator {

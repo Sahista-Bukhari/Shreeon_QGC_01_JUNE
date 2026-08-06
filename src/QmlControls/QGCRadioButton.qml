@@ -14,6 +14,8 @@ RadioButton {
 
     QGCPalette { id:qgcPal; colorGroupEnabled: enabled }
 
+    background: Item { implicitWidth: 0; implicitHeight: 0 }
+
     indicator: Rectangle {
         implicitWidth:          ScreenTools.radioButtonIndicatorSize
         implicitHeight:         width

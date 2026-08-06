@@ -16,12 +16,21 @@ QGCPopupDialog {
     property var    map
     property bool   flyThroughCommandsAllowed
 
+    readonly property bool _glassTheme: typeof mainWindow !== "undefined"
+                                        && mainWindow.activeMissionEditor === "customMission"
+    readonly property real _cardRadius: ScreenTools.defaultFontPixelHeight * 0.55
+
     ColumnLayout {
+        spacing: _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.55 : 0
+        width: ScreenTools.defaultFontPixelWidth * (_glassTheme ? 44 : 40)
+
         RowLayout {
             spacing: ScreenTools.defaultFontPixelWidth
+            Layout.fillWidth: true
 
             QGCLabel {
                 text: qsTr("Category:")
+                color: _glassTheme ? "#ffffff" : qgcPal.text
             }
 
             QGCComboBox {
@@ -47,20 +56,38 @@ QGCPopupDialog {
             id:                 commandList
             Layout.fillWidth:   true
 
-            delegate: Rectangle {
-                width:  parent.width
-                height: commandColumn.height + ScreenTools.defaultFontPixelHeight
-                color:  QGroundControl.globalPalette.button
+            delegate: Item {
+                width:  commandList.width
+                height: commandColumn.height + ScreenTools.defaultFontPixelHeight * (_glassTheme ? 1.15 : 1)
 
                 property var    mavCmdInfo: modelData
-                property color  textColor:  QGroundControl.globalPalette.buttonText
+                property color  textColor:  _glassTheme ? "#ffffff" : QGroundControl.globalPalette.buttonText
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: !_glassTheme
+                    color: QGroundControl.globalPalette.button
+                }
+
+                LiquidGlassSurface {
+                    anchors.fill: parent
+                    visible: _glassTheme
+                    cornerRadius: _cardRadius
+                    blurAmount: 12
+                    tintColor: commandMouse.pressed ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.14)
+                    rimColor: Qt.rgba(1, 1, 1, 0.32)
+                    innerGlow: "transparent"
+                    showGlint: false
+                    pressed: commandMouse.pressed
+                }
 
                 Column {
                     id:                 commandColumn
-                    anchors.margins:    ScreenTools.defaultFontPixelWidth
+                    anchors.margins:    ScreenTools.defaultFontPixelWidth * (_glassTheme ? 1.25 : 1)
                     anchors.left:       parent.left
                     anchors.right:      parent.right
-                    anchors.top:        parent.top
+                    anchors.verticalCenter: parent.verticalCenter
+                    spacing:            _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.15 : 0
 
                     QGCLabel {
                         text:           mavCmdInfo.friendlyName
@@ -69,16 +96,16 @@ QGCPopupDialog {
                     }
 
                     QGCLabel {
-                        anchors.margins:    ScreenTools.defaultFontPixelWidth
                         anchors.left:       parent.left
                         anchors.right:      parent.right
                         text:               mavCmdInfo.description
                         wrapMode:           Text.WordWrap
-                        color:              textColor
+                        color:              _glassTheme ? Qt.rgba(1, 1, 1, 0.72) : textColor
                     }
                 }
 
                 MouseArea {
+                    id:             commandMouse
                     anchors.fill:   parent
                     onClicked: {
                         missionItem.setMapCenterHintForCommandChange(map.center)
@@ -89,4 +116,6 @@ QGCPopupDialog {
             }
         }
     }
+
+    QGCPalette { id: qgcPal }
 }

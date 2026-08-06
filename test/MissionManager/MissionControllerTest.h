@@ -18,6 +18,7 @@ private slots:
     void cleanup(void);
 
     void _testLoadJsonSectionAvailable  (void);
+    void _testLoadBaylandsMappingPlan   (void);
     void _testEmptyVehicleAPM           (void);
     void _testEmptyVehiclePX4           (void);
     void _testGlobalAltMode             (void);

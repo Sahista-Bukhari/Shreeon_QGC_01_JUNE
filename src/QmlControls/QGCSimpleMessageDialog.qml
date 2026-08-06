@@ -29,7 +29,11 @@ QGCPopupDialog {
             Layout.fillWidth:       true
             wrapMode:               Text.WordWrap
             horizontalAlignment:    Text.AlignHCenter
-            color:                  "#343434"
+            // White on Custom Mission glass dialogs; dark on white dialogs elsewhere
+            color:                  (typeof mainWindow !== "undefined"
+                                     && mainWindow
+                                     && mainWindow.activeMissionEditor === "customMission")
+                                    ? "#ffffff" : "#3f3f3f"
         }
     }
 }

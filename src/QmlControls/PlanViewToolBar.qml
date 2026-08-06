@@ -10,7 +10,8 @@ Rectangle {
     id: _root
     width: parent.width
     height: ScreenTools.toolbarHeight
-    color: qgcPal.toolbarBackground
+    color: Qt.rgba(0, 0, 0, 0.34)
+    z: QGroundControl.zOrderWidgets + 20
 
     property var planMasterController
 
@@ -22,70 +23,81 @@ Rectangle {
 
     QGCPalette { id: qgcPal }
 
-    /// Bottom single pixel divider
-    Rectangle {
-        anchors.left: parent.left
-        anchors.right: parent.right
-        anchors.bottom: parent.bottom
-        height: 1
-        color: "black"
-        visible: qgcPal.globalTheme === QGCPalette.Light
-    }
-
     RowLayout {
         anchors.bottomMargin: 1
-        anchors.rightMargin: ScreenTools.defaultFontPixelWidth / 2
+        anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+        anchors.rightMargin: ScreenTools.defaultFontPixelWidth
         anchors.fill: parent
-        spacing: ScreenTools.defaultFontPixelWidth
+        spacing: ScreenTools.defaultFontPixelWidth * 0.75
 
-        QGCToolBarButton {
-            id: qgcButton
+        Item {
+            id: brandLogo
             Layout.fillHeight: true
-            icon.source: "/res/QGCLogoFull.svg"
-            logo: true
-            onClicked: {
-                var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
-                mainWindow.showModeSelection(point)
+            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 3.2
+
+            Image {
+                anchors.centerIn: parent
+                source: "qrc:/ModeSelection/shreeon_logo.png"
+                width: ScreenTools.defaultFontPixelHeight * 2.4
+                height: width
+                fillMode: Image.PreserveAspectFit
+                mipmap: true
+                smooth: true
+            }
+
+            QGCMouseArea {
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: {
+                    var point = brandLogo.mapToItem(mainWindow.contentItem, brandLogo.width / 2, brandLogo.height / 2)
+                    mainWindow.showModeSelection(point)
+                }
             }
         }
 
-        Rectangle {
-            id: backButton
-            Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 7
-            Layout.preferredHeight: parent.height * 0.7
-            Layout.alignment: Qt.AlignVCenter
-            radius: ScreenTools.defaultFontPixelWidth * 0.3
-            color: backMouseArea.pressed ? qgcPal.buttonHighlight : qgcPal.button
+        Item {
+            Layout.fillHeight: true
+            Layout.preferredWidth: toolbarTitle.implicitWidth
+            Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 0.5
 
-            Row {
+            QGCLabel {
+                id: toolbarTitle
                 anchors.centerIn: parent
-                spacing: ScreenTools.defaultFontPixelWidth * 0.3
-
-                Text {
-                    text: "←"
-                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 1.2
-                    color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-                Text {
-                    text: qsTr("Back")
-                    font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.9
-                    color: backMouseArea.pressed ? qgcPal.buttonHighlightText : qgcPal.buttonText
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                text: typeof mainWindow !== "undefined" && mainWindow
+                      ? mainWindow.missionEditorDisplayName(mainWindow.activeMissionEditor)
+                      : qsTr("Custom Mission")
+                color: "white"
+                font.bold: true
+                font.pointSize: ScreenTools.largeFontPointSize
             }
 
-            MouseArea {
-                id: backMouseArea
-                anchors.fill: parent
-                onClicked: _root.exitPlanEditMode()
+            Rectangle {
+                anchors.left: toolbarTitle.left
+                anchors.right: toolbarTitle.right
+                anchors.top: toolbarTitle.bottom
+                anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.12
+                height: 1
+                color: "#4af200"
+                opacity: 0.55
             }
+        }
+
+        Item { Layout.fillWidth: true }
+
+        QGCToolBarButton {
+            id: backButton
+            Layout.alignment: Qt.AlignVCenter
+            height: ScreenTools.defaultFontPixelHeight * 2.55
+            implicitWidth: height * 1.55
+            icon.source: "/res/chevron-double-left.svg"
+            iconSize: ScreenTools.defaultFontPixelHeight * 1.45
+            onClicked: _root.exitPlanEditMode()
         }
 
         PlanToolBarIndicators {
-            Layout.fillWidth: true
-            Layout.fillHeight: true
+            Layout.alignment: Qt.AlignVCenter
             planMasterController: _root.planMasterController
+            compact: true
         }
     }
 

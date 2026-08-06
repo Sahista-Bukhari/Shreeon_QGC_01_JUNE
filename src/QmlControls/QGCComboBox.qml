@@ -152,7 +152,9 @@ T.ComboBox {
         }
 
         background: Rectangle {
-            color: qgcPal.window
+            color:          qgcPal.window
+            border.color:   qgcPal.text
+            radius:         ScreenTools.defaultBorderRadius
         }
     }
 }

@@ -117,6 +117,32 @@ void TransectStyleComplexItem::_setCameraShots(int cameraShots)
     }
 }
 
+QVariantList TransectStyleComplexItem::photoCaptureTransectPoints(void) const
+{
+    QVariantList capturePoints;
+
+    // Return a flat start/end pair for each interior survey leg. Turnaround
+    // extensions and the connectors between transects are intentionally
+    // excluded so Fly View uses the same camera-active geometry as the mission.
+    for (const QList<CoordInfo_t>& transect : _transects) {
+        QGeoCoordinate entryCoordinate;
+        QGeoCoordinate exitCoordinate;
+        for (const CoordInfo_t& coordInfo : transect) {
+            if (coordInfo.coordType == CoordTypeSurveyEntry && !entryCoordinate.isValid()) {
+                entryCoordinate = coordInfo.coord;
+            } else if (coordInfo.coordType == CoordTypeSurveyExit) {
+                exitCoordinate = coordInfo.coord;
+            }
+        }
+        if (entryCoordinate.isValid() && exitCoordinate.isValid()) {
+            capturePoints.append(QVariant::fromValue(entryCoordinate));
+            capturePoints.append(QVariant::fromValue(exitCoordinate));
+        }
+    }
+
+    return capturePoints;
+}
+
 void TransectStyleComplexItem::setDirty(bool dirty)
 {
     if (!dirty) {

@@ -17,6 +17,8 @@ Button {
     rightPadding: _horizontalPadding
     focusPolicy: Qt.ClickFocus
     checkable: true
+    flat: true
+    hoverEnabled: !ScreenTools.isMobile
 
     property bool primary: false ///< primary button for a group of buttons
     property real pointSize: ScreenTools.defaultFontPointSize ///< Point size for button text
@@ -36,12 +38,26 @@ Button {
         implicitWidth: ScreenTools.implicitButtonWidth
         implicitHeight: ScreenTools.implicitButtonHeight
         radius: height / 2
-        
-        // Active = Green Pill. Inactive = Transparent (or subtle grey on hover)
-        color: checked ? qgcPal.colorGreen : (control.hovered ? qgcPal.windowShade : "transparent")
-        
-        // Smooth transition
+        color: checked ? Qt.rgba(0.14, 0.69, 0.36, 0.48) : (control.hovered ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.06))
+        border.width: checked ? 1 : 0
+        border.color: Qt.rgba(1, 1, 1, 0.35)
+        antialiasing: true
+
         Behavior on color { ColorAnimation { duration: 150 } }
+
+        RippleEffect {
+            id: tabRipple
+            rippleColor: Qt.rgba(1, 1, 1, 0.42)
+            clipRadius: backRect.radius
+        }
+
+        Connections {
+            target: control
+            function onPressedChanged() {
+                if (control.pressed)
+                    tabRipple.tap(control.pressX, control.pressY)
+            }
+        }
     }
 
     contentItem: Item {
@@ -55,7 +71,7 @@ Button {
             source: control.icon.source
             height: source === "" ? 0 : ScreenTools.defaultFontPixelHeight
             width: height
-            color: _showHighlight ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            color: "#ffffff"
             fillMode: Image.PreserveAspectFit
             sourceSize.height: height
             visible: _showIcon
@@ -68,7 +84,7 @@ Button {
             text: control.text
             font.pointSize: control.pointSize
             font.family: ScreenTools.normalFontFamily
-            color: _showHighlight ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            color: "#ffffff"
             visible: !_showIcon
         }
     }

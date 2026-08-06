@@ -9,6 +9,8 @@
     "type":             "double",
     "decimalPlaces":    1,
     "min":              0.1,
+    "max":              10000,
+    "increment":        1,
     "units":            "m"
 }
 ]

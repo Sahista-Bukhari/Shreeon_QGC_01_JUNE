@@ -25,5 +25,8 @@ RowLayout {
     FactTextField {
         id:                     _factTextField
         Layout.preferredWidth:  textFieldPreferredWidth
+        activeFocusBorderColor: "#23a800"
+        fieldTextColor:         "#3f3f3f"
+        fieldBackgroundColor:   "white"
     }
 }

@@ -20,7 +20,10 @@
     "shortDesc": "Altitude of breach return point position (Rel)",
     "type":             "double",
     "decimalPlaces":    2,
-    "units":            "m"
+    "units":            "m",
+    "min":              0,
+    "max":              10000,
+    "increment":        0.5
 }
 ]
 }

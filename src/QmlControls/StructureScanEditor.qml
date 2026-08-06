@@ -8,13 +8,17 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 import QGroundControl.FlightMap
 
-// Editor for Survery mission items
+// Editor for Structure Scan mission items
 Rectangle {
     id:         _root
     height:     visible ? (editorColumn.height + (_margin * 2)) : 0
     width:      availableWidth
-    color:      qgcPal.windowShadeDark
-    radius:     _radius
+    color:      _glassTheme ? "transparent" : qgcPal.windowShadeDark
+    radius:     _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.55 : _radius
+
+    readonly property bool _glassTheme: typeof mainWindow !== "undefined"
+                                        && mainWindow
+                                        && mainWindow.activeMissionEditor === "customMission"
 
     // The following properties must be available up the hierarchy chain
     //property real   availableWidth    ///< Width for control
@@ -24,6 +28,8 @@ Rectangle {
     property real   _fieldWidth:                ScreenTools.defaultFontPixelWidth * 10.5
     property var    _vehicle:                   QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle : QGroundControl.multiVehicleManager.offlineEditingVehicle
     property real   _cameraMinTriggerInterval:  missionItem.cameraCalc.minTriggerInterval.rawValue
+    readonly property real _radius:             ScreenTools.defaultFontPixelWidth / 2
+    readonly property color _bodyColor:         _glassTheme ? "#ffffff" : qgcPal.text
 
     function polygonCaptureStarted() {
         missionItem.clearPolygon()
@@ -44,6 +50,18 @@ Rectangle {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
+    LiquidGlassSurface {
+        anchors.fill: parent
+        visible: _root._glassTheme
+        enableBlur: false
+        cornerRadius: _root.radius
+        tintColor: Qt.rgba(1, 1, 1, 0.08)
+        rimColor: Qt.rgba(1, 1, 1, 0.22)
+        innerGlow: Qt.rgba(1, 1, 1, 0.10)
+        accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.06)
+        showGlint: false
+    }
+
     ColumnLayout {
         id:                 editorColumn
         anchors.margins:    _margin
@@ -57,6 +75,7 @@ Rectangle {
                 wrapMode:           Text.WordWrap
                 horizontalAlignment:    Text.AlignHCenter
                 text:               qsTr("Use the Polygon Tools to create the polygon which outlines the structure.")
+                color:              _root._bodyColor
                 visible:        !missionItem.structurePolygon.isValid || missionItem.wizardMode
             }
 
@@ -85,6 +104,7 @@ Rectangle {
                     text:           qsTr("Note: Polygon respresents structure surface not vehicle flight path.")
                     wrapMode:       Text.WordWrap
                     font.pointSize: ScreenTools.smallFontPointSize
+                    color:          _root._bodyColor
                 }
 
                 QGCLabel {

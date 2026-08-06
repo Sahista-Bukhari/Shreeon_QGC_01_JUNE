@@ -9,30 +9,42 @@ Button {
     width:          contentLayoutItem.contentWidth + (contentMargins * 2)
     height:         width
     hoverEnabled:   !ScreenTools.isMobile
-    enabled:        toolStripAction.enabled
-    visible:        toolStripAction.visible
-    imageSource:    toolStripAction.showAlternateIcon ? modelData.alternateIconSource : modelData.iconSource
-    text:           toolStripAction.text
-    checked:        toolStripAction.checked
-    checkable:      toolStripAction.dropPanelComponent || modelData.checkable
+    flat:           true
+    enabled:        toolStripAction ? toolStripAction.enabled : false
+    visible:        toolStripAction ? toolStripAction.visible : false
+    imageSource:    toolStripAction
+                    ? (toolStripAction.showAlternateIcon ? toolStripAction.alternateIconSource : toolStripAction.iconSource)
+                    : ""
+    text:           toolStripAction ? toolStripAction.text : ""
+    checked:        toolStripAction ? toolStripAction.checked : false
+    checkable:      toolStripAction ? (toolStripAction.dropPanelComponent || toolStripAction.checkable) : false
 
     property var    toolStripAction:    undefined
     property var    dropPanel:          undefined
+    property int    buttonIndex:        -1
+    property var    glassBackgroundSource: null
     property alias  radius:             buttonBkRect.radius
     property alias  fontPointSize:      innerText.font.pointSize
     property alias  imageSource:        innerImage.source
     property alias  contentWidth:       innerText.contentWidth
 
     property bool forceImageScale11: false
+    readonly property bool _customMission: typeof mainWindow !== "undefined"
+                                           && mainWindow
+                                           && mainWindow.activeMissionEditor === "customMission"
     property real imageScale:        forceImageScale11 && (text == "") ? 0.8 : 0.6
-    property real contentMargins:    innerText.height * 0.1
-
-    property color _currentContentColor:  (checked || pressed) ? qgcPal.buttonHighlightText : qgcPal.windowTransparentText
+    property real contentMargins:    _customMission ? (innerText.height * 0.18) : (innerText.height * 0.1)
+    property color _currentContentColor:  _customMission
+                                          ? ((checked || pressed) ? "#ffffff" : Qt.rgba(1, 1, 1, enabled ? 0.92 : 0.45))
+                                          : ((checked || pressed) ? qgcPal.buttonHighlightText : qgcPal.windowTransparentText)
     property color _currentContentColorSecondary:  (checked || pressed) ? qgcPal.windowTransparentText : qgcPal.buttonHighlight
 
     signal dropped(int index)
 
-    onCheckedChanged: toolStripAction.checked = checked
+    onCheckedChanged: {
+        if (toolStripAction)
+            toolStripAction.checked = checked
+    }
 
     Connections {
         target: toolStripAction
@@ -49,10 +61,15 @@ Button {
             if (!toolStripAction.dropPanelComponent) {
                 toolStripAction.triggered(this)
             } else if (checked) {
-                var panelEdgeTopPoint = mapToItem(_root, width, 0)
+                var stripItem = (dropPanel && dropPanel.toolStrip) ? dropPanel.toolStrip : parent
+                // Anchor to the full strip's right edge (not this button's right edge).
+                // In Custom Mission's 2-column grid, Pattern is left-column — using
+                // button.width would place the panel over Waypoint/Return.
+                var buttonTopInStrip = mapToItem(stripItem, 0, 0)
+                var panelEdgeTopPoint = Qt.point(stripItem.width, buttonTopInStrip.y)
                 dropPanel.show(panelEdgeTopPoint, toolStripAction.dropPanelComponent, this)
                 checked = true
-                control.dropped(index)
+                control.dropped(buttonIndex >= 0 ? buttonIndex : 0)
             }
         } else if (checkable) {
             checked = !checked
@@ -82,7 +99,7 @@ Button {
                 sourceSize.width:           width
                 anchors.horizontalCenter:   parent.horizontalCenter
                 source:                     control.imageSource
-                visible:                    source != "" && modelData.fullColorIcon
+                visible:                    source != "" && toolStripAction && toolStripAction.fullColorIcon
             }
 
             QGCColoredImage {
@@ -97,11 +114,11 @@ Button {
                 sourceSize.height:          height
                 sourceSize.width:           width
                 anchors.horizontalCenter:   parent.horizontalCenter
-                visible:                    source != "" && !modelData.fullColorIcon
+                visible:                    source != "" && !(toolStripAction && toolStripAction.fullColorIcon)
 
                 QGCColoredImage {
                     id:                         innerImageSecondColor
-                    source:                     modelData.alternateIconSource
+                    source:                     toolStripAction ? toolStripAction.alternateIconSource : ""
                     height:                     contentLayoutItem.height * imageScale
                     width:                      contentLayoutItem.width  * imageScale
                     smooth:                     true
@@ -112,7 +129,7 @@ Button {
                     sourceSize.height:          height
                     sourceSize.width:           width
                     anchors.horizontalCenter:   parent.horizontalCenter
-                    visible:                    source != "" && modelData.biColorIcon
+                    visible:                    source != "" && toolStripAction && toolStripAction.biColorIcon
                 }
             }
 
@@ -127,10 +144,56 @@ Button {
         }
     }
 
-    background: Rectangle {
-        id:     buttonBkRect
-        color:  (control.checked || control.pressed) ?
-                    qgcPal.buttonHighlight :
-                    ((control.enabled && control.hovered) ? qgcPal.toolStripHoverColor : "transparent")
+    background: Item {
+        id: buttonBkRect
+        property real radius: ScreenTools.defaultFontPixelWidth / 2
+
+        LiquidGlassSurface {
+            anchors.fill: parent
+            backgroundSource: control.glassBackgroundSource
+            cornerRadius: buttonBkRect.radius
+            blurAmount: control._customMission ? 18 : 12
+            // Custom Mission: match Mission Settings panel glass
+            tintColor: {
+                if (control._customMission) {
+                    if (control.checked || control.pressed)
+                        return Qt.rgba(0.14, 0.66, 0.00, 0.38)
+                    if (control.enabled && control.hovered)
+                        return Qt.rgba(0.14, 0.66, 0.00, 0.28)
+                    return Qt.rgba(0.06, 0.10, 0.09, 0.40)
+                }
+                if (control.checked || control.pressed)
+                    return Qt.rgba(0.14, 0.69, 0.36, 0.42)
+                if (control.enabled && control.hovered)
+                    return Qt.rgba(1, 1, 1, 0.18)
+                return Qt.rgba(1, 1, 1, 0.10)
+            }
+            rimColor: {
+                if (control._customMission) {
+                    if (control.checked || control.pressed || control.hovered)
+                        return Qt.rgba(0.55, 1.0, 0.72, 0.55)
+                    return Qt.rgba(1, 1, 1, 0.32)
+                }
+                return (control.checked || control.pressed || control.hovered)
+                       ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(1, 1, 1, 0.22)
+            }
+            accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
+            showGlint: false
+            pressed: control.pressed
+        }
+
+        RippleEffect {
+            id: stripRipple
+            rippleColor: Qt.rgba(1, 1, 1, 0.40)
+            clipRadius: buttonBkRect.radius
+        }
+
+        Connections {
+            target: control
+            function onPressedChanged() {
+                if (control.pressed)
+                    stripRipple.tap(control.pressX, control.pressY)
+            }
+        }
     }
 }

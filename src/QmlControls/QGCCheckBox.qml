@@ -16,14 +16,17 @@ CheckBox {
         }
     }
 
-    property color  textColor:          qgcPal.buttonText
-    property bool   textBold:           false
-    property real   textFontPointSize:  ScreenTools.defaultFontPointSize
+    property color  textColor:              qgcPal.buttonText
+    property color  uncheckedBorderColor:   qgcPal.text
+    property bool   textBold:               false
+    property real   textFontPointSize:      ScreenTools.defaultFontPointSize
     property ButtonGroup buttonGroup: null
 
     property bool _noText: text === ""
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
+
+    background: Item { implicitWidth: 0; implicitHeight: 0 }
 
     onButtonGroupChanged: {
         if (buttonGroup) {
@@ -49,7 +52,7 @@ CheckBox {
         x:              control.leftPadding
         y:              parent.height / 2 - height / 2
         color:          control.checked ? qgcPal.colorGreen : "transparent"
-        border.color:   control.checked ? qgcPal.colorGreen : qgcPal.text
+        border.color:   control.checked ? qgcPal.colorGreen : control.uncheckedBorderColor
         border.width:   control.checked ? 0 : 1
         radius:         ScreenTools.defaultBorderRadius / 2
         opacity:        control.checkedState === Qt.PartiallyChecked ? 0.5 : 1

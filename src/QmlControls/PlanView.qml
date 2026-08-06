@@ -20,7 +20,7 @@ Item {
     readonly property real  _margin: ScreenTools.defaultFontPixelHeight * 0.5
     readonly property real  _toolsMargin: ScreenTools.defaultFontPixelWidth * 0.75
     readonly property real  _radius: ScreenTools.defaultFontPixelWidth  * 0.5
-    readonly property real  _rightPanelWidth: Math.min(width / 3, ScreenTools.defaultFontPixelWidth * 30)
+    readonly property real  _rightPanelWidth: Math.min(width * 0.40, ScreenTools.defaultFontPixelWidth * 40)
     readonly property var   _defaultVehicleCoordinate: QtPositioning.coordinate(37.803784, -122.462276)
     readonly property bool  _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
 
@@ -462,6 +462,7 @@ Item {
             z: QGroundControl.zOrderWidgets
             maxHeight: parent.height - toolStrip.y
             visible: _editingLayer == _layerMission
+            glassBackgroundSource: editorMap
 
             property bool _isRallyLayer: _editingLayer == _layerRally
             property bool _isMissionLayer: _editingLayer == _layerMission
@@ -584,6 +585,9 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
+            anchors.topMargin: _toolsMargin
+            anchors.bottomMargin: _toolsMargin
+            anchors.rightMargin: _toolsMargin
             width: _utmspEnabled ? _rightPanelWidth + ScreenTools.defaultFontPixelWidth * 21.667 : _rightPanelWidth
             planMasterController: _planMasterController
             editorMap: editorMap
@@ -620,76 +624,33 @@ Item {
             ColumnLayout {
                 id: missionStatsButtonLayout
                 Layout.alignment: Qt.AlignBottom
-                spacing: 0
+                spacing: ScreenTools.defaultFontPixelWidth * 0.15
 
-                property real _buttonImplicitWidth: ScreenTools.defaultFontPixelHeight * 1.5
-                property real _buttonImageMargins: _buttonImplicitWidth * 0.15
-
-                Rectangle {
+                MissionStatusToolButton {
                     id: terrainButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.buttonHighlight : QGroundControl.globalPalette.button
-
-                    property bool checked: true
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/terrain.svg"
-                        color: parent.checked ? QGroundControl.globalPalette.buttonHighlightText : QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            terrainButton.checked = true
-                            missionStatsButton.checked = false
-                        }
+                    checked: true
+                    iconSource: "/res/terrain.svg"
+                    onClicked: {
+                        terrainButton.checked = true
+                        missionStatsButton.checked = false
                     }
                 }
 
-                Rectangle {
+                MissionStatusToolButton {
                     id: missionStatsButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.buttonHighlight : QGroundControl.globalPalette.button
-
-                    property bool checked: false
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/sliders.svg"
-                        color: parent.checked ? QGroundControl.globalPalette.buttonHighlightText : QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            missionStatsButton.checked = true
-                            terrainButton.checked = false
-                        }
+                    checked: false
+                    iconSource: "/res/sliders.svg"
+                    onClicked: {
+                        missionStatsButton.checked = true
+                        terrainButton.checked = false
                     }
                 }
 
-                Rectangle {
+                MissionStatusToolButton {
                     id: bottomStatusOpenCloseButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: QGroundControl.globalPalette.button
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/chevron-double-left.svg"
-                        color: QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: missionStatus._toggleMissionStatusVisibility()
-                    }
+                    highlightWhenChecked: false
+                    iconSource: "/res/chevron-double-left.svg"
+                    onClicked: missionStatus._toggleMissionStatusVisibility()
                 }
             }
 
@@ -719,16 +680,33 @@ Item {
         id: patternDropPanel
 
         ColumnLayout {
-            spacing: ScreenTools.defaultFontPixelWidth * 0.5
+            id: patternColumn
+            spacing: ScreenTools.defaultFontPixelHeight * 0.45
+            width: Math.max(patternTitle.implicitWidth + ScreenTools.defaultFontPixelWidth, ScreenTools.defaultFontPixelWidth * 34)
 
-            QGCLabel { text: qsTr("Create complex pattern:") }
+            QGCLabel {
+                id: patternTitle
+                text: qsTr("Create complex pattern")
+                color: "#ffffff"
+                font.bold: true
+                font.pointSize: ScreenTools.mediumFontPointSize
+                wrapMode: Text.NoWrap
+                elide: Text.ElideNone
+                Layout.alignment: Qt.AlignHCenter
+                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.15
+            }
 
             Repeater {
                 model: _missionController.complexMissionItemNames
 
                 QGCButton {
                     text: modelData
-                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: patternColumn.width * 0.72
+                    Layout.fillWidth: false
+                    compact: true
+                    heightFactor: 0.40
+                    showBorder: true
 
                     onClicked: {
                         insertComplexItemAfterCurrent(modelData)

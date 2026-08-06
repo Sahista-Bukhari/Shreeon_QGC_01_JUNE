@@ -8,13 +8,12 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 import QGroundControl.UTMSP
 
-Rectangle {
+Item {
     required property var planMasterController
 
     id: missionStats
     implicitWidth: mainLayout.implicitWidth + (_margins * 2)
     implicitHeight: mainLayout.implicitHeight + (_margins * 2)
-    color: Qt.rgba(_windowColor.r, _windowColor.g, _windowColor.b, 0.8)
 
     property var _planMasterController: planMasterController
     property color _windowColor: QGroundControl.globalPalette.window
@@ -62,6 +61,18 @@ Rectangle {
     property string _batteriesRequiredText: _batteriesRequired < 0 ? qsTr("N/A") : _batteriesRequired
 
     readonly property real _margins: ScreenTools.defaultFontPixelWidth
+
+    readonly property color _hudGlassFill:   Qt.rgba(0.12, 0.12, 0.14, 0.15)
+    readonly property color _hudGlassBorder: Qt.rgba(1.00, 1.00, 1.00, 0.28)
+    readonly property real  _hudGlassRadius: ScreenTools.defaultFontPixelHeight * 0.5
+
+    Rectangle {
+        anchors.fill: parent
+        color:        missionStats._hudGlassFill
+        radius:       missionStats._hudGlassRadius
+        border.width: 1
+        border.color: missionStats._hudGlassBorder
+    }
 
     function getMissionTime() {
         var totalSeconds = Number(_missionTime)

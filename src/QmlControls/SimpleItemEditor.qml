@@ -11,7 +11,7 @@ Rectangle {
     id: root
     width: availableWidth
     height: editorColumn.height + (_margin * 2)
-    color: qgcPal.windowShadeDark
+    color: "transparent"
     radius: _radius
 
     property bool _specifiesAltitude: missionItem.specifiesAltitude
@@ -22,8 +22,125 @@ Rectangle {
     property bool _globalAltModeIsMixed: _globalAltMode == QGroundControl.AltitudeModeMixed
     property real _radius: ScreenTools.defaultFontPixelWidth / 2
     property real _fieldSpacing: ScreenTools.defaultFontPixelHeight / 2
+    property real _pad: ScreenTools.defaultFontPixelWidth * 1.05
+    readonly property color _accentGreen: "#23a800"
+    readonly property color _accentSoftGreen: "#efffee"
+    readonly property color _titleColor: "#ffffff"
+    readonly property color _bodyColor: Qt.rgba(1, 1, 1, 0.88)
+    property Fact _altitudeFact: missionItem.altitude
+    property Fact _speedFact: missionItem.speedSection.flightSpeed
 
     QGCPalette { id: qgcPal; colorGroupEnabled: root.enabled }
+
+    function _factMin(fact, fallback) {
+        if (!fact)
+            return fallback
+        if (fact.userMin !== undefined && !isNaN(Number(fact.userMin)))
+            return Number(fact.userMin)
+        if (!fact.minIsDefaultForType && !isNaN(Number(fact.min)))
+            return Number(fact.min)
+        return fallback
+    }
+
+    function _factMax(fact, fallback) {
+        if (!fact)
+            return fallback
+        if (fact.userMax !== undefined && !isNaN(Number(fact.userMax)))
+            return Number(fact.userMax)
+        if (!fact.maxIsDefaultForType && !isNaN(Number(fact.max)))
+            return Number(fact.max)
+        return fallback
+    }
+
+    function _factStep(fact, fallback) {
+        if (fact && fact.rawIncrement && Number(fact.rawIncrement) > 0)
+            return Number(fact.rawIncrement)
+        return fallback
+    }
+
+    function _nudgeFact(fact, direction, step, minV, maxV) {
+        if (!fact)
+            return
+        var next = Number(fact.value) + (direction * step)
+        next = Math.max(minV, Math.min(maxV, next))
+        fact.value = Math.round(next * 10) / 10
+    }
+
+    component NozzleValueBox: Rectangle {
+        property string valueText
+        property bool controlsEnabled: true
+        signal minusClicked
+        signal plusClicked
+
+        radius: root._radius
+        color: Qt.rgba(1, 1, 1, 0.88)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.45)
+        opacity: controlsEnabled ? 1.0 : 0.45
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.35
+            anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.35
+            spacing: 0
+
+            Rectangle {
+                Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.15
+                Layout.fillHeight: true
+                Layout.topMargin: 2
+                Layout.bottomMargin: 2
+                radius: root._radius * 0.6
+                color: minusMouse.pressed ? "#ffe8e8" : "transparent"
+                enabled: controlsEnabled
+
+                QGCLabel {
+                    anchors.centerIn: parent
+                    text: "−"
+                    color: minusMouse.pressed ? "#e53935" : "#3f3f3f"
+                    font.weight: Font.DemiBold
+                }
+
+                QGCMouseArea {
+                    id: minusMouse
+                    anchors.fill: parent
+                    enabled: controlsEnabled
+                    onClicked: minusClicked()
+                }
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                text: valueText
+                color: "#3f3f3f"
+                font.weight: Font.Medium
+            }
+
+            Rectangle {
+                Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.15
+                Layout.fillHeight: true
+                Layout.topMargin: 2
+                Layout.bottomMargin: 2
+                radius: root._radius * 0.6
+                color: plusMouse.pressed ? root._accentSoftGreen : "transparent"
+                enabled: controlsEnabled
+
+                QGCLabel {
+                    anchors.centerIn: parent
+                    text: "+"
+                    color: "#3f3f3f"
+                    font.weight: Font.DemiBold
+                }
+
+                QGCMouseArea {
+                    id: plusMouse
+                    anchors.fill: parent
+                    enabled: controlsEnabled
+                    onClicked: plusClicked()
+                }
+            }
+        }
+    }
 
     Column {
         id: editorColumn
@@ -50,6 +167,7 @@ Rectangle {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: !initialClickLabel.visible
+                color: root._bodyColor
             }
 
             QGCLabel {
@@ -57,6 +175,7 @@ Rectangle {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: !initialClickLabel.visible
+                color: root._bodyColor
             }
 
             QGCButton {
@@ -76,6 +195,7 @@ Rectangle {
                 Layout.fillWidth: true
                 wrapMode: Text.WordWrap
                 visible: missionItem.isTakeoffItem && !missionItem.launchCoordinate.isValid
+                color: root._bodyColor
             }
         }
 
@@ -149,6 +269,7 @@ Rectangle {
                         QGCLabel {
                             Layout.fillWidth: true
                             text: qsTr("Altitude Mode")
+                            color: root._bodyColor
                         }
 
                         AltModeCombo {
@@ -158,17 +279,63 @@ Rectangle {
                         }
                     }
 
-                    FactTextFieldSlider {
-                        id: altField
+                    ColumnLayout {
                         Layout.fillWidth: true
-                        label: qsTr("Altitude%1").arg(_extraLabelText())
-                        fact: missionItem.altitude
+                        spacing: ScreenTools.defaultFontPixelHeight * 0.35
 
-                        function _extraLabelText() {
-                            if (!_globalAltModeIsMixed && missionItem.altitudeMode !== QGroundControl.AltitudeModeRelative) {
-                                return qsTr(" (%1)").arg(QGroundControl.altitudeModeShortDescription(missionItem.altitudeMode))
-                            } else {
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text: qsTr("Altitude%1").arg(_extraLabelText())
+                            color: root._bodyColor
+
+                            function _extraLabelText() {
+                                if (!_globalAltModeIsMixed && missionItem.altitudeMode !== QGroundControl.AltitudeModeRelative) {
+                                    return qsTr(" (%1)").arg(QGroundControl.altitudeModeShortDescription(missionItem.altitudeMode))
+                                }
                                 return ""
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.85
+                            spacing: root._pad * 0.45
+
+                            QGCSlider {
+                                id: takeoffAltitudeSlider
+                                Layout.fillWidth: true
+                                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.25
+                                from: root._factMin(root._altitudeFact, 0)
+                                to: root._factMax(root._altitudeFact, 121.9)
+                                stepSize: root._factStep(root._altitudeFact, 0.1)
+                                activeColor: root._accentGreen
+                                barHeight: Math.max(1, ScreenTools.defaultFontPixelHeight * 0.10)
+                                live: true
+                                Binding {
+                                    target: takeoffAltitudeSlider
+                                    property: "value"
+                                    value: root._altitudeFact ? Number(root._altitudeFact.value) : takeoffAltitudeSlider.from
+                                    when: !takeoffAltitudeSlider.pressed
+                                }
+                                onMoved: {
+                                    if (root._altitudeFact)
+                                        root._altitudeFact.value = value
+                                }
+                            }
+
+                            NozzleValueBox {
+                                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 13
+                                Layout.fillHeight: true
+                                valueText: root._altitudeFact
+                                           ? (Number(root._altitudeFact.value).toFixed(1)
+                                              + (root._altitudeFact.units ? " " + root._altitudeFact.units : ""))
+                                           : "0.0"
+                                onMinusClicked: root._nudgeFact(root._altitudeFact, -1,
+                                                                root._factStep(root._altitudeFact, 0.1),
+                                                                takeoffAltitudeSlider.from, takeoffAltitudeSlider.to)
+                                onPlusClicked: root._nudgeFact(root._altitudeFact, 1,
+                                                               root._factStep(root._altitudeFact, 0.1),
+                                                               takeoffAltitudeSlider.from, takeoffAltitudeSlider.to)
                             }
                         }
                     }
@@ -177,6 +344,7 @@ Rectangle {
                         font.pointSize: ScreenTools.smallFontPointSize
                         text: qsTr("Actual AMSL alt sent: %1 %2").arg(missionItem.amslAltAboveTerrain.valueString).arg(missionItem.amslAltAboveTerrain.units)
                         visible: missionItem.altitudeMode === QGroundControl.AltitudeModeCalcAboveTerrain
+                        color: root._bodyColor
                     }
                 }
 
@@ -195,6 +363,7 @@ Rectangle {
                                 font.pointSize: ScreenTools.smallFontPointSize
                                 text: object.name
                                 visible: object.name !== ""
+                                color: root._bodyColor
                             }
 
                             FactComboBox {
@@ -215,6 +384,7 @@ Rectangle {
                         label: object.name
                         fact: object
                         enabled: !object.readOnly
+                        backgroundColor: "transparent"
                     }
                 }
 
@@ -227,20 +397,79 @@ Rectangle {
                         fact: object
                         showEnableCheckbox: true
                         enableCheckBoxChecked: !isNaN(object.rawValue)
+                        backgroundColor: "transparent"
 
                         onEnableCheckboxClicked: object.rawValue = enableCheckBoxChecked ? 0 : NaN
                     }
                 }
 
-                FactTextFieldSlider {
+                ColumnLayout {
                     Layout.fillWidth: true
-                    label: qsTr("Flight Speed")
-                    fact: missionItem.speedSection.flightSpeed
-                    showEnableCheckbox: true
-                    enableCheckBoxChecked: missionItem.speedSection.specifyFlightSpeed
+                    spacing: ScreenTools.defaultFontPixelHeight * 0.35
                     visible: missionItem.speedSection.available
+                    opacity: missionItem.speedSection.specifyFlightSpeed ? 1.0 : 0.55
 
-                    onEnableCheckboxClicked: missionItem.speedSection.specifyFlightSpeed = enableCheckBoxChecked
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: root._pad * 0.6
+
+                        QGCCheckBox {
+                            checked: missionItem.speedSection.specifyFlightSpeed
+                            onClicked: missionItem.speedSection.specifyFlightSpeed = checked
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text: qsTr("Flight Speed")
+                            color: root._bodyColor
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.85
+                        spacing: root._pad * 0.45
+                        enabled: missionItem.speedSection.specifyFlightSpeed
+
+                        QGCSlider {
+                            id: takeoffSpeedSlider
+                            Layout.fillWidth: true
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.25
+                            from: root._factMin(root._speedFact, 0)
+                            to: root._factMax(root._speedFact, 30)
+                            stepSize: root._factStep(root._speedFact, 0.5)
+                            enabled: missionItem.speedSection.specifyFlightSpeed
+                            activeColor: root._accentGreen
+                            barHeight: Math.max(1, ScreenTools.defaultFontPixelHeight * 0.10)
+                            live: true
+                            Binding {
+                                target: takeoffSpeedSlider
+                                property: "value"
+                                value: root._speedFact ? Number(root._speedFact.value) : takeoffSpeedSlider.from
+                                when: !takeoffSpeedSlider.pressed
+                            }
+                            onMoved: {
+                                if (root._speedFact && missionItem.speedSection.specifyFlightSpeed)
+                                    root._speedFact.value = value
+                            }
+                        }
+
+                        NozzleValueBox {
+                            Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 13
+                            Layout.fillHeight: true
+                            controlsEnabled: missionItem.speedSection.specifyFlightSpeed
+                            valueText: root._speedFact
+                                       ? (Number(root._speedFact.value).toFixed(1)
+                                          + (root._speedFact.units ? " " + root._speedFact.units : ""))
+                                       : "0.0"
+                            onMinusClicked: root._nudgeFact(root._speedFact, -1,
+                                                            root._factStep(root._speedFact, 0.5),
+                                                            takeoffSpeedSlider.from, takeoffSpeedSlider.to)
+                            onPlusClicked: root._nudgeFact(root._speedFact, 1,
+                                                           root._factStep(root._speedFact, 0.5),
+                                                           takeoffSpeedSlider.from, takeoffSpeedSlider.to)
+                        }
+                    }
                 }
             }
 
@@ -272,6 +501,7 @@ Rectangle {
                                 font.pointSize: ScreenTools.smallFontPointSize
                                 text: object.name
                                 visible: object.name !== ""
+                                color: root._bodyColor
                             }
 
                             FactComboBox {
@@ -292,6 +522,7 @@ Rectangle {
                         label: object.name
                         fact: object
                         enabled: !object.readOnly
+                        backgroundColor: "transparent"
                     }
                 }
 
@@ -304,6 +535,7 @@ Rectangle {
                         fact: object
                         showEnableCheckbox: true
                         enableCheckBoxChecked: !isNaN(object.rawValue)
+                        backgroundColor: "transparent"
 
                         onEnableCheckboxClicked: object.rawValue = enableCheckBoxChecked ? 0 : NaN
                     }

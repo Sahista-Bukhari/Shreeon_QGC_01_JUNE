@@ -110,29 +110,4 @@ ListModel {
         iconUrl: "qrc:/InstrumentValueIcons/question.svg"
         pageVisible: function() { return true }
     }
-
-    ListElement {
-        name: "Divider"
-    }
-
-    ListElement {
-        name: qsTr("Mock Link")
-        url: "qrc:/qml/QGroundControl/AppSettings/MockLink.qml"
-        iconUrl: "qrc:/InstrumentValueIcons/drone.svg"
-        pageVisible: function() { return ScreenTools.isDebug }
-    }
-
-    ListElement {
-        name: qsTr("Debug")
-        url: "qrc:/qml/QGroundControl/AppSettings/DebugWindow.qml"
-        iconUrl: "qrc:/InstrumentValueIcons/bug.svg"
-        pageVisible: function() { return ScreenTools.isDebug }
-    }
-
-    // ListElement {
-    //     name: qsTr("Palette Test")
-    //     url: "qrc:/qml/QGroundControl/AppSettings/QmlTest.qml"
-    //     iconUrl: "qrc:/InstrumentValueIcons/photo.svg"
-    //     pageVisible: function() { return ScreenTools.isDebug }
-    // }
 }

@@ -10,17 +10,23 @@ Slider {
     property bool showBoundaryValues: false ///< true: Show min/max values at slider ends
 
     id: control
-    implicitHeight: ScreenTools.implicitSliderHeight + (showBoundaryValues ? minLabel.contentHeight : 0)
+    implicitHeight: ScreenTools.implicitSliderHeight + bottomPadding
     leftPadding: 0
     rightPadding: 0
     topPadding: 0
-    bottomPadding: 0
+    bottomPadding: showBoundaryValues ? minLabel.contentHeight : 0
     wheelEnabled: false
 
     property real _implicitBarLength: Math.round(ScreenTools.defaultFontPixelWidth * 20)
     property real _barHeight: Math.round(ScreenTools.defaultFontPixelHeight / 4) // Slimmer track
     property color activeColor: qgcPal.colorGreen
     property real barHeight: _barHeight
+    readonly property bool _customMissionPage: typeof mainWindow !== "undefined"
+                                               && mainWindow
+                                               && mainWindow.activeMissionEditor === "customMission"
+    property real handleRadius: _customMissionPage
+                                ? ScreenTools.defaultFontPixelHeight * 0.38
+                                : ScreenTools.defaultFontPixelHeight * 0.75
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
@@ -50,12 +56,12 @@ Slider {
         y: control.horizontal ?
                control.topPadding + control.availableHeight / 2 - height / 2 :
                control.topPadding + control.visualPosition * (control.availableHeight - height)
-        implicitWidth: _radius * 2
-        implicitHeight: _radius * 2
+        width: control.handleRadius * 2
+        height: control.handleRadius * 2
+        implicitWidth: width
+        implicitHeight: height
         color: "white"
-        radius: _radius 
-
-        property real _radius: ScreenTools.defaultFontPixelHeight * 0.75
+        radius: control.handleRadius
 
         Label {
             text: control.value.toFixed(control.to <= 1 ? 1 : 0)
@@ -74,7 +80,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.from.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: qgcPal.buttonText
+        color: Qt.rgba(1, 1, 1, 0.78)
         visible: control.showBoundaryValues
     }
 
@@ -85,7 +91,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.to.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: qgcPal.buttonText
+        color: Qt.rgba(1, 1, 1, 0.78)
         visible: control.showBoundaryValues
     }
 }

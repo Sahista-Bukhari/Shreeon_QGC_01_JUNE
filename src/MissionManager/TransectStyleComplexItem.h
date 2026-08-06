@@ -36,6 +36,7 @@ public:
     Q_PROPERTY(double           coveredArea                 READ coveredArea                                        NOTIFY coveredAreaChanged)
     Q_PROPERTY(bool             hoverAndCaptureAllowed      READ hoverAndCaptureAllowed                             CONSTANT)
     Q_PROPERTY(QVariantList     visualTransectPoints        READ visualTransectPoints                               NOTIFY visualTransectPointsChanged)
+    Q_PROPERTY(QVariantList     photoCaptureTransectPoints  READ photoCaptureTransectPoints                         NOTIFY visualTransectPointsChanged)
 
     Q_PROPERTY(Fact*            terrainAdjustTolerance      READ terrainAdjustTolerance                             CONSTANT)
     Q_PROPERTY(Fact*            terrainAdjustMaxDescentRate READ terrainAdjustMaxDescentRate                        CONSTANT)
@@ -44,6 +45,7 @@ public:
     QGCMapPolygon*  surveyAreaPolygon   (void) { return &_surveyAreaPolygon; }
     CameraCalc*     cameraCalc          (void) { return &_cameraCalc; }
     QVariantList    visualTransectPoints(void) { return _visualTransectPoints; }
+    QVariantList    photoCaptureTransectPoints(void) const;
 
     Fact* turnAroundDistance            (void) { return &_turnAroundDistanceFact; }
     Fact* cameraTriggerInTurnAround     (void) { return &_cameraTriggerInTurnAroundFact; }

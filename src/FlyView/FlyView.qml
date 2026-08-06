@@ -1,4 +1,4 @@
-import QtQuick
+    import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
@@ -34,16 +34,22 @@ Item {
     property bool   _importPlanForMission: false
     property var    routeMappingBoundaryPath: []
     property var    routeMappingTransectPath: []
+    property var    routeMappingPhotoCaptureTransectPoints: []
     property var    routeMappingTakeoffCoordinate: QtPositioning.coordinate()
     property var    routeMappingEntryCoordinate: QtPositioning.coordinate()
     property var    routeMappingExitCoordinate: QtPositioning.coordinate()
     property real   routeMappingEntryHeading: 0
     property real   routeMappingExitHeading: 0
     property int    routeMappingPlannedPhotoCount: 0
+    property real   routeMappingPhotoFootprintSide: 25
+    property real   routeMappingPhotoFootprintFrontal: 25
+    property var    routeMappingLivePhotoModel: _routeMappingLivePhotoModel
     property bool   hideVehicleMissionForUnuploadedRoute: false
     // Once a survey overlay has been painted (transfer/import), keep its geometry
     // frozen for the whole mission. Only the drone position and progress update.
     property bool   _routeMappingOverlayLocked: false
+    // Photo progress UI is Route Mapping only (not Agriculture / Seed Spreader).
+    readonly property bool routeMappingPhotoProgressEnabled: mainWindow.uploadedMissionEditor === "routeMapping"
 
     readonly property bool _hasFlyViewPlanContent: _planController.containsItems
                                                    || routeMappingBoundaryPath.length > 0
@@ -58,12 +64,16 @@ Item {
         _routeMappingOverlayLocked = false
         routeMappingBoundaryPath = []
         routeMappingTransectPath = []
+        routeMappingPhotoCaptureTransectPoints = []
         routeMappingTakeoffCoordinate = QtPositioning.coordinate()
         routeMappingEntryCoordinate = QtPositioning.coordinate()
         routeMappingExitCoordinate = QtPositioning.coordinate()
         routeMappingEntryHeading = 0
         routeMappingExitHeading = 0
         routeMappingPlannedPhotoCount = 0
+        routeMappingPhotoFootprintSide = 25
+        routeMappingPhotoFootprintFrontal = 25
+        resetRouteMappingLivePhotos()
         mapControl.resetRouteMappingProgress()
     }
 
@@ -135,6 +145,16 @@ Item {
                                                        transectCoord.altitude))
         }
 
+        var photoCaptureTransectPoints = []
+        var nativePhotoCapturePoints = surveyItem.photoCaptureTransectPoints
+        for (var p = 0; p < nativePhotoCapturePoints.length; p++) {
+            var photoPoint = nativePhotoCapturePoints[p]
+            photoCaptureTransectPoints.push(QtPositioning.coordinate(
+                                                photoPoint.latitude,
+                                                photoPoint.longitude,
+                                                photoPoint.altitude))
+        }
+
 
         var entryHeading = 0
         var exitHeading = 0
@@ -158,12 +178,27 @@ Item {
 
         routeMappingBoundaryPath = boundary
         routeMappingTransectPath = transectPath
+        routeMappingPhotoCaptureTransectPoints = photoCaptureTransectPoints
         routeMappingTakeoffCoordinate = takeoffCoord
         routeMappingEntryCoordinate = surveyItem.coordinate
         routeMappingExitCoordinate = surveyItem.exitCoordinate
         routeMappingEntryHeading = entryHeading
         routeMappingExitHeading = exitHeading
-        routeMappingPlannedPhotoCount = surveyItem.cameraShots ? surveyItem.cameraShots : 0
+        routeMappingPlannedPhotoCount = routeMappingPhotoProgressEnabled
+                ? (surveyItem.cameraShots ? surveyItem.cameraShots : 0)
+                : 0
+        if (surveyItem.cameraCalc) {
+            var sideFootprint = Number(surveyItem.cameraCalc.imageFootprintSide)
+            var frontalFootprint = Number(surveyItem.cameraCalc.imageFootprintFrontal)
+            if (!sideFootprint || sideFootprint <= 0) {
+                sideFootprint = Number(surveyItem.cameraCalc.adjustedFootprintSide.value)
+            }
+            if (!frontalFootprint || frontalFootprint <= 0) {
+                frontalFootprint = Number(surveyItem.cameraCalc.adjustedFootprintFrontal.value)
+            }
+            routeMappingPhotoFootprintSide = sideFootprint > 0 ? sideFootprint : 25
+            routeMappingPhotoFootprintFrontal = frontalFootprint > 0 ? frontalFootprint : 25
+        }
         if (transectPath.length >= 2) {
             _routeMappingOverlayLocked = true
         }
@@ -344,10 +379,308 @@ Item {
     property bool   _mainWindowIsMap:       mapControl.pipState.state === mapControl.pipState.fullState
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? mapControl.isSatelliteMap : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
-    // QmlObjectListModel.count is notified for every confirmed camera capture,
-    // so this remains live for the complete flight and resets when arming.
-    readonly property int routeMappingPhotosTaken: (_activeVehicle && _activeVehicle.cameraTriggerPoints)
-                                                   ? _activeVehicle.cameraTriggerPoints.count : 0
+    property int    _processedCameraTriggerCount: 0
+    property bool   _mappingPatternCaptureStarted: false
+    property real   _mappingPhotoDistanceSinceCapture: 0
+    property var    _lastMappingPatternCoordinate: QtPositioning.coordinate()
+    property int    _activeMappingPhotoSegmentIndex: -1
+    property int    _lastCompletedMappingPhotoSegmentIndex: -1
+    property real   _mappingPhotoLastSegmentAlong: 0
+    property bool   _mappingPhotoSegmentEndCaptured: false
+    property var    _routeMappingSessionPhotoFiles: []
+    property var    _routeMappingPendingDeleteFiles: []
+    property int    _routeMappingPhotoDeleteAttempt: 0
+
+    ListModel {
+        id: _routeMappingLivePhotoModel
+    }
+
+    function resetRouteMappingLivePhotos() {
+        _processedCameraTriggerCount = 0
+        _mappingPatternCaptureStarted = false
+        _mappingPhotoDistanceSinceCapture = 0
+        _lastMappingPatternCoordinate = QtPositioning.coordinate()
+        _activeMappingPhotoSegmentIndex = -1
+        _lastCompletedMappingPhotoSegmentIndex = -1
+        _mappingPhotoLastSegmentAlong = 0
+        _mappingPhotoSegmentEndCaptured = false
+        _routeMappingLivePhotoModel.clear()
+    }
+
+    function _mappingPhotoFileUrl(filePath) {
+        var normalizedPath = String(filePath).split("\\").join("/")
+        if (normalizedPath.charAt(0) === "/") {
+            return encodeURI("file://" + normalizedPath)
+        }
+        return encodeURI("file:///" + normalizedPath)
+    }
+
+    function _trackRouteMappingPhotoFile(filePath) {
+        var files = _routeMappingSessionPhotoFiles.slice()
+        files.push(filePath)
+        _routeMappingSessionPhotoFiles = files
+    }
+
+    function _queueRouteMappingPhotoCleanup() {
+        if (_routeMappingSessionPhotoFiles.length === 0) {
+            return
+        }
+
+        // Move completed-flight files into a separate queue so a quickly
+        // re-armed vehicle cannot mix the next mission's photos into cleanup.
+        var pendingFiles = _routeMappingPendingDeleteFiles.slice()
+        for (var i = 0; i < _routeMappingSessionPhotoFiles.length; i++) {
+            if (pendingFiles.indexOf(_routeMappingSessionPhotoFiles[i]) < 0) {
+                pendingFiles.push(_routeMappingSessionPhotoFiles[i])
+            }
+        }
+        _routeMappingPendingDeleteFiles = pendingFiles
+        _routeMappingSessionPhotoFiles = []
+        _routeMappingPhotoDeleteAttempt = 0
+
+        // Release Image elements before removing their backing JPEGs. The
+        // telemetry count remains available for the completed-mission summary.
+        _routeMappingLivePhotoModel.clear()
+        routeMappingPhotoCleanupTimer.restart()
+    }
+
+    function _deletePendingRouteMappingPhotos() {
+        var vehicle = _activeVehicle
+        if (vehicle && (vehicle.flying || vehicle.armed)) {
+            routeMappingPhotoCleanupTimer.restart()
+            return
+        }
+
+        for (var i = 0; i < _routeMappingPendingDeleteFiles.length; i++) {
+            QGCFileDialogController.deleteFile(_routeMappingPendingDeleteFiles[i])
+        }
+
+        // Repeat to cover a final asynchronous frame write which completed
+        // just after the first delete pass.
+        _routeMappingPhotoDeleteAttempt++
+        if (_routeMappingPhotoDeleteAttempt < 3) {
+            routeMappingPhotoCleanupTimer.restart()
+        } else {
+            _routeMappingPendingDeleteFiles = []
+            _routeMappingPhotoDeleteAttempt = 0
+        }
+    }
+
+    function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
+        var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
+        var duplicateRadius = duplicateRadiusOverride > 0
+                ? duplicateRadiusOverride
+                : Math.max(2, Math.min(12, triggerDistance * 0.45))
+        for (var i = 0; i < _routeMappingLivePhotoModel.count; i++) {
+            var photo = _routeMappingLivePhotoModel.get(i)
+            var photoCoordinate = QtPositioning.coordinate(
+                        photo.photoLatitude,
+                        photo.photoLongitude,
+                        photo.photoAltitude)
+            if (photoCoordinate.isValid && photoCoordinate.distanceTo(coordinate) <= duplicateRadius) {
+                return i
+            }
+        }
+        return -1
+    }
+
+    function _mappingPhotoTrackTolerance() {
+        return Math.max(6, Math.min(15, Number(routeMappingPhotoFootprintSide) * 0.4))
+    }
+
+    function _appendRouteMappingPhoto(coordinate, telemetryConfirmed, endpointCapture) {
+        if (!coordinate || !coordinate.isValid) {
+            return false
+        }
+
+        var captureInfo = mapControl
+                ? mapControl.routeMappingPhotoCaptureInfo(coordinate) : null
+        if (!captureInfo || !captureInfo.valid
+                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()
+                || captureInfo.segmentIndex <= _lastCompletedMappingPhotoSegmentIndex) {
+            return false
+        }
+
+        // The pattern-progress capture and CAMERA_IMAGE_CAPTURED can describe
+        // the same shot. Keep one tile and prefer the telemetry coordinate.
+        var matchingIndex = _mappingPhotoNearCoordinate(
+                    coordinate, endpointCapture ? 1 : 0)
+        if (matchingIndex >= 0) {
+            if (telemetryConfirmed) {
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLatitude", coordinate.latitude)
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLongitude", coordinate.longitude)
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoAltitude", coordinate.altitude)
+                _routeMappingLivePhotoModel.setProperty(
+                            matchingIndex,
+                            "photoHeading",
+                            mapControl.routeMappingHeadingAtCoordinate(coordinate))
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoTelemetryConfirmed", true)
+            }
+            return false
+        }
+
+        var photoDirectory = QGroundControl.settingsManager.appSettings.photoSavePath
+        if (!photoDirectory || photoDirectory.length === 0) {
+            return false
+        }
+
+        var photoNumber = _routeMappingLivePhotoModel.count + 1
+        var fileName = "mapping_" + Date.now() + "_" + photoNumber + ".jpg"
+        var separator = photoDirectory.charAt(photoDirectory.length - 1) === "/" ? "" : "/"
+        var filePath = photoDirectory + separator + fileName
+        var heading = mapControl
+                ? captureInfo.heading
+                : routeMappingEntryHeading
+
+        _routeMappingLivePhotoModel.append({
+            photoLatitude: coordinate.latitude,
+            photoLongitude: coordinate.longitude,
+            photoAltitude: coordinate.altitude,
+            photoHeading: heading,
+            photoSequence: photoNumber,
+            photoImageSource: _mappingPhotoFileUrl(filePath),
+            photoTelemetryConfirmed: telemetryConfirmed
+        })
+
+        _trackRouteMappingPhotoFile(filePath)
+
+        // Save the genuine current video frame. The map delegate watches this
+        // file and replaces its short loading label as soon as the JPEG exists.
+        QGroundControl.videoManager.grabImage(filePath)
+        return true
+    }
+
+    function _captureNewRouteMappingPhotos() {
+        var triggerPoints = _activeVehicle ? _activeVehicle.cameraTriggerPoints : null
+        var triggerCount = triggerPoints ? triggerPoints.count : 0
+
+        if (triggerCount < _processedCameraTriggerCount) {
+            resetRouteMappingLivePhotos()
+        }
+
+        if (!routeMappingPhotoProgressEnabled
+                || !routeMappingTransectPath
+                || routeMappingTransectPath.length < 2
+                || !_activeVehicle
+                || (!_activeVehicle.armed && !_activeVehicle.flying)) {
+            _processedCameraTriggerCount = triggerCount
+            return
+        }
+
+        while (_processedCameraTriggerCount < triggerCount) {
+            var triggerPoint = triggerPoints.get(_processedCameraTriggerCount)
+            var coordinate = triggerPoint ? triggerPoint.coordinate : QtPositioning.coordinate()
+            if (!coordinate || !coordinate.isValid) {
+                coordinate = _activeVehicle.coordinate
+            }
+            if (!coordinate || !coordinate.isValid) {
+                break
+            }
+
+            _appendRouteMappingPhoto(coordinate, true)
+            if (!_mappingPatternCaptureStarted) {
+                _mappingPatternCaptureStarted = true
+                _mappingPhotoDistanceSinceCapture = 0
+                _lastMappingPatternCoordinate = coordinate
+            }
+            _processedCameraTriggerCount++
+        }
+    }
+
+    function _updateAutomaticRouteMappingCapture() {
+        if (!routeMappingPhotoProgressEnabled
+                || !missionRunning
+                || !_activeVehicle
+                || !_activeVehicle.flying
+                || !routeMappingPhotoCaptureTransectPoints
+                || routeMappingPhotoCaptureTransectPoints.length < 2) {
+            return
+        }
+
+        var coordinate = _activeVehicle.coordinate
+        if (!coordinate || !coordinate.isValid) {
+            return
+        }
+
+        var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
+        var captureInfo = mapControl
+                ? mapControl.routeMappingPhotoCaptureInfo(coordinate) : null
+        if (!captureInfo || !captureInfo.valid
+                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()) {
+            return
+        }
+
+        if (captureInfo.segmentIndex <= _lastCompletedMappingPhotoSegmentIndex) {
+            return
+        }
+
+        if (_activeMappingPhotoSegmentIndex !== captureInfo.segmentIndex) {
+            if (_activeMappingPhotoSegmentIndex >= 0) {
+                _lastCompletedMappingPhotoSegmentIndex = Math.max(
+                            _lastCompletedMappingPhotoSegmentIndex,
+                            _activeMappingPhotoSegmentIndex)
+            }
+            if (captureInfo.segmentIndex <= _lastCompletedMappingPhotoSegmentIndex) {
+                return
+            }
+
+            var entryTolerance = Math.max(8, Math.min(18, triggerDistance * 0.75))
+            var entryPointTolerance = Math.max(2, Math.min(6, triggerDistance * 0.2))
+            if (captureInfo.alongSegment > entryTolerance
+                    || coordinate.distanceTo(captureInfo.startCoordinate) > entryPointTolerance) {
+                return
+            }
+
+            // Each inner transect has its own camera start command with the
+            // immediate-image flag. Turns and connectors never enter this state.
+            _activeMappingPhotoSegmentIndex = captureInfo.segmentIndex
+            _mappingPatternCaptureStarted = true
+            _mappingPhotoDistanceSinceCapture = 0
+            _mappingPhotoLastSegmentAlong = captureInfo.alongSegment
+            _mappingPhotoSegmentEndCaptured = false
+            _lastMappingPatternCoordinate = coordinate
+            _appendRouteMappingPhoto(coordinate, false, false)
+            return
+        }
+
+        var stepDistance = captureInfo.alongSegment - _mappingPhotoLastSegmentAlong
+        _mappingPhotoLastSegmentAlong = Math.max(
+                    _mappingPhotoLastSegmentAlong, captureInfo.alongSegment)
+        _lastMappingPatternCoordinate = coordinate
+        if (stepDistance <= 0.05 || stepDistance > Math.max(50, triggerDistance * 3)) {
+            return
+        }
+
+        _mappingPhotoDistanceSinceCapture += stepDistance
+        if (_mappingPhotoDistanceSinceCapture >= triggerDistance) {
+            _mappingPhotoDistanceSinceCapture %= triggerDistance
+            _appendRouteMappingPhoto(coordinate, false, false)
+        }
+
+        var endpointTolerance = Math.max(2, Math.min(6, triggerDistance * 0.25))
+        if (!_mappingPhotoSegmentEndCaptured
+                && captureInfo.segmentLength - captureInfo.alongSegment <= endpointTolerance
+                && coordinate.distanceTo(captureInfo.endCoordinate) <= endpointTolerance) {
+            // Force a distinct endpoint frame even when the final regular
+            // distance shot was close to the polygon edge.
+            _appendRouteMappingPhoto(coordinate, false, true)
+            _mappingPhotoSegmentEndCaptured = true
+            _lastCompletedMappingPhotoSegmentIndex = captureInfo.segmentIndex
+            _activeMappingPhotoSegmentIndex = -1
+        }
+    }
+
+    // This remains live for the complete flight and resets when arming.
+    readonly property int routeMappingPhotosTaken: {
+        if (!routeMappingPhotoProgressEnabled) {
+            return 0
+        }
+        // Count only captures accepted on an interior photo transect. Raw
+        // vehicle feedback can include unrelated camera events during takeoff
+        // or RTL and must not inflate Route Mapping progress.
+        return _routeMappingLivePhotoModel.count
+    }
+
     readonly property bool missionRunning:  _guidedController ? _guidedController._missionActive : false
     property var    _missionController:     _planController.missionController
     property var    _geoFenceController:    _planController.geoFenceController
@@ -396,21 +729,58 @@ Item {
         target: QGroundControl.multiVehicleManager
 
         function onActiveVehicleChanged(vehicle) {
+            _root.resetRouteMappingLivePhotos()
             if (vehicle && !vehicle.flying) {
-                _scheduleMissionResyncFromVehicle()
+                _root._scheduleMissionResyncFromVehicle()
             }
         }
     }
 
     Connections {
-        target: _activeVehicle
+        target: _root._activeVehicle ? _root._activeVehicle.cameraTriggerPoints : null
+
+        function onCountChanged() {
+            _root._captureNewRouteMappingPhotos()
+        }
+    }
+
+    Connections {
+        target: _root._activeVehicle
         ignoreUnknownSignals: true
+
+        function onArmedChanged(armed) {
+            if (armed) {
+                _root.resetRouteMappingLivePhotos()
+            } else {
+                _root._queueRouteMappingPhotoCleanup()
+            }
+        }
+
+        function onCoordinateChanged() {
+            _root._updateAutomaticRouteMappingCapture()
+        }
+
+        function onFlyingChanged() {
+            _root._updateAutomaticRouteMappingCapture()
+            if (_root._activeVehicle && !_root._activeVehicle.flying) {
+                _root._queueRouteMappingPhotoCleanup()
+            }
+        }
 
         function onInitialPlanRequestCompleteChanged(complete) {
             if (complete) {
-                _scheduleMissionResyncFromVehicle()
+                _root._scheduleMissionResyncFromVehicle()
             }
         }
+    }
+
+    onMissionRunningChanged: _updateAutomaticRouteMappingCapture()
+
+    Timer {
+        id: routeMappingPhotoCleanupTimer
+        interval: 1500
+        repeat: false
+        onTriggered: _root._deletePendingRouteMappingPhotos()
     }
 
     Timer {
@@ -466,7 +836,7 @@ Item {
             return
         }
 
-        if (routeMappingView.tryReuploadRouteMappingPlanAfterReconnect()) {
+        if (mainWindow.tryReuploadLastExecutedPlanAfterReconnect()) {
             return
         }
 
@@ -553,11 +923,15 @@ Item {
             rallyPointController:   _root._rallyPointController
             routeMappingBoundaryPath: _root.routeMappingBoundaryPath
             routeMappingTransectPath: _root.routeMappingTransectPath
+            routeMappingPhotoCaptureTransectPoints: _root.routeMappingPhotoCaptureTransectPoints
             routeMappingTakeoffCoordinate: _root.routeMappingTakeoffCoordinate
             routeMappingEntryCoordinate: _root.routeMappingEntryCoordinate
             routeMappingExitCoordinate: _root.routeMappingExitCoordinate
             routeMappingEntryHeading: _root.routeMappingEntryHeading
             routeMappingExitHeading: _root.routeMappingExitHeading
+            routeMappingPhotoFootprintSide: _root.routeMappingPhotoFootprintSide
+            routeMappingPhotoFootprintFrontal: _root.routeMappingPhotoFootprintFrontal
+            routeMappingLivePhotoModel: _root.routeMappingLivePhotoModel
             hideVehicleMissionForUnuploadedRoute: _root.hideVehicleMissionForUnuploadedRoute
             onWaypointAdded: function(coordinate) {
                 _root.insertSimpleItemAfterCurrent(coordinate)
@@ -982,7 +1356,8 @@ Item {
 
         routePercent: mapControl ? mapControl.routeMappingProgressPercent : 0
         photosTaken: _root.routeMappingPhotosTaken
-        photosPlanned: _root.routeMappingPlannedPhotoCount
+        photosPlanned: _root.routeMappingPhotoProgressEnabled ? _root.routeMappingPlannedPhotoCount : 0
+        photosVisible: _root.routeMappingPhotoProgressEnabled
         reconstructionText: qsTr("Pending")
 
         visible: !_root.planEditMode
@@ -1001,45 +1376,6 @@ Item {
         spacing: ScreenTools.defaultFontPixelHeight * 0.5
         visible: _root.planEditMode
         z: 4000
-
-        // Exit Button
-        Rectangle {
-            id: exitButton
-            height: ScreenTools.defaultFontPixelHeight * 2
-            width: exitRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 6.5
-            radius: ScreenTools.defaultFontPixelWidth * 0.45
-            color: "white"
-
-            Row {
-                id: exitRow
-                anchors.centerIn: parent
-                spacing: ScreenTools.defaultFontPixelWidth * 0.5
-
-                Image {
-                    anchors.verticalCenter: parent.verticalCenter
-                    width: ScreenTools.defaultFontPixelHeight * 1.1
-                    height: width
-                    source: "/res/exit.png"
-                    fillMode: Image.PreserveAspectFit
-                }
-
-                QGCLabel {
-                    text: qsTr("Exit")
-                    font.weight: Font.DemiBold
-                    color: "#6a6a6a"
-                    anchors.verticalCenter: parent.verticalCenter
-                }
-            }
-
-            QGCMouseArea {
-                anchors.fill: parent
-                onClicked: _root.planEditMode = false
-                onPressed: parent.scale = 0.96
-                onReleased: parent.scale = 1.0
-            }
-            
-            Behavior on scale { NumberAnimation { duration: 50 } }
-        }
 
         // Use Button (formerly Save)
         Rectangle {

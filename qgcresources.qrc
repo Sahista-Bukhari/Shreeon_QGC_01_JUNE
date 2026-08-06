@@ -38,6 +38,8 @@
         <file alias="LockClosed.svg">resources/LockClosed.svg</file>
         <file alias="LockOpen.svg">resources/LockOpen.svg</file>
         <file alias="notile.png">resources/notile.png</file>
+        <file alias="Nozel.png">resources/Nozel.png</file>
+        <file alias="drone_tea_plantation_hires.png">resources/drone_tea_plantation_hires.png</file>
         <file alias="NoVideoBackground.jpg">resources/NoVideoBackground.jpg</file>
         <file alias="OpenDoor.svg">resources/OpenDoor.svg</file>
         <file alias="Pause.svg">resources/Pause.svg</file>
@@ -154,6 +156,8 @@
         <file alias="seeds.png">resources/ModeSelection/seeds.png</file>
         <file alias="routemapping.png">resources/ModeSelection/routemapping.png</file>
         <file alias="custommission.png">resources/ModeSelection/custommission.png</file>
-
+    </qresource>
+    <qresource prefix="/UserManual">
+        <file alias="AgricultureDrone.pdf">UserManual/Agriculture drone.pdf</file>
     </qresource>
 </RCC>

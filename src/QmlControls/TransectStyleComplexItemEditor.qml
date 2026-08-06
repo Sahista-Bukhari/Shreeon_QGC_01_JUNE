@@ -12,8 +12,11 @@ Rectangle {
     id:         _root
     height:     childrenRect.y + childrenRect.height + _margin
     width:      availableWidth
-    color:      qgcPal.windowShadeDark
-    radius:     _radius
+    color:      _glassTheme ? "transparent" : qgcPal.windowShadeDark
+    radius:     _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.55 : ScreenTools.defaultFontPixelWidth / 2
+
+    readonly property bool _glassTheme: typeof mainWindow !== "undefined"
+                                        && mainWindow.activeMissionEditor === "customMission"
 
     property bool   transectAreaDefinitionComplete: true
     property string transectAreaDefinitionHelp:     _internalError
@@ -24,7 +27,7 @@ Rectangle {
     readonly property string _internalError: "Internal Error"
 
     property var    _missionItem:               missionItem
-    property real   _margin:                    ScreenTools.defaultFontPixelWidth / 2
+    property real   _margin:                    ScreenTools.defaultFontPixelWidth * (_glassTheme ? 0.85 : 0.5)
     property real   _fieldWidth:                ScreenTools.defaultFontPixelWidth * 10.5
     property var    _vehicle:                   QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle : QGroundControl.multiVehicleManager.offlineEditingVehicle
     property real   _cameraMinTriggerInterval:  _missionItem.cameraCalc.minTriggerInterval.rawValue
@@ -50,6 +53,17 @@ Rectangle {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
+    LiquidGlassSurface {
+        anchors.fill: parent
+        visible: _root._glassTheme
+        cornerRadius: _root.radius
+        blurAmount: 14
+        tintColor: Qt.rgba(0.12, 0.14, 0.14, 0.55)
+        rimColor: Qt.rgba(1, 1, 1, 0.18)
+        innerGlow: "transparent"
+        showGlint: false
+    }
+
     ColumnLayout {
         id:                 editorColumn
         anchors.margins:    _margin
@@ -63,6 +77,7 @@ Rectangle {
             wrapMode:               Text.WordWrap
             horizontalAlignment:    Text.AlignHCenter
             text:                   transectAreaDefinitionHelp
+            color:                  _glassTheme ? "#ffffff" : qgcPal.text
             visible:                !transectAreaDefinitionComplete || _missionItem.wizardMode
         }
 
@@ -114,10 +129,13 @@ Rectangle {
                 }
 
                 QGCButton {
-                    Layout.alignment:   Qt.AlignHCenter
-                    text:               qsTr("Rotate Entry Point")
-                    onClicked:          _missionItem.rotateEntryPoint()
-                    visible:            transectValuesHeader.checked
+                    Layout.alignment:       Qt.AlignHCenter
+                    Layout.preferredWidth:  _glassTheme ? editorColumn.width * 0.78 : implicitWidth
+                    compact:                _glassTheme
+                    heightFactor:           _glassTheme ? 0.38 : 0.5
+                    text:                   qsTr("Rotate Entry Point")
+                    onClicked:              _missionItem.rotateEntryPoint()
+                    visible:                transectValuesHeader.checked
                 }
 
                 SectionHeader {

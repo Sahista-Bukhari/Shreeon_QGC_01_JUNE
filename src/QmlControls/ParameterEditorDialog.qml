@@ -12,7 +12,9 @@ QGCPopupDialog {
     title:      fact.componentId > 0 ? fact.name : qsTr("Value Editor")
 
     buttons:    Dialog.Save | (validate ? 0 : Dialog.Cancel)
-    minimumContentHeight: compactValueDetails ? ScreenTools.defaultFontPixelHeight * 4.0 : -1
+    // Compact help dialogs stay tight; non-compact keep natural content height.
+    compact:                compactValueDetails
+    minimumContentHeight:   -1
 
     property Fact   fact
     property bool   showRCToParam:  false
@@ -21,12 +23,19 @@ QGCPopupDialog {
     property bool   setFocus:       true    ///< true: focus is set to text field on display, false: focus not set (works around strange virtual keyboard bug with FactValueSlider
     property bool   compactValueDetails: false
 
-    property real   _editFieldWidth:            ScreenTools.defaultFontPixelWidth * 20
+    property real   _editFieldWidth:            ScreenTools.defaultFontPixelWidth * (compactValueDetails ? 14 : 20)
     property bool   _longDescriptionAvailable:  fact.longDescription != ""
     property bool   _editingParameter:          fact.componentId != 0
     property bool   _allowForceSave:            QGroundControl.corePlugin.showAdvancedUI && _editingParameter
     property bool   _allowDefaultReset:         fact.defaultValueAvailable
     property bool   _showCombo:                 fact.enumStrings.length !== 0 && fact.bitmaskStrings.length === 0 && !validate
+
+    // Match RouteMappingTaskSettings form colors on this white popup.
+    readonly property color _titleColor:     "#3f3f3f"
+    readonly property color _bodyColor:      "#6a6a6a"
+    readonly property color _accentGreen:    "#23a800"
+    readonly property color _cardBorderIdle: "#e2e2e2"
+    readonly property real  _controlRadius:  ScreenTools.defaultFontPixelWidth * 0.75
 
     ParameterEditorController { id: controller; }
 
@@ -77,8 +86,16 @@ QGCPopupDialog {
     }
 
     ColumnLayout {
-        width:      Math.min(mainWindow.width * .75, Math.max(ScreenTools.defaultFontPixelWidth * 60, editRow.width))
-        spacing:    compactValueDetails ? ScreenTools.defaultFontPixelHeight * 0.6 : globals.defaultTextHeight
+        // Fill the dialog content width so text wraps instead of clipping.
+        width:      {
+            if (compactValueDetails) {
+                return parent && parent.width > 0
+                       ? parent.width
+                       : ScreenTools.defaultFontPixelWidth * 32
+            }
+            return Math.min(mainWindow.width * .75, Math.max(ScreenTools.defaultFontPixelWidth * 60, editRow.width))
+        }
+        spacing:    compactValueDetails ? ScreenTools.defaultFontPixelHeight * 0.45 : globals.defaultTextHeight
 
         QGCLabel {
             id:                 validationError
@@ -88,48 +105,98 @@ QGCPopupDialog {
             visible:            text !== ""
         }
 
-        RowLayout {
-            id:         editRow
-            spacing:    ScreenTools.defaultFontPixelWidth
-
-            QGCTextField {
-                id:                 valueField
-                width:              _editFieldWidth
-                unitsLabel:         fact.units
-                showUnits:          fact.units != ""
-                focus:              setFocus && visible
-                inputMethodHints:   (fact.typeIsString || ScreenTools.isiOS) ? // iOS numeric keyboard has no done button, we can't use it
-                                        Qt.ImhNone :
-                                        Qt.ImhFormattedNumbersOnly  // Forces use of virtual numeric keyboard
-                visible:            !_showCombo || validate || manualEntry.checked
+        // Always show what this value is (was hidden in compact mode → empty white gap).
+        QGCLabel {
+            Layout.fillWidth:   true
+            wrapMode:           Text.WordWrap
+            text:               {
+                if (fact.shortDescription && fact.shortDescription.length) {
+                    return fact.shortDescription
+                }
+                if (fact.name && fact.name.length) {
+                    return fact.name
+                }
+                return qsTr("Edit value")
             }
+            color:              root._titleColor
+            font.weight:        Font.Medium
+            visible:            text !== ""
+        }
 
-            QGCComboBox {
-                id:             factCombo
-                width:          _editFieldWidth
-                model:          fact.enumStrings
-                sizeToContents: true
-                visible:        _showCombo
-                focus:          setFocus && visible
+        ColumnLayout {
+            id:                 editRow
+            Layout.fillWidth:   true
+            spacing:            ScreenTools.defaultFontPixelWidth * 0.6
 
-                Component.onCompleted: {
-                    // We can't bind directly to fact.enumIndex since that would add an unknown value
-                    // if there are no enum strings.
-                    if (_showCombo) {
-                        currentIndex = fact.enumIndex
+            RowLayout {
+                Layout.fillWidth: true
+                spacing:          ScreenTools.defaultFontPixelWidth
+
+                QGCTextField {
+                    id:                 valueField
+                    Layout.fillWidth:   compactValueDetails
+                    Layout.preferredWidth: compactValueDetails ? -1 : _editFieldWidth
+                    width:              compactValueDetails ? implicitWidth : _editFieldWidth
+                    unitsLabel:         fact.units
+                    showUnits:          fact.units != ""
+                    focus:              setFocus && visible
+                    activeFocusBorderColor: root._accentGreen
+                    fieldTextColor:     root._titleColor
+                    inputMethodHints:   (fact.typeIsString || ScreenTools.isiOS) ?
+                                            Qt.ImhNone :
+                                            Qt.ImhFormattedNumbersOnly
+                    visible:            !_showCombo || validate || manualEntry.checked
+                }
+
+                QGCComboBox {
+                    id:             factCombo
+                    Layout.fillWidth: compactValueDetails
+                    width:          compactValueDetails ? implicitWidth : _editFieldWidth
+                    model:          fact.enumStrings
+                    sizeToContents: true
+                    visible:        _showCombo
+                    focus:          setFocus && visible
+
+                    Component.onCompleted: {
+                        if (_showCombo) {
+                            currentIndex = fact.enumIndex
+                        }
+                    }
+
+                    onCurrentIndexChanged: {
+                        if (currentIndex >=0 && currentIndex < model.length) {
+                            valueField.text = fact.enumValues[currentIndex]
+                        }
                     }
                 }
 
-                onCurrentIndexChanged: {
-                    if (currentIndex >=0 && currentIndex < model.length) {
-                        valueField.text = fact.enumValues[currentIndex]
+                // Full editor keeps Reset inline; compact puts it on the next row.
+                QGCButton {
+                    visible:    _allowDefaultReset && !compactValueDetails
+                    text:       qsTr("Reset To Default")
+                    primary:    true
+                    backgroundColor: root._accentGreen
+                    textColor:  "white"
+                    showBorder: false
+                    backRadius: root._controlRadius
+
+                    onClicked: {
+                        fact.value = fact.defaultValue
+                        fact.valueChanged(fact.value)
+                        close()
                     }
                 }
             }
 
             QGCButton {
-                visible:    _allowDefaultReset
-                text:       qsTr("Reset To Default")
+                Layout.fillWidth:   true
+                visible:            _allowDefaultReset && compactValueDetails
+                text:               qsTr("Reset To Default")
+                primary:            true
+                backgroundColor:    root._accentGreen
+                textColor:          "white"
+                showBorder:         false
+                backRadius:         root._controlRadius
 
                 onClicked: {
                     fact.value = fact.defaultValue
@@ -150,6 +217,8 @@ QGCPopupDialog {
 
                 delegate : QGCCheckBox {
                     text : modelData
+                    textColor: root._titleColor
+                    uncheckedBorderColor: root._cardBorderIdle
                     checked : fact.value & fact.bitmaskValues[index]
 
                     onClicked: {
@@ -160,49 +229,48 @@ QGCPopupDialog {
         }
 
         QGCLabel {
-            Layout.fillWidth:   true
-            wrapMode:           Text.WordWrap
-            visible:            !compactValueDetails && !longDescriptionLabel.visible
-            text:               fact.shortDescription
-        }
-
-        QGCLabel {
             id:                 longDescriptionLabel
             Layout.fillWidth:   true
             wrapMode:           Text.WordWrap
             visible:            !compactValueDetails && fact.longDescription != ""
             text:               fact.longDescription
+            color:              root._titleColor
         }
 
-        Row {
-            spacing: ScreenTools.defaultFontPixelWidth
-            visible: !compactValueDetails
+        Flow {
+            Layout.fillWidth:   true
+            spacing:            ScreenTools.defaultFontPixelWidth
 
             QGCLabel {
                 id:         minValueDisplay
                 text:       qsTr("Min: ") + fact.minString
                 visible:    !fact.minIsDefaultForType
+                color:      root._bodyColor
             }
 
             QGCLabel {
                 text:       qsTr("Max: ") + fact.maxString
                 visible:    !fact.maxIsDefaultForType
+                color:      root._bodyColor
             }
 
             QGCLabel {
                 text:       qsTr("Default: ") + fact.defaultValueString
                 visible:    _allowDefaultReset
+                color:      root._bodyColor
             }
         }
 
         QGCLabel {
             visible:    !compactValueDetails && fact.vehicleRebootRequired
             text:       qsTr("Vehicle reboot required after change")
+            color:      root._titleColor
         }
 
         QGCLabel {
             visible:    !compactValueDetails && fact.qgcRebootRequired
             text:       qsTr("Application restart required after change")
+            color:      root._titleColor
         }
 
         QGCLabel {
@@ -211,18 +279,23 @@ QGCPopupDialog {
             text:       qsTr("Warning: Modifying values while vehicle is in flight can lead to vehicle instability and possible vehicle loss. ") +
                         qsTr("Make sure you know what you are doing and double-check your values before Save!")
             visible:    !compactValueDetails && fact.componentId != -1
+            color:      root._titleColor
         }
 
         QGCCheckBox {
             id:         forceSave
             visible:    false
             text:       qsTr("Force save (dangerous!)")
+            textColor:  root._titleColor
+            uncheckedBorderColor: root._cardBorderIdle
         }
 
         QGCCheckBox {
             id:         _advanced
             text:       qsTr("Advanced settings")
             visible:    !compactValueDetails && (showRCToParam || factCombo.visible || bitmaskColumn.visible)
+            textColor:  root._titleColor
+            uncheckedBorderColor: root._cardBorderIdle
         }
 
         // Checkbox to allow manual entry of enumerated or bitmask parameters
@@ -230,6 +303,8 @@ QGCPopupDialog {
             id:         manualEntry
             visible:    _advanced.checked && (factCombo.visible || bitmaskColumn.visible)
             text:       qsTr("Manual Entry")
+            textColor:  root._titleColor
+            uncheckedBorderColor: root._cardBorderIdle
 
             onClicked: {
                 valueField.text = fact.valueString
@@ -239,6 +314,11 @@ QGCPopupDialog {
         QGCButton {
             text:       qsTr("Set RC to Param")
             visible:    _advanced.checked && !validate && showRCToParam
+            primary:    true
+            backgroundColor: root._accentGreen
+            textColor:  "white"
+            showBorder: false
+            backRadius: root._controlRadius
             onClicked:  rcToParamDialog.createObject(mainWindow).open()
         }
     } // Column

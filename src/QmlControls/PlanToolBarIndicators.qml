@@ -13,8 +13,9 @@ RowLayout {
     required property var planMasterController
 
     id: root
-    spacing: ScreenTools.defaultFontPixelWidth
+    spacing: compact ? ScreenTools.defaultFontPixelWidth * 0.55 : ScreenTools.defaultFontPixelWidth
 
+    property bool compact: false
     property var _planMasterController: planMasterController
     property var _missionController: _planMasterController.missionController
     property var _geoFenceController: _planMasterController.geoFenceController
@@ -31,12 +32,16 @@ RowLayout {
     property bool _utmspEnabled: QGroundControl.utmspSupported
 
     function _uploadClicked() {
-        if (_utmspEnabled) {
-            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(true);
-            UTMSPStateStorage.removeFlightPlanState = true
-            UTMSPStateStorage.indicatorDisplayStatus = true
-        }
-        _planMasterController.upload();
+        mainWindow.confirmUploadToFlyView(mainWindow.activeMissionEditor, function() {
+            if (_utmspEnabled) {
+                QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(true);
+                UTMSPStateStorage.removeFlightPlanState = true
+                UTMSPStateStorage.indicatorDisplayStatus = true
+            }
+            if (_planMasterController.upload()) {
+                mainWindow.markMissionPlanUploaded(mainWindow.activeMissionEditor)
+            }
+        })
     }
 
     function _downloadClicked() {
@@ -80,37 +85,15 @@ RowLayout {
     }
 
     function _storageClearButtonClicked() {
-        mainWindow.showMessageDialog(qsTr("Clear"),
-                                     qsTr("Are you sure you want to remove all the items from the plan editor?"),
-                                     Dialog.Yes | Dialog.Cancel,
-                                     function() { _planMasterController.removeAll(); })
+        mainWindow.confirmClearRouteMappingPlan()
     }
 
     function _vehicleClearButtonClicked() {
-        mainWindow.showMessageDialog(qsTr("Clear"),
-                                     qsTr("Are you sure you want to remove the plan from the vehicle and the plan editor?"),
-                                     Dialog.Yes | Dialog.Cancel,
-                                     function() {
-                                        _planMasterController.removeAllFromVehicle();
-                                        if (_utmspEnabled) {
-                                            _resetRegisterFlightPlan = true;
-                                            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(false);
-                                            UTMSPStateStorage.startTimeStamp = "";
-                                            UTMSPStateStorage.showActivationTab = false;
-                                            UTMSPStateStorage.flightID = "";
-                                            UTMSPStateStorage.enableMissionUploadButton = false;
-                                            UTMSPStateStorage.indicatorPendingStatus = true;
-                                            UTMSPStateStorage.indicatorApprovedStatus = false;
-                                            UTMSPStateStorage.indicatorActivatedStatus = false;
-                                            UTMSPStateStorage.currentStateIndex = 0}})
+        mainWindow.confirmClearRouteMappingPlan()
     }
 
     function _clearClicked() {
-        if (_planMasterController.offline) {
-            _storageClearButtonClicked();
-        } else {
-            _vehicleClearButtonClicked();
-        }
+        mainWindow.confirmClearRouteMappingPlan()
     }
 
     QGCPalette { id: qgcPal }
@@ -118,6 +101,9 @@ RowLayout {
     QGCButton {
         text: qsTr("Open")
         iconSource: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
+        compact: root.compact
+        pointSize: root.compact ? ScreenTools.defaultFontPointSize : ScreenTools.defaultFontPointSize
+        heightFactor: root.compact ? 0.42 : 0.5
         enabled: !_planMasterController.syncInProgress
         onClicked: _openButtonClicked()
     }
@@ -125,6 +111,9 @@ RowLayout {
     QGCButton {
         text: _planMasterController.currentPlanFile === "" ? qsTr("Save As") : qsTr("Save")
         iconSource: "/res/modern-icons/MaterialSymbolsSave.svg"
+        compact: root.compact
+        pointSize: ScreenTools.defaultFontPointSize
+        heightFactor: root.compact ? 0.42 : 0.5
         enabled: !_syncInProgress && _hasPlanItems
         primary: _controllerDirty
         onClicked: _saveButtonClicked()
@@ -134,6 +123,9 @@ RowLayout {
         id: uploadButton
         text: qsTr("Upload")
         iconSource: "/res/modern-icons/MaterialSymbolsUpload2Rounded.svg"
+        compact: root.compact
+        pointSize: ScreenTools.defaultFontPointSize
+        heightFactor: root.compact ? 0.42 : 0.5
         enabled: _utmspEnabled ? (!_syncInProgress && UTMSPStateStorage.enableMissionUploadButton) : (!_syncInProgress && _hasPlanItems)
         visible: !_syncInProgress
         primary: _controllerDirty
@@ -143,18 +135,27 @@ RowLayout {
     QGCButton {
         text: qsTr("Clear")
         iconSource: "/res/modern-icons/MaterialSymbolsDeleteRounded.svg"
+        compact: root.compact
+        pointSize: ScreenTools.defaultFontPointSize
+        heightFactor: root.compact ? 0.42 : 0.5
         enabled: !_syncInProgress
         onClicked: _clearClicked()
     }
 
     QGCButton {
+        id: hamburgerButton
         iconSource: "qrc:/qmlimages/Hamburger.svg"
+        compact: root.compact
+        heightFactor: root.compact ? 0.42 : 0.5
+        implicitWidth: root.compact ? ScreenTools.defaultFontPixelHeight * 3.15 : ScreenTools.implicitButtonWidth
 
         onClicked: {
-            let position = Qt.point(width, height / 2)
             // For some strange reason using mainWindow in mapToItem doesn't work, so we use globals.parent instead which also gets us mainWindow
-            position = mapToItem(globals.parent, position)
-            var dropPanel = hamburgerDropPanelComponent.createObject(mainWindow, { clickRect: Qt.rect(position.x, position.y, 0, 0) })
+            var topLeft = mapToItem(globals.parent, 0, 0)
+            var dropPanel = hamburgerDropPanelComponent.createObject(mainWindow, {
+                clickRect: Qt.rect(topLeft.x, topLeft.y, width, height),
+                dropBelow: true
+            })
             dropPanel.open()
         }
     }
@@ -164,14 +165,18 @@ RowLayout {
 
         DropPanel {
             id: dropPanel
+            dropBelow: true
 
             sourceComponent: Component {
                 ColumnLayout {
-                    spacing: ScreenTools.defaultFontPixelHeight / 2
+                    spacing: ScreenTools.defaultFontPixelHeight / 3
 
                     QGCButton {
                         Layout.fillWidth: true
+                        Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 18
                         text: qsTr("Save as KML")
+                        compact: true
+                        heightFactor: 0.32
                         enabled: !_syncInProgress && _hasPlanItems
 
                         onClicked: {
@@ -184,6 +189,8 @@ RowLayout {
                         Layout.fillWidth: true
                         text: qsTr("Download")
                         iconSource: "/res/modern-icons/MaterialSymbolsDownload2Rounded.svg"
+                        compact: true
+                        heightFactor: 0.32
                         enabled: _utmspEnabled ? !_syncInProgress && UTMSPStateStorage.enableMissionDownloadButton : !_syncInProgress
                         visible: !_syncInProgress
 

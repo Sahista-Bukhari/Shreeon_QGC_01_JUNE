@@ -746,7 +746,7 @@ Item {
             return ""
         }
         var separator = savePath.endsWith("/") ? "" : "/"
-        return savePath + separator + "route_mapping_last_uploaded.plan"
+        return savePath + separator + "seed_spreader_last_uploaded.plan"
     }
 
     function hasPersistedUploadedPlan() {
@@ -774,6 +774,21 @@ Item {
     // Restores the last uploaded Route Mapping plan from disk (new QGC session).
     function loadPersistedUploadedPlan() {
         var planFile = _lastUploadedPlanFile()
+        if (planFile !== "" && QGCFileDialogController.fileExists(planFile)) {
+            return _loadPersistedPlanFromFile(planFile)
+        }
+
+        if (mainWindow.uploadedMissionEditor === "seedSpreader") {
+            var sharedPlanFile = mainWindow.lastExecutedPlanFilePath()
+            if (sharedPlanFile !== "" && QGCFileDialogController.fileExists(sharedPlanFile)) {
+                return _loadPersistedPlanFromFile(sharedPlanFile)
+            }
+        }
+
+        return false
+    }
+
+    function _loadPersistedPlanFromFile(planFile) {
         if (planFile === "" || !QGCFileDialogController.fileExists(planFile)) {
             return false
         }
@@ -814,6 +829,10 @@ Item {
     // Vehicle came back with no onboard mission — push the last uploaded plan again.
     function tryReuploadRouteMappingPlanAfterReconnect() {
         if (_routeMappingUploadPending) {
+            return false
+        }
+
+        if (mainWindow.uploadedMissionEditor !== "" && mainWindow.uploadedMissionEditor !== "seedSpreader") {
             return false
         }
 
@@ -1025,6 +1044,12 @@ Item {
     // checks/pipeline. Uploading does not require saving the plan to a file and
     // does not navigate away from Route Mapping.
     function uploadRouteMappingPlan() {
+        mainWindow.confirmUploadToFlyView("seedSpreader", function() {
+            _root._performRouteMappingUpload()
+        })
+    }
+
+    function _performRouteMappingUpload() {
         if (_planMasterController.syncInProgress) {
             return
         }
@@ -1088,6 +1113,7 @@ Item {
         _editBaselineSignature = _routeMappingPlanSignature()
         _persistUploadedRouteMappingPlan()
         flyView.hideVehicleMissionForUnuploadedRoute = false
+        mainWindow.markMissionPlanUploaded("seedSpreader")
 
         // Match stock QGC: after Plan upload, Fly View reloads from the vehicle
         // so Start Mission / containsItems stay in sync.
@@ -1132,7 +1158,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
-        var safeTaskName = taskName.trim().replace(/[\\\/:*?\"<>|]/g, "_")
+        var safeTaskName = taskName.trim().replace(new RegExp('[\\\\/:*?"<>|]', "g"), "_")
         _pendingMappingTaskName = taskName.trim()
         fileDialog.title = qsTr("Choose Where to Save Mapping Task")
         fileDialog.nameFilters = _planMasterController.saveNameFilters
@@ -1163,6 +1189,9 @@ Item {
             }
             _restoreUploadedRouteMappingOverlay()
         } else {
+            if (mainWindow.uploadedMissionEditor === "seedSpreader") {
+                mainWindow.clearUploadedMissionEditor()
+            }
             _routeMappingPlanUploaded = false
             _editingUploadedPlan = false
             flyView.clearRouteMappingOverlay(true /* force */)
@@ -1355,7 +1384,7 @@ Item {
             exitCoordinate: _cachedSurveyItem.exitCoordinate,
             entryHeading: _surveyStartHeading,
             exitHeading: _surveyEndHeading,
-            plannedPhotoCount: _cachedSurveyItem.cameraShots ? _cachedSurveyItem.cameraShots : 0
+            plannedPhotoCount: 0
         }
     }
 
@@ -1384,8 +1413,8 @@ Item {
             flyView.routeMappingExitCoordinate = routeMappingOverlayData.exitCoordinate
             flyView.routeMappingEntryHeading = routeMappingOverlayData.entryHeading
             flyView.routeMappingExitHeading = routeMappingOverlayData.exitHeading
-            flyView.routeMappingPlannedPhotoCount = routeMappingOverlayData.plannedPhotoCount
-                    ? routeMappingOverlayData.plannedPhotoCount : 0
+            // Photo progress UI is Route Mapping only.
+            flyView.routeMappingPlannedPhotoCount = 0
             if (routeMappingOverlayData.transectPath
                     && routeMappingOverlayData.transectPath.length >= 2) {
                 flyView._routeMappingOverlayLocked = true
@@ -2134,6 +2163,8 @@ Item {
             RouteMappingTaskSettings {
                 id: taskSettingsPanel
                 anchors.fill: parent
+                patternSectionTitle: qsTr("Seed Spreader Pattern")
+                showPhotoSettings: false
                 surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
                 takeoffItem: {
                     // Depend on count so this re-evaluates when takeoff is added/removed.
@@ -2245,8 +2276,6 @@ Item {
 
                 QGCLabel { text: qsTr("Mapping Area"); color: "white"; Layout.fillWidth: true }
                 QGCLabel { text: _mappingAreaText; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
-                QGCLabel { text: qsTr("Est. Photo Count"); color: "white"; Layout.fillWidth: true }
-                QGCLabel { text: _photoCountText; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
                 QGCLabel { text: qsTr("Est. Flight Time"); color: "white"; Layout.fillWidth: true }
                 QGCLabel { text: _flightTimeText; color: "white"; font.bold: true; horizontalAlignment: Text.AlignRight; Layout.fillWidth: true }
                 QGCLabel { text: qsTr("Terrain Warning"); color: "#ff6961"; font.bold: true; Layout.fillWidth: true; visible: _hasTerrainCollision }
@@ -2554,7 +2583,7 @@ Item {
                 QGCLabel {
                     id: routeMappingTitle
                     anchors.centerIn: parent
-                    text: qsTr("Route Mapping")
+                    text: qsTr("Seed Sprader")
                     color: "white"
                     font.bold: true
                     font.pointSize: ScreenTools.largeFontPointSize

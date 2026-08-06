@@ -3,6 +3,7 @@
 #include "PlanMasterController.h"
 #include "SimpleMissionItem.h"
 #include "MissionSettingsItem.h"
+#include "SurveyComplexItem.h"
 #include "SettingsManager.h"
 #include "AppSettings.h"
 #include "PlanViewSettings.h"
@@ -244,6 +245,62 @@ void MissionControllerTest::_testLoadJsonSectionAvailable(void)
         }
 
     }
+}
+
+void MissionControllerTest::_testLoadBaylandsMappingPlan(void)
+{
+    _initForFirmwareType(MAV_AUTOPILOT_PX4);
+
+    const QString planFile = QFINDTESTDATA("../../demo/BaylandsRouteMapping.plan");
+    QVERIFY2(!planFile.isEmpty(), "Baylands route-mapping demo plan was not found");
+    _masterController->loadFromFile(planFile);
+
+    QmlObjectListModel* visualItems = _missionController->visualItems();
+    QVERIFY(visualItems);
+    // Camera mode is folded into MissionSettingsItem during plan load.
+    QCOMPARE(visualItems->count(), 4);
+
+    SurveyComplexItem* surveyItem = nullptr;
+    for (int i = 0; i < visualItems->count(); i++) {
+        surveyItem = qobject_cast<SurveyComplexItem*>(visualItems->get(i));
+        if (surveyItem) {
+            break;
+        }
+    }
+
+    QVERIFY(surveyItem);
+    QVERIFY(surveyItem->surveyAreaPolygon()->isValid());
+    QCOMPARE(surveyItem->cameraShots(), 31);
+    QCOMPARE(surveyItem->cameraCalc()->adjustedFootprintSide()->rawValue().toDouble(), 25.0);
+    QCOMPARE(surveyItem->cameraCalc()->adjustedFootprintFrontal()->rawValue().toDouble(), 25.0);
+    QCOMPARE(surveyItem->cameraTriggerInTurnAround()->rawValue().toBool(), false);
+    QCOMPARE(surveyItem->photoCaptureTransectPoints().count(), 12);
+
+    // The flight mission must start distance-based capture automatically at
+    // each resumable transect entry, take the first image immediately, and stop
+    // at pattern exit.
+    QObject missionItemParent;
+    QList<MissionItem*> missionItems;
+    surveyItem->appendMissionItems(missionItems, &missionItemParent);
+
+    int captureStartCount = 0;
+    int captureStopCount = 0;
+    for (const MissionItem* missionItem : std::as_const(missionItems)) {
+        if (missionItem->command() != MAV_CMD_DO_SET_CAM_TRIGG_DIST) {
+            continue;
+        }
+        if (missionItem->param1() > 0) {
+            captureStartCount++;
+            QCOMPARE(missionItem->param1(), 25.0);
+            QCOMPARE(missionItem->param3(), 1.0);
+        } else {
+            captureStopCount++;
+            // The stop command takes the required endpoint image immediately.
+            QCOMPARE(missionItem->param3(), 1.0);
+        }
+    }
+    QCOMPARE(captureStartCount, 6);
+    QCOMPARE(captureStopCount, 6);
 }
 
 void MissionControllerTest::_testGlobalAltMode(void)

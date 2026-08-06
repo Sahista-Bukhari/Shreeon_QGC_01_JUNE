@@ -210,6 +210,15 @@ Item {
     }
 
     // Finds and caches the active survey item from the mission plan.
+    function _enforceInnerPatternPhotoCapture(surveyItem) {
+        if (surveyItem && surveyItem.cameraTriggerInTurnAround
+                && Boolean(surveyItem.cameraTriggerInTurnAround.value)) {
+            // Route Mapping captures only from each polygon-edge entry through
+            // its matching exit. Turns, connectors, takeoff, and RTL stay off.
+            surveyItem.cameraTriggerInTurnAround.value = false
+        }
+    }
+
     function _updateCachedSurveyItem() {
         var found = null
         if (_missionMapVisualsEnabled) {
@@ -221,6 +230,7 @@ Item {
                 }
             }
         }
+        _enforceInnerPatternPhotoCapture(found)
         _cachedSurveyItem = found
         if (found) {
             _taskSettingsSurveyItem = found
@@ -427,12 +437,18 @@ Item {
         }
         flyView.routeMappingBoundaryPath = []
         flyView.routeMappingTransectPath = []
+        flyView.routeMappingPhotoCaptureTransectPoints = []
         flyView.routeMappingTakeoffCoordinate = QtPositioning.coordinate()
         flyView.routeMappingEntryCoordinate = QtPositioning.coordinate()
         flyView.routeMappingExitCoordinate = QtPositioning.coordinate()
         flyView.routeMappingEntryHeading = 0
         flyView.routeMappingExitHeading = 0
         flyView.routeMappingPlannedPhotoCount = 0
+        flyView.routeMappingPhotoFootprintSide = 25
+        flyView.routeMappingPhotoFootprintFrontal = 25
+        if (flyView.resetRouteMappingLivePhotos) {
+            flyView.resetRouteMappingLivePhotos()
+        }
     }
 
     // Hides map visuals, runs a plan change, then restores visuals after.
@@ -467,6 +483,7 @@ Item {
             return
         }
 
+        _enforceInnerPatternPhotoCapture(surveyItem)
         surveyItem.surveyAreaPolygon.clear()
         surveyItem.surveyAreaPolygon.traceMode = false
         surveyItem.surveyAreaPolygon.interactive = false
@@ -774,6 +791,21 @@ Item {
     // Restores the last uploaded Route Mapping plan from disk (new QGC session).
     function loadPersistedUploadedPlan() {
         var planFile = _lastUploadedPlanFile()
+        if (planFile !== "" && QGCFileDialogController.fileExists(planFile)) {
+            return _loadPersistedPlanFromFile(planFile)
+        }
+
+        if (mainWindow.uploadedMissionEditor === "routeMapping") {
+            var sharedPlanFile = mainWindow.lastExecutedPlanFilePath()
+            if (sharedPlanFile !== "" && QGCFileDialogController.fileExists(sharedPlanFile)) {
+                return _loadPersistedPlanFromFile(sharedPlanFile)
+            }
+        }
+
+        return false
+    }
+
+    function _loadPersistedPlanFromFile(planFile) {
         if (planFile === "" || !QGCFileDialogController.fileExists(planFile)) {
             return false
         }
@@ -814,6 +846,10 @@ Item {
     // Vehicle came back with no onboard mission — push the last uploaded plan again.
     function tryReuploadRouteMappingPlanAfterReconnect() {
         if (_routeMappingUploadPending) {
+            return false
+        }
+
+        if (mainWindow.uploadedMissionEditor !== "" && mainWindow.uploadedMissionEditor !== "routeMapping") {
             return false
         }
 
@@ -1025,6 +1061,12 @@ Item {
     // checks/pipeline. Uploading does not require saving the plan to a file and
     // does not navigate away from Route Mapping.
     function uploadRouteMappingPlan() {
+        mainWindow.confirmUploadToFlyView("routeMapping", function() {
+            _root._performRouteMappingUpload()
+        })
+    }
+
+    function _performRouteMappingUpload() {
         if (_planMasterController.syncInProgress) {
             return
         }
@@ -1088,6 +1130,7 @@ Item {
         _editBaselineSignature = _routeMappingPlanSignature()
         _persistUploadedRouteMappingPlan()
         flyView.hideVehicleMissionForUnuploadedRoute = false
+        mainWindow.markMissionPlanUploaded("routeMapping")
 
         // Match stock QGC: after Plan upload, Fly View reloads from the vehicle
         // so Start Mission / containsItems stay in sync.
@@ -1132,7 +1175,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
-        var safeTaskName = taskName.trim().replace(/[\\\/:*?\"<>|]/g, "_")
+        var safeTaskName = taskName.trim().replace(new RegExp('[\\\\/:*?"<>|]', "g"), "_")
         _pendingMappingTaskName = taskName.trim()
         fileDialog.title = qsTr("Choose Where to Save Mapping Task")
         fileDialog.nameFilters = _planMasterController.saveNameFilters
@@ -1163,6 +1206,9 @@ Item {
             }
             _restoreUploadedRouteMappingOverlay()
         } else {
+            if (mainWindow.uploadedMissionEditor === "routeMapping") {
+                mainWindow.clearUploadedMissionEditor()
+            }
             _routeMappingPlanUploaded = false
             _editingUploadedPlan = false
             flyView.clearRouteMappingOverlay(true /* force */)
@@ -1335,6 +1381,16 @@ Item {
                                                        transectCoord.altitude))
         }
 
+        var photoCaptureTransectPoints = []
+        var nativePhotoCapturePoints = _cachedSurveyItem.photoCaptureTransectPoints
+        for (var p = 0; p < nativePhotoCapturePoints.length; p++) {
+            var photoPoint = nativePhotoCapturePoints[p]
+            photoCaptureTransectPoints.push(QtPositioning.coordinate(
+                                                photoPoint.latitude,
+                                                photoPoint.longitude,
+                                                photoPoint.altitude))
+        }
+
         var takeoffCoord = QtPositioning.coordinate()
         for (var t = 0; t < _missionController.visualItems.count; t++) {
             var takeoffItem = _missionController.visualItems.get(t)
@@ -1347,15 +1403,30 @@ Item {
             }
         }
 
+        var cameraCalc = _cachedSurveyItem.cameraCalc
+        var sideFootprint = cameraCalc ? Number(cameraCalc.imageFootprintSide) : 0
+        var frontalFootprint = cameraCalc ? Number(cameraCalc.imageFootprintFrontal) : 0
+        if ((!sideFootprint || sideFootprint <= 0) && cameraCalc
+                && cameraCalc.adjustedFootprintSide) {
+            sideFootprint = Number(cameraCalc.adjustedFootprintSide.value)
+        }
+        if ((!frontalFootprint || frontalFootprint <= 0) && cameraCalc
+                && cameraCalc.adjustedFootprintFrontal) {
+            frontalFootprint = Number(cameraCalc.adjustedFootprintFrontal.value)
+        }
+
         return {
             boundaryPath: boundary,
             transectPath: transectPath,
+            photoCaptureTransectPoints: photoCaptureTransectPoints,
             takeoffCoordinate: takeoffCoord,
             entryCoordinate: _cachedSurveyItem.coordinate,
             exitCoordinate: _cachedSurveyItem.exitCoordinate,
             entryHeading: _surveyStartHeading,
             exitHeading: _surveyEndHeading,
-            plannedPhotoCount: _cachedSurveyItem.cameraShots ? _cachedSurveyItem.cameraShots : 0
+            plannedPhotoCount: _cachedSurveyItem.cameraShots ? _cachedSurveyItem.cameraShots : 0,
+            photoFootprintSide: sideFootprint > 0 ? sideFootprint : 25,
+            photoFootprintFrontal: frontalFootprint > 0 ? frontalFootprint : 25
         }
     }
 
@@ -1378,6 +1449,9 @@ Item {
         if (routeMappingOverlayData) {
             flyView.routeMappingBoundaryPath = routeMappingOverlayData.boundaryPath
             flyView.routeMappingTransectPath = routeMappingOverlayData.transectPath
+            flyView.routeMappingPhotoCaptureTransectPoints =
+                    routeMappingOverlayData.photoCaptureTransectPoints
+                    ? routeMappingOverlayData.photoCaptureTransectPoints : []
             flyView.routeMappingTakeoffCoordinate = routeMappingOverlayData.takeoffCoordinate
                     ? routeMappingOverlayData.takeoffCoordinate : QtPositioning.coordinate()
             flyView.routeMappingEntryCoordinate = routeMappingOverlayData.entryCoordinate
@@ -1386,6 +1460,10 @@ Item {
             flyView.routeMappingExitHeading = routeMappingOverlayData.exitHeading
             flyView.routeMappingPlannedPhotoCount = routeMappingOverlayData.plannedPhotoCount
                     ? routeMappingOverlayData.plannedPhotoCount : 0
+            flyView.routeMappingPhotoFootprintSide = routeMappingOverlayData.photoFootprintSide
+                    ? routeMappingOverlayData.photoFootprintSide : 25
+            flyView.routeMappingPhotoFootprintFrontal = routeMappingOverlayData.photoFootprintFrontal
+                    ? routeMappingOverlayData.photoFootprintFrontal : 25
             if (routeMappingOverlayData.transectPath
                     && routeMappingOverlayData.transectPath.length >= 2) {
                 flyView._routeMappingOverlayLocked = true
@@ -2134,9 +2212,10 @@ Item {
             RouteMappingTaskSettings {
                 id: taskSettingsPanel
                 anchors.fill: parent
+                patternSectionTitle: qsTr("Route Mapping Pattern")
+                showPhotoSettings: true
                 surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
                 takeoffItem: {
-                    // Depend on count so this re-evaluates when takeoff is added/removed.
                     var itemCount = _missionController.visualItems.count
                     return itemCount > 1 ? _root._findTakeoffItem() : null
                 }

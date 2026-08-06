@@ -316,14 +316,16 @@ Item {
             availableWidth:                 mapControl.centerViewport.width
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               qsTr("Basic")
                 visible:            !mapPolyline.traceMode
                 onClicked:          _resetPolyline()
             }
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               mapPolyline.traceMode ? qsTr("Done Tracing") : qsTr("Trace")
                 onClicked: {
                     if (mapPolyline.traceMode) {
@@ -340,7 +342,8 @@ Item {
             }
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               qsTr("Load KML/SHP...")
                 onClicked:          kmlOrSHPLoadDialog.openForLoad()
                 visible:            !mapPolyline.traceMode

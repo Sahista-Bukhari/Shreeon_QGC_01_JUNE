@@ -577,21 +577,24 @@ Item {
             availableWidth:                 mapControl.centerViewport.width
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               qsTr("Basic")
                 visible:            !mapPolygon.traceMode
                 onClicked:          _resetPolygon()
             }
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               qsTr("Circular")
                 visible:            !mapPolygon.traceMode
                 onClicked:          _resetCircle()
             }
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               mapPolygon.traceMode ? qsTr("Done Tracing") : qsTr("Trace")
                 onClicked: {
                     if (mapPolygon.traceMode) {
@@ -609,7 +612,8 @@ Item {
             }
 
             QGCButton {
-                _horizontalPadding: 0
+                compact:            true
+                heightFactor:       0.30
                 text:               qsTr("Load KML/SHP...")
                 onClicked:          kmlOrSHPLoadDialog.openForLoad()
                 visible:            !mapPolygon.traceMode

@@ -13,8 +13,8 @@ Item {
 
     property real availableWidth
 
-    property real _radius:  ScreenTools.defaultFontPixelWidth / 2
-    property real _margins: ScreenTools.defaultFontPixelWidth / 2
+    property real _radius:  ScreenTools.defaultFontPixelHeight / 2
+    property real _margins: ScreenTools.defaultFontPixelWidth * 0.85
 
     Component.onCompleted: {
         // Move the child controls from consumer into the layout control
@@ -30,9 +30,11 @@ Item {
     }
 
     Rectangle {
-        anchors.fill:    parent
-        radius:         _radius
-        color:          QGroundControl.globalPalette.toolbarBackground
+        anchors.fill: parent
+        radius: _radius
+        color: Qt.rgba(0.18, 0.18, 0.18, 0.55)
+        border.width: 1
+        border.color: Qt.rgba(1, 1, 1, 0.28)
     }
 
     QGCFlickable {
@@ -47,8 +49,8 @@ Item {
         contentWidth:       toolsRowLayout.width
 
         RowLayout {
-            id:                 toolsRowLayout
-            spacing:            _margins
+            id:      toolsRowLayout
+            spacing: ScreenTools.defaultFontPixelWidth * 0.65
         }
     }
 
@@ -58,6 +60,9 @@ Item {
         QGCLabel {
             id:             instructionLabel
             text:           _instructionText
+            color:          "#ffffff"
+            font.weight:    Font.DemiBold
+            verticalAlignment: Text.AlignVCenter
         }
     }
 }

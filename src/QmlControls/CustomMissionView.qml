@@ -20,7 +20,7 @@ Item {
     readonly property real  _margin: ScreenTools.defaultFontPixelHeight * 0.5
     readonly property real  _toolsMargin: ScreenTools.defaultFontPixelWidth * 0.75
     readonly property real  _radius: ScreenTools.defaultFontPixelWidth  * 0.5
-    readonly property real  _rightPanelWidth: Math.min(width / 3, ScreenTools.defaultFontPixelWidth * 30)
+    readonly property real  _rightPanelWidth: Math.min(width * 0.40, ScreenTools.defaultFontPixelWidth * 40)
     readonly property var   _defaultVehicleCoordinate: QtPositioning.coordinate(37.803784, -122.462276)
     readonly property bool  _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
 
@@ -252,18 +252,11 @@ Item {
         }
     }
 
-    PlanViewToolBar {
-        id: planToolBar
-        planMasterController: _planMasterController
-        visible: !mainWindow.modeSelectionVisible
-        onExitPlanEditMode: mainWindow.showFlyView()
-    }
-
     Item {
         id: mainPlanViewArea
         anchors.left: parent.left
         anchors.right: parent.right
-        anchors.top: planToolBar.bottom
+        anchors.top: parent.top
         anchors.bottom: parent.bottom
 
         FlightMap {
@@ -278,7 +271,7 @@ Item {
             center: QGroundControl.flightMapPosition
 
             // This is the center rectangle of the map which is not obscured by tools
-            property rect centerViewport: Qt.rect(_leftToolWidth + _margin,  _margin, editorMap.width - _leftToolWidth - _rightToolWidth - (_margin * 2), (missionStatus.visible ? missionStatus.y : height - _margin) - _margin)
+            property rect centerViewport: Qt.rect(_leftToolWidth + _margin,  planToolBar.height + _margin, editorMap.width - _leftToolWidth - _rightToolWidth - (_margin * 2), (missionStatus.visible ? missionStatus.y : height - _margin) - planToolBar.height - _margin)
 
             property real _leftToolWidth: toolStrip.x + toolStrip.width
             property real _rightToolWidth: rightPanel.width + rightPanel.anchors.rightMargin
@@ -475,18 +468,42 @@ Item {
         }
 
         //-----------------------------------------------------------
-        // Left tool strip
-        ToolStrip {
+        // Left tool strip — Custom Mission grid:
+        // Row 1: Takeoff | Row 2: Pattern + Waypoint | Row 3: ROI + Return
+        Item {
             id: toolStrip
             anchors.margins: _toolsMargin
             anchors.left: parent.left
             anchors.top: parent.top
+            anchors.topMargin: planToolBar.height + _toolsMargin
             z: QGroundControl.zOrderWidgets
-            maxHeight: parent.height - toolStrip.y
+            width: ScreenTools.defaultFontPixelWidth * 16
+            height: toolStripInner.height + (_outerPad * 2)
             visible: _editingLayer == _layerMission
 
             property bool _isRallyLayer: _editingLayer == _layerRally
             property bool _isMissionLayer: _editingLayer == _layerMission
+            property var _dropPanel: dropPanel
+            property bool dropLeft: false
+            // Space between strip edge and buttons (outer padding area)
+            property real _outerPad: ScreenTools.defaultFontPixelWidth * 1.1
+            property real _cellGap: ScreenTools.defaultFontPixelWidth * 0.4
+            property real _cellSize: (width - (_outerPad * 2) - _cellGap) / 2
+            // Match Mission Settings / PlanViewRightPanel liquid glass
+            readonly property real  _glassRadius: ScreenTools.defaultFontPixelWidth / 2
+            readonly property color _glassTint:   Qt.rgba(0.06, 0.10, 0.09, 0.34)
+            readonly property color _glassRim:    Qt.rgba(1, 1, 1, 0.32)
+
+            LiquidGlassSurface {
+                anchors.fill: parent
+                backgroundSource: editorMap
+                cornerRadius: toolStrip._glassRadius
+                blurAmount: 20
+                tintColor: toolStrip._glassTint
+                rimColor: toolStrip._glassRim
+                accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
+                showGlint: false
+            }
 
             Binding {
                 target: waypointButton
@@ -500,103 +517,210 @@ Item {
                 value: _addROIOnClick
             }
 
-            ToolStripActionList {
-                id: toolStripActionList
-                model: [
-                    ToolStripAction {
-                        text: qsTr("Takeoff")
-                        iconSource: "/res/takeoff.svg"
-                        enabled: _missionController.isInsertTakeoffValid
-                        visible: toolStrip._isMissionLayer && !_planMasterController.controllerVehicle.rover
-                        onTriggered: {
-                            toolStrip.allAddClickBoolsOff()
-                            insertTakeoffItemAfterCurrent()
-                            _triggerSubmit = true
-                        }
-                    },
-                    ToolStripAction {
-                        text: _singleComplexItem ? _missionController.complexMissionItemNames[0] : qsTr("Pattern")
-                        iconSource: "/qmlimages/MapDrawShape.svg"
-                        enabled: _missionController.flyThroughCommandsAllowed
-                        visible: toolStrip._isMissionLayer
-                        dropPanelComponent: _singleComplexItem ? undefined : patternDropPanel
-                        onTriggered: {
-                            toolStrip.allAddClickBoolsOff()
-                            if (_singleComplexItem) {
-                                insertComplexItemAfterCurrent(_missionController.complexMissionItemNames[0])
-                            }
-                        }
-                    },
-                    ToolStripAction {
-                        id: waypointButton
-                        text: qsTr("Waypoint")
-                        iconSource: "/qmlimages/MapAddMission.svg"
-                        enabled: _missionController.flyThroughCommandsAllowed
-                        visible: toolStrip._isMissionLayer
-                        checkable: true
-                        onTriggered: {
-                            _addWaypointOnClick = !_addWaypointOnClick
-                            if (_addWaypointOnClick) {
-                                _addROIOnClick = false
-                            }
-                        }
-                    },
-                    ToolStripAction {
-                        id: roiButton
-                        text: _missionController.isROIActive ? qsTr("Cancel ROI") : qsTr("ROI")
-                        iconSource: "/qmlimages/roi.svg"
-                        enabled: !_missionController.onlyInsertTakeoffValid
-                        visible: toolStrip._isMissionLayer && _planMasterController.controllerVehicle.roiModeSupported
-                        checkable: true
-                        onTriggered: {
-                            if (_missionController.isROIActive) {
-                                toolStrip.allAddClickBoolsOff()
-                                insertCancelROIAfterCurrent()
-                            } else {
-                                _addROIOnClick = !_addROIOnClick
-                                if (_addROIOnClick) {
-                                    _addWaypointOnClick = false
-                                }
-                            }
-                        }
-                    },
-                    ToolStripAction {
-                        text: _planMasterController.controllerVehicle.multiRotor
-                                    ? qsTr("Return")
-                                    : _missionController.isInsertLandValid && _missionController.hasLandItem
-                                      ? qsTr("Alt Land")
-                                      : qsTr("Land")
-                        iconSource: "/res/rtl.svg"
-                        enabled: _missionController.isInsertLandValid
-                        visible: toolStrip._isMissionLayer
-                        onTriggered: {
-                            toolStrip.allAddClickBoolsOff()
-                            insertLandItemAfterCurrent()
-                        }
-                    },
-                    ToolStripAction {
-                        text: qsTr("Stats")
-                        iconSource: "/res/chevron-double-right.svg"
-                        visible: missionStatus.hidden && QGroundControl.corePlugin.options.showMissionStatus
-                        onTriggered: missionStatus.showMissionStatus()
+            Column {
+                id: toolStripInner
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: toolStrip._outerPad
+                spacing: toolStrip._cellGap
+
+                // Row 1 — Takeoff only (full width)
+                ToolStripHoverButton {
+                    width: parent.width
+                    height: toolStrip._cellSize
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: takeoffAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: toolStrip._dropPanel
+                    buttonIndex: 0
+                    onDropped: toolStrip.onDropped()
+                }
+
+                // Row 2 — Pattern + Waypoint
+                Row {
+                    spacing: toolStrip._cellGap
+                    width: parent.width
+
+                    ToolStripHoverButton {
+                        width: toolStrip._cellSize
+                        height: width
+                        radius: ScreenTools.defaultFontPixelWidth / 2
+                        fontPointSize: ScreenTools.smallFontPointSize
+                        toolStripAction: patternAction
+                        glassBackgroundSource: editorMap
+                        dropPanel: toolStrip._dropPanel
+                        buttonIndex: 1
+                        onDropped: toolStrip.onDropped()
                     }
-                ]
+
+                    ToolStripHoverButton {
+                        width: toolStrip._cellSize
+                        height: width
+                        radius: ScreenTools.defaultFontPixelWidth / 2
+                        fontPointSize: ScreenTools.smallFontPointSize
+                        toolStripAction: waypointButton
+                        glassBackgroundSource: editorMap
+                        dropPanel: toolStrip._dropPanel
+                        buttonIndex: 2
+                        onDropped: toolStrip.onDropped()
+                    }
+                }
+
+                // Row 3 — ROI + Return/Land
+                Row {
+                    spacing: toolStrip._cellGap
+                    width: parent.width
+
+                    ToolStripHoverButton {
+                        width: toolStrip._cellSize
+                        height: width
+                        radius: ScreenTools.defaultFontPixelWidth / 2
+                        fontPointSize: ScreenTools.smallFontPointSize
+                        toolStripAction: roiButton
+                        glassBackgroundSource: editorMap
+                        dropPanel: toolStrip._dropPanel
+                        buttonIndex: 3
+                        onDropped: toolStrip.onDropped()
+                    }
+
+                    ToolStripHoverButton {
+                        width: toolStrip._cellSize
+                        height: width
+                        radius: ScreenTools.defaultFontPixelWidth / 2
+                        fontPointSize: ScreenTools.smallFontPointSize
+                        toolStripAction: landAction
+                        glassBackgroundSource: editorMap
+                        dropPanel: toolStrip._dropPanel
+                        buttonIndex: 4
+                        onDropped: toolStrip.onDropped()
+                    }
+                }
+
+                // Optional Stats (full width)
+                ToolStripHoverButton {
+                    width: parent.width
+                    height: toolStrip._cellSize * 0.72
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: statsAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: toolStrip._dropPanel
+                    buttonIndex: 5
+                    onDropped: toolStrip.onDropped()
+                }
             }
 
-            model: toolStripActionList.model
+            ToolStripAction {
+                id: takeoffAction
+                text: qsTr("Takeoff")
+                iconSource: "/res/takeoff.svg"
+                enabled: _missionController.isInsertTakeoffValid
+                visible: toolStrip._isMissionLayer && !_planMasterController.controllerVehicle.rover
+                onTriggered: {
+                    toolStrip.allAddClickBoolsOff()
+                    insertTakeoffItemAfterCurrent()
+                    _triggerSubmit = true
+                }
+            }
+
+            ToolStripAction {
+                id: patternAction
+                text: _singleComplexItem ? _missionController.complexMissionItemNames[0] : qsTr("Pattern")
+                iconSource: "/qmlimages/MapDrawShape.svg"
+                enabled: _missionController.flyThroughCommandsAllowed
+                visible: toolStrip._isMissionLayer
+                dropPanelComponent: _singleComplexItem ? undefined : patternDropPanel
+                onTriggered: {
+                    toolStrip.allAddClickBoolsOff()
+                    if (_singleComplexItem) {
+                        insertComplexItemAfterCurrent(_missionController.complexMissionItemNames[0])
+                    }
+                }
+            }
+
+            ToolStripAction {
+                id: waypointButton
+                text: qsTr("Waypoint")
+                iconSource: "/qmlimages/MapAddMission.svg"
+                enabled: _missionController.flyThroughCommandsAllowed
+                visible: toolStrip._isMissionLayer
+                checkable: true
+                onTriggered: {
+                    _addWaypointOnClick = !_addWaypointOnClick
+                    if (_addWaypointOnClick) {
+                        _addROIOnClick = false
+                    }
+                }
+            }
+
+            ToolStripAction {
+                id: roiButton
+                text: _missionController.isROIActive ? qsTr("Cancel ROI") : qsTr("ROI")
+                iconSource: "/qmlimages/roi.svg"
+                enabled: !_missionController.onlyInsertTakeoffValid
+                visible: toolStrip._isMissionLayer && _planMasterController.controllerVehicle.roiModeSupported
+                checkable: true
+                onTriggered: {
+                    if (_missionController.isROIActive) {
+                        toolStrip.allAddClickBoolsOff()
+                        insertCancelROIAfterCurrent()
+                    } else {
+                        _addROIOnClick = !_addROIOnClick
+                        if (_addROIOnClick) {
+                            _addWaypointOnClick = false
+                        }
+                    }
+                }
+            }
+
+            ToolStripAction {
+                id: landAction
+                text: _planMasterController.controllerVehicle.multiRotor
+                            ? qsTr("Return")
+                            : _missionController.isInsertLandValid && _missionController.hasLandItem
+                              ? qsTr("Alt Land")
+                              : qsTr("Land")
+                iconSource: "/res/rtl.svg"
+                enabled: _missionController.isInsertLandValid
+                visible: toolStrip._isMissionLayer
+                onTriggered: {
+                    toolStrip.allAddClickBoolsOff()
+                    insertLandItemAfterCurrent()
+                }
+            }
+
+            ToolStripAction {
+                id: statsAction
+                text: qsTr("Stats")
+                iconSource: "/res/chevron-double-right.svg"
+                visible: missionStatus.hidden && QGroundControl.corePlugin.options.showMissionStatus
+                onTriggered: missionStatus.showMissionStatus()
+            }
+
+            ToolStripDropPanel {
+                id: dropPanel
+                toolStrip: toolStrip
+            }
 
             function allAddClickBoolsOff() {
                 _addWaypointOnClick = false
                 _addROIOnClick = false
             }
 
-            onDropped: allAddClickBoolsOff()
+            function onDropped() {
+                allAddClickBoolsOff()
+            }
+
+            signal dropped(int index)
         }
 
         MapScale {
             anchors.margins: _toolsMargin
             anchors.left: toolStrip.right
             anchors.top: parent.top
+            anchors.topMargin: planToolBar.height + _toolsMargin
             mapControl: editorMap
             autoHide: true
         }
@@ -606,6 +730,9 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
+            anchors.topMargin: planToolBar.height + _toolsMargin
+            anchors.bottomMargin: _toolsMargin
+            anchors.rightMargin: _toolsMargin
             width: _utmspEnabled ? _rightPanelWidth + ScreenTools.defaultFontPixelWidth * 21.667 : _rightPanelWidth
             planMasterController: _planMasterController
             editorMap: editorMap
@@ -642,76 +769,33 @@ Item {
             ColumnLayout {
                 id: missionStatsButtonLayout
                 Layout.alignment: Qt.AlignBottom
-                spacing: 0
+                spacing: ScreenTools.defaultFontPixelWidth * 0.15
 
-                property real _buttonImplicitWidth: ScreenTools.defaultFontPixelHeight * 1.5
-                property real _buttonImageMargins: _buttonImplicitWidth * 0.15
-
-                Rectangle {
+                MissionStatusToolButton {
                     id: terrainButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.buttonHighlight : QGroundControl.globalPalette.button
-
-                    property bool checked: true
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/terrain.svg"
-                        color: parent.checked ? QGroundControl.globalPalette.buttonHighlightText : QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            terrainButton.checked = true
-                            missionStatsButton.checked = false
-                        }
+                    checked: true
+                    iconSource: "/res/terrain.svg"
+                    onClicked: {
+                        terrainButton.checked = true
+                        missionStatsButton.checked = false
                     }
                 }
 
-                Rectangle {
+                MissionStatusToolButton {
                     id: missionStatsButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: checked ? QGroundControl.globalPalette.buttonHighlight : QGroundControl.globalPalette.button
-
-                    property bool checked: false
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/sliders.svg"
-                        color: parent.checked ? QGroundControl.globalPalette.buttonHighlightText : QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: {
-                            missionStatsButton.checked = true
-                            terrainButton.checked = false
-                        }
+                    checked: false
+                    iconSource: "/res/sliders.svg"
+                    onClicked: {
+                        missionStatsButton.checked = true
+                        terrainButton.checked = false
                     }
                 }
 
-                Rectangle {
+                MissionStatusToolButton {
                     id: bottomStatusOpenCloseButton
-                    implicitWidth: missionStatsButtonLayout._buttonImplicitWidth
-                    implicitHeight: implicitWidth
-                    color: QGroundControl.globalPalette.button
-
-                    QGCColoredImage {
-                        anchors.margins: missionStatsButtonLayout._buttonImageMargins
-                        anchors.fill: parent
-                        source: "/res/chevron-double-left.svg"
-                        color: QGroundControl.globalPalette.buttonText
-                    }
-
-                    QGCMouseArea {
-                        anchors.fill: parent
-                        onClicked: missionStatus._toggleMissionStatusVisibility()
-                    }
+                    highlightWhenChecked: false
+                    iconSource: "/res/chevron-double-left.svg"
+                    onClicked: missionStatus._toggleMissionStatusVisibility()
                 }
             }
 
@@ -741,16 +825,33 @@ Item {
         id: patternDropPanel
 
         ColumnLayout {
-            spacing: ScreenTools.defaultFontPixelWidth * 0.5
+            id: patternColumn
+            spacing: ScreenTools.defaultFontPixelHeight * 0.45
+            width: Math.max(patternTitle.implicitWidth + ScreenTools.defaultFontPixelWidth, ScreenTools.defaultFontPixelWidth * 34)
 
-            QGCLabel { text: qsTr("Create complex pattern:") }
+            QGCLabel {
+                id: patternTitle
+                text: qsTr("Create complex pattern")
+                color: "#ffffff"
+                font.bold: true
+                font.pointSize: ScreenTools.mediumFontPointSize
+                wrapMode: Text.NoWrap
+                elide: Text.ElideNone
+                Layout.alignment: Qt.AlignHCenter
+                Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.15
+            }
 
             Repeater {
                 model: _missionController.complexMissionItemNames
 
                 QGCButton {
                     text: modelData
-                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignHCenter
+                    Layout.preferredWidth: patternColumn.width * 0.72
+                    Layout.fillWidth: false
+                    compact: true
+                    heightFactor: 0.40
+                    showBorder: true
 
                     onClicked: {
                         insertComplexItemAfterCurrent(modelData)
@@ -837,5 +938,15 @@ Item {
                 }
             }
         }
+    }
+
+    PlanViewToolBar {
+        id: planToolBar
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: parent.top
+        planMasterController: _planMasterController
+        visible: !mainWindow.modeSelectionVisible
+        onExitPlanEditMode: mainWindow.showFlyView()
     }
 }

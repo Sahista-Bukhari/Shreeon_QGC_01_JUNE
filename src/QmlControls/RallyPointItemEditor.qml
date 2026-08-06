@@ -8,9 +8,11 @@ import QGroundControl.FactControls
 
 Rectangle {
     id:     root
-    height: _currentItem ? valuesRect.y + valuesRect.height + (_margin * 2) : titleBar.y - titleBar.height + _margin
-    color:  _currentItem ? qgcPal.buttonHighlight : qgcPal.windowShade
+    height: _currentItem ? valuesRect.y + valuesRect.height + (_margin * 2) : titleBar.y + titleBar.height + _margin
+    color:  _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.22) : Qt.rgba(0.08, 0.10, 0.10, 0.45)
     radius: _radius
+    border.width: 1
+    border.color: _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.85) : Qt.rgba(1, 1, 1, 0.28)
 
     signal clicked()
 
@@ -18,13 +20,18 @@ Rectangle {
     property var controller ///< RallyPointController
 
     property bool   _currentItem:       rallyPoint ? rallyPoint === controller.currentRallyPoint : false
-    property color  _outerTextColor:    qgcPal.text // _currentItem ? "black" : qgcPal.text
+    property color  _outerTextColor:    "#ffffff"
 
     readonly property real  _margin:            ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _radius:            ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _titleHeight:       ScreenTools.defaultFontPixelHeight * 2
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
+
+    MouseArea {
+        anchors.fill: parent
+        onClicked:    root.clicked()
+    }
 
     Item {
         id:                 titleBar
@@ -59,7 +66,7 @@ Rectangle {
             height:                 width
             sourceSize.height:      height
             source:                 "qrc:/qmlimages/Hamburger.svg"
-            color:                  qgcPal.text
+            color:                  _outerTextColor
 
             MouseArea {
                 anchors.fill:   parent
@@ -75,7 +82,7 @@ Rectangle {
                 }
             }
         }
-    } // Item - titleBar
+    }
 
     Rectangle {
         id:                 valuesRect
@@ -83,37 +90,43 @@ Rectangle {
         anchors.left:       parent.left
         anchors.right:      parent.right
         anchors.top:        titleBar.bottom
-        height:             valuesGrid.height + (_margin * 2)
-        color:              qgcPal.windowShadeDark
+        height:             valuesColumn.height + (_margin * 2)
+        color:              Qt.rgba(1, 1, 1, 0.08)
         visible:            _currentItem
         radius:             _radius
+        border.width:       1
+        border.color:       Qt.rgba(1, 1, 1, 0.22)
 
-        GridLayout {
-            id:                 valuesGrid
+        ColumnLayout {
+            id:                 valuesColumn
             anchors.margins:    _margin
             anchors.left:       parent.left
             anchors.right:      parent.right
             anchors.top:        parent.top
-            rowSpacing:         _margin
-            columnSpacing:      _margin
-            rows:               rallyPoint ? rallyPoint.textFieldFacts.length : 0
-            flow:               GridLayout.TopToBottom
+            spacing:            _margin
 
             Repeater {
                 model: rallyPoint ? rallyPoint.textFieldFacts : 0
-                QGCLabel {
-                    text: modelData.name + ":"
-                }
-            }
 
-            Repeater {
-                model: rallyPoint ? rallyPoint.textFieldFacts : 0
-                FactTextField {
+                LabelledFactTextField {
                     Layout.fillWidth:   true
-                    showUnits:          true
                     fact:               modelData
+                    label:              modelData.name
+                    visible:            modelData.name !== "RelativeAltitude"
                 }
             }
-        } // GridLayout
-    } // Rectangle
-} // Rectangle
+
+            Repeater {
+                model: rallyPoint ? rallyPoint.textFieldFacts : 0
+
+                FactTextFieldSlider {
+                    Layout.fillWidth:   true
+                    label:              qsTr("Altitude")
+                    fact:               modelData
+                    backgroundColor:    "transparent"
+                    visible:            modelData.name === "RelativeAltitude"
+                }
+            }
+        }
+    }
+}

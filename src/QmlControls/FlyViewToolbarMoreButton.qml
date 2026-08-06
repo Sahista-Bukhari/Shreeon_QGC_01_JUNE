@@ -21,8 +21,11 @@ Item {
 
     function openMenu() {
         var pos = control.mapToItem(mainWindow.contentItem, 0, 0)
-        moreMenu.x = pos.x + control.width - moreMenu.width
-        moreMenu.y = pos.y + control.height + ScreenTools.defaultFontPixelHeight * 0.3
+        // Flush to the right edge of the window
+        moreMenu.x = mainWindow.contentItem.width - moreMenu.width
+        // Indicators sit inside toolbar margins; add that bottom margin so the
+        // menu touches the toolbar edge instead of floating over the map.
+        moreMenu.y = pos.y + control.height + ScreenTools.defaultFontPixelHeight * 0.66
         moreMenu.visible = true
         outsideClickArea = outsideClickComponent.createObject(mainWindow.contentItem)
     }
@@ -65,19 +68,23 @@ Item {
         id:                 moreMenu
         parent:             mainWindow.contentItem
         visible:            false
-        width:              ScreenTools.defaultFontPixelWidth * 22
+        width:              ScreenTools.defaultFontPixelWidth * 32
         height:             menuColumn.height + ScreenTools.defaultFontPixelHeight
-        color:              qgcPal.window
+        color:              qgcPal.textField
         radius:             ScreenTools.defaultFontPixelHeight * 0.5
-        border.color:       qgcPal.text
+        border.color:       qgcPal.colorGreen
         border.width:       1
         z:                  1001
+
+        readonly property real _rowPad:     ScreenTools.defaultFontPixelWidth * 1.5
+        readonly property real _iconSize:   ScreenTools.defaultFontPixelHeight * 1.1
+        readonly property real _iconGap:    ScreenTools.defaultFontPixelWidth * 0.8
 
         Column {
             id:                 menuColumn
             anchors.centerIn:   parent
-            width:              parent.width - ScreenTools.defaultFontPixelWidth
-            spacing:            ScreenTools.defaultFontPixelHeight * 0.3
+            width:              parent.width - moreMenu._rowPad * 2
+            spacing:            ScreenTools.defaultFontPixelHeight * 0.2
 
             // Analyze
             Item {
@@ -86,31 +93,33 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.text
-                    opacity:        analyzeMouseArea.containsMouse ? 0.1 : 0
-                    radius:         ScreenTools.defaultFontPixelHeight * 0.3
+                    color:          qgcPal.colorGreen
+                    opacity:        analyzeMouseArea.containsMouse ? 0.12 : 0
                     visible:        analyzeMouseArea.containsMouse
                 }
 
                 Row {
-                    spacing:                ScreenTools.defaultFontPixelWidth * 0.8
+                    spacing:                moreMenu._iconGap
                     anchors.left:           parent.left
-                    anchors.leftMargin:     ScreenTools.defaultFontPixelWidth
                     anchors.verticalCenter: parent.verticalCenter
 
-                    QGCColoredImage {
-                        source:                 "/res/analyze-icon.svg"
-                        width:                  ScreenTools.defaultFontPixelHeight * 1.1
-                        height:                 width
-                        color:                  qgcPal.text
-                        fillMode:               Image.PreserveAspectFit
+                    Item {
+                        width:  moreMenu._iconSize
+                        height: moreMenu._iconSize
                         anchors.verticalCenter: parent.verticalCenter
+
+                        QGCColoredImage {
+                            anchors.fill:           parent
+                            source:                 "/res/analyze-icon.svg"
+                            color:                  qgcPal.textFieldText
+                            fillMode:               Image.PreserveAspectFit
+                        }
                     }
 
                     QGCLabel {
                         text:                   qsTr("Analyze")
                         font.pointSize:         ScreenTools.defaultFontPointSize
-                        color:                  qgcPal.text
+                        color:                  qgcPal.textFieldText
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }
@@ -134,31 +143,33 @@ Item {
 
                 Rectangle {
                     anchors.fill:   parent
-                    color:          qgcPal.text
-                    opacity:        vehicleConfigMouseArea.containsMouse ? 0.1 : 0
-                    radius:         ScreenTools.defaultFontPixelHeight * 0.3
+                    color:          qgcPal.colorGreen
+                    opacity:        vehicleConfigMouseArea.containsMouse ? 0.12 : 0
                     visible:        vehicleConfigMouseArea.containsMouse
                 }
 
                 Row {
-                    spacing:                ScreenTools.defaultFontPixelWidth * 0.8
+                    spacing:                moreMenu._iconGap
                     anchors.left:           parent.left
-                    anchors.leftMargin:     ScreenTools.defaultFontPixelWidth
                     anchors.verticalCenter: parent.verticalCenter
 
-                    QGCColoredImage {
-                        source:                 "/res/vehicle-config-icon.svg"
-                        width:                  ScreenTools.defaultFontPixelHeight * 1.1
-                        height:                 width
-                        color:                  qgcPal.text
-                        fillMode:               Image.PreserveAspectFit
+                    Item {
+                        width:  moreMenu._iconSize
+                        height: moreMenu._iconSize
                         anchors.verticalCenter: parent.verticalCenter
+
+                        QGCColoredImage {
+                            anchors.fill:           parent
+                            source:                 "/res/vehicle-config-icon.svg"
+                            color:                  qgcPal.textFieldText
+                            fillMode:               Image.PreserveAspectFit
+                        }
                     }
 
                     QGCLabel {
                         text:                   qsTr("Vehicle Config")
                         font.pointSize:         ScreenTools.defaultFontPointSize
-                        color:                  qgcPal.text
+                        color:                  qgcPal.textFieldText
                         anchors.verticalCenter: parent.verticalCenter
                     }
                 }

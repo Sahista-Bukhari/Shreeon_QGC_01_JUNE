@@ -7,16 +7,16 @@ import QGroundControl.Controls
 
 TextField {
     id:                 control
-    color:              qgcPal.textFieldText
-    selectionColor:     qgcPal.textFieldText
-    selectedTextColor:  qgcPal.textField
+    color:              fieldTextColor
+    selectionColor:     fieldTextColor
+    selectedTextColor:  fieldBackgroundColor
     activeFocusOnPress: true
     antialiasing:       true
     font.pointSize:     ScreenTools.defaultFontPointSize
     font.family:        ScreenTools.normalFontFamily
     inputMethodHints:   numericValuesOnly && !ScreenTools.isiOS ?
-                            Qt.ImhFormattedNumbersOnly:  // Forces use of virtual numeric keyboard instead of full keyboard
-                            Qt.ImhNone                   // iOS numeric keyboard has no done button, we can't use it.
+                            Qt.ImhFormattedNumbersOnly:
+                            Qt.ImhNone
     leftPadding:        _marginPadding
     rightPadding:       _marginPadding + unitsHelpLayout.width
     topPadding:         _marginPadding
@@ -27,11 +27,12 @@ TextField {
     property bool   showHelp:           false
     property string unitsLabel:         ""
     property string extraUnitsLabel:    ""
-    property bool   numericValuesOnly:  false   // true: Used as hint for mobile devices to show numeric only keyboard
+    property bool   numericValuesOnly:  false
     property alias  textColor:          control.color
+    // Defaults use palette so Application Settings stays dark; light forms override these.
+    property color  fieldTextColor:     qgcPal.textFieldText
+    property color  fieldBackgroundColor: qgcPal.textField
     property bool   validationError:    false
-    // Screens can override the standard blue focus outline without changing
-    // validation errors, which always remain red.
     property color  activeFocusBorderColor: qgcPal.brandingBlue
 
     property real _helpLayoutWidth: 0
@@ -46,7 +47,6 @@ TextField {
 
     onEditingFinished: {
         if (ScreenTools.isMobile) {
-            // Toss focus on mobile after Done on virtual keyboard. Prevent strange interactions.
             focus = false
         }
     }
@@ -87,9 +87,10 @@ TextField {
 
     background: Rectangle {
         border.width:   control.validationError ? 2 : (control.activeFocus ? 2 : 0)
-        border.color:   control.validationError ? qgcPal.colorRed : (control.activeFocus ? control.activeFocusBorderColor : "transparent")
+        border.color:   control.validationError ? qgcPal.colorRed
+                            : (control.activeFocus ? control.activeFocusBorderColor : "transparent")
         radius:         ScreenTools.defaultBorderRadius * 2
-        color:          qgcPal.textField
+        color:          control.fieldBackgroundColor
         implicitWidth:  ScreenTools.implicitTextFieldWidth
         implicitHeight: ScreenTools.implicitTextFieldHeight
 
@@ -105,7 +106,6 @@ TextField {
             Component.onCompleted:  control._helpLayoutWidth = unitsHelpLayout.width
             onWidthChanged:         control._helpLayoutWidth = unitsHelpLayout.width
 
-            // Help button
             Rectangle {
                 id:                     helpButton
                 Layout.margins:         2
@@ -120,13 +120,11 @@ TextField {
                 QGCLabel {
                     id:                 helpLabel
                     anchors.centerIn:   parent
-                    color:              qgcPal.textField
+                    color:              control.fieldBackgroundColor
                     text:               qsTr("?")
                 }
-
             }
 
-            // Extra units
             Text {
                 Layout.alignment:   Qt.AlignVCenter
                 text:               control.extraUnitsLabel
@@ -137,7 +135,6 @@ TextField {
                 visible:            control.showUnits && text !== ""
             }
 
-            // Units
             Text {
                 Layout.alignment:   Qt.AlignVCenter
                 text:               control.unitsLabel
