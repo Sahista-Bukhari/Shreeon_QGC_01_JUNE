@@ -120,10 +120,10 @@ Item {
         contentContainer.opacity = 0
         panel.opacity = 1
 
-        // Switch view and release toolbar immediately; hero fade runs on top briefly
-        navigateFn()
+        // Switch view with mode picker already closed so Fly View locks to Black theme correctly
         control._skipCloseAnimation = true
         control.isOpen = false
+        navigateFn()
 
         modeLaunchAnimation.restart()
     }
@@ -460,8 +460,9 @@ Item {
 
                             Repeater {
                                 model: [
-                                    { label: qsTr("Light"), theme: QGCPalette.Light },
-                                    { label: qsTr("Dark"),  theme: QGCPalette.Dark }
+                                    { label: qsTr("Default"), mode: mainWindow.themeDefault },
+                                    { label: qsTr("Black"),   mode: mainWindow.themeBlack },
+                                    { label: qsTr("White"),   mode: mainWindow.themeWhite }
                                 ]
 
                                 Rectangle {
@@ -470,7 +471,7 @@ Item {
                                     radius: ScreenTools.defaultFontPixelHeight * 0.35
                                     color: themeItemMouse.containsMouse
                                            ? Qt.rgba(0, 0.5, 0, 0.10)
-                                           : (qgcPal.globalTheme === modelData.theme
+                                           : (mainWindow.uiThemeMode === modelData.mode
                                               ? Qt.rgba(0, 0.5, 0, 0.16)
                                               : "transparent")
 
@@ -480,7 +481,7 @@ Item {
                                         anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.8
                                         text: modelData.label
                                         color: control._titleColor
-                                        font.weight: qgcPal.globalTheme === modelData.theme ? Font.DemiBold : Font.Normal
+                                        font.weight: mainWindow.uiThemeMode === modelData.mode ? Font.DemiBold : Font.Normal
                                     }
 
                                     MouseArea {
@@ -489,7 +490,7 @@ Item {
                                         hoverEnabled: true
                                         cursorShape: Qt.PointingHandCursor
                                         onClicked: {
-                                            qgcPal.globalTheme = modelData.theme
+                                            mainWindow.setUiThemeMode(modelData.mode)
                                             themeMenuPopup.close()
                                         }
                                     }

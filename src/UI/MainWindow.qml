@@ -24,11 +24,79 @@ ApplicationWindow {
 
     property bool   _utmspSendActTrigger
 
-    // Set true to preview only CustomHomePage (no FlyView / mode selection).
+    // Set true to preview only CustomHomePage (no Fly View / mode selection).
     readonly property bool homePageOnly: true
+
+    // UI theme: Default = current product look, Black = QGC Indoor/Dark, White = QGC Outdoor/Light
+    readonly property int themeDefault: 0
+    readonly property int themeBlack:   1
+    readonly property int themeWhite:   2
+    property int uiThemeMode: themeSettings.uiThemeMode
+
+    Settings {
+        id: themeSettings
+        category: "UiTheme"
+        property int uiThemeMode: 0
+    }
+
+    function isThemeExemptView() {
+        // Fly View + mission editors always keep the Black (Indoor/Dark) look
+        return flyView.visible
+                || agricultureSprayingMissionView.visible
+                || routeMappingView.visible
+                || seedSpraderMision.visible
+                || customMissionView.visible
+    }
+
+    function _forceBlackTheme() {
+        var appSettings = QGroundControl.settingsManager.appSettings
+        if (!appSettings || !appSettings.indoorPalette)
+            return
+        if (appSettings.indoorPalette.rawValue !== 1)
+            appSettings.indoorPalette.rawValue = 1
+        // Also lock the live palette in case globalTheme was changed directly
+        if (QGroundControl.globalPalette.globalTheme !== QGCPalette.Dark)
+            QGroundControl.globalPalette.globalTheme = QGCPalette.Dark
+    }
+
+    function _applySelectedTheme() {
+        var appSettings = QGroundControl.settingsManager.appSettings
+        if (!appSettings || !appSettings.indoorPalette)
+            return
+        // Black → Indoor/Dark. Default & White → Outdoor/Light
+        var wantIndoor = (uiThemeMode === themeBlack) ? 1 : 0
+        if (appSettings.indoorPalette.rawValue !== wantIndoor)
+            appSettings.indoorPalette.rawValue = wantIndoor
+    }
+
+    function applyUiTheme() {
+        // Application Settings / tools follow the selected theme
+        if (toolDrawer.visible) {
+            _applySelectedTheme()
+            return
+        }
+
+        // Fly View (and mission editors) always stay on Black theme — never Default/White
+        if (isThemeExemptView()) {
+            _forceBlackTheme()
+            return
+        }
+
+        // Mode selection / home (and anywhere else) follow the selected theme
+        _applySelectedTheme()
+    }
+
+    function setUiThemeMode(mode) {
+        if (mode !== themeDefault && mode !== themeBlack && mode !== themeWhite)
+            return
+        themeSettings.uiThemeMode = mode
+        uiThemeMode = mode
+        applyUiTheme()
+    }
 
     Component.onCompleted: {
         console.log("the application begins")
+        applyUiTheme()
 
         if (homePageOnly) {
             customHomePage.visible = true
@@ -401,6 +469,7 @@ ApplicationWindow {
         seedSpraderMision.visible = false
         planView.visible = true
         toolDrawer.visible = false
+        applyUiTheme()
     }
     // custom mission file
     function showCustomMissionView(forEdit) {
@@ -418,6 +487,7 @@ ApplicationWindow {
         if (forEdit === true || (forEdit !== false && uploadedMissionEditor === "customMission")) {
             customMissionView.resumePlanForEdit()
         }
+        applyUiTheme()
     }
     // Agriculture mission file
     function showAgricultureSprayingMissionView(forEdit) {
@@ -433,6 +503,7 @@ ApplicationWindow {
         if (forEdit === true || (forEdit !== false && uploadedMissionEditor === "agricultureSpraying")) {
             agricultureSprayingMissionView.resumeRouteMappingForEdit()
         }
+        applyUiTheme()
     }
     // Route mapping mission file
     function showRouteMappingView(forEdit) {
@@ -448,6 +519,7 @@ ApplicationWindow {
         if (forEdit === true || (forEdit !== false && uploadedMissionEditor === "routeMapping")) {
             routeMappingView.resumeRouteMappingForEdit()
         }
+        applyUiTheme()
     }
 
     function showSeedSpraderMissionView(forEdit) {
@@ -463,6 +535,7 @@ ApplicationWindow {
         if (forEdit === true || (forEdit !== false && uploadedMissionEditor === "seedSpreader")) {
             seedSpraderMision.resumeRouteMappingForEdit()
         }
+        applyUiTheme()
     }
 
     function showFlyView() {
@@ -473,6 +546,7 @@ ApplicationWindow {
         routeMappingView.visible = false
         seedSpraderMision.visible = false
         toolDrawer.visible = false
+        applyUiTheme()
     }
 
     function resetRouteMappingPlanState(removeFromVehicle) {
@@ -625,6 +699,7 @@ ApplicationWindow {
         toolDrawer.returnToFlyView  = fromFlyViewBackNav === true && flyView.visible
         toolDrawer.hideToolbar      = hideToolbar === true
         toolDrawer.visible          = true
+        applyUiTheme()
     }
 
     function showAnalyzeTool(fromFlyViewBackNav) {
@@ -632,7 +707,8 @@ ApplicationWindow {
     }
 
     function showVehicleConfig(fromFlyViewBackNav) {
-        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", fromFlyViewBackNav)
+        // Vehicle Config provides its own header + close control (same as Application Settings)
+        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true)
     }
 
     function showVehicleConfigParametersPage() {
@@ -855,7 +931,9 @@ ApplicationWindow {
         id:             toolDrawer
         anchors.fill:   parent
         visible:        false
-        color:          hideToolbar ? "white" : qgcPal.window
+        color:          hideToolbar
+                        ? (mainWindow.uiThemeMode === mainWindow.themeBlack ? qgcPal.window : "white")
+                        : qgcPal.window
 
         property var backIcon
         property string toolTitle
@@ -873,6 +951,7 @@ ApplicationWindow {
                 centeredTitle = false
                 returnToFlyView = false
                 hideToolbar = false
+                mainWindow.applyUiTheme()
             }
         }
 
@@ -1262,6 +1341,7 @@ ApplicationWindow {
     function showModeSelection(startPoint) {
         modeSelectionOverlay.startPoint = startPoint
         modeSelectionOverlay.isOpen = true
+        applyUiTheme()
     }
 
     function openUserManual() {
@@ -1275,5 +1355,6 @@ ApplicationWindow {
         customHomePage.resetStartControl()
         customHomePage.visible = true
         modeSelectionOverlay.isOpen = false
+        applyUiTheme()
     }
 }

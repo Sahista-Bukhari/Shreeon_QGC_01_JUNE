@@ -14,12 +14,25 @@ Rectangle {
 
     signal popout()
 
-    readonly property color _pageBackground:    "white"
-    readonly property color _titleColor:        "#1C1C1E"
-    readonly property color _secondaryText:     "#8E8E93"
-    readonly property color _dividerColor:      "#E5E5EA"
-    readonly property color _accentGreen:       "#34C759"
-    readonly property color _rowPressed:        "#F2F2F7"
+    QGCPalette { id: qgcPal }
+
+    readonly property bool _darkTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode === mainWindow.themeBlack
+        return qgcPal.globalTheme === QGCPalette.Dark
+    }
+
+    // Default theme colors from Units reference: green selected, light gray inactive, dark labels
+    readonly property color _pageBackground:    _darkTheme ? qgcPal.window : "white"
+    readonly property color _titleColor:        _darkTheme ? "#AEAEB2" : "#1C1C1E"
+    readonly property color _secondaryText:     _darkTheme ? "#8E8E93" : "#8E8E93"
+    readonly property color _headingColor:      _darkTheme ? "#AEAEB2" : "#1C1C1E"
+    readonly property color _iconColor:         _darkTheme ? "#AEAEB2" : "#1C1C1E"
+    readonly property color _dividerColor:      _darkTheme ? qgcPal.windowShade : "#f6f6f6"
+    readonly property color _sectionBandColor:  _darkTheme ? qgcPal.windowShadeDark : "#f6f6f6"
+    readonly property color _accentGreen:       "#00a04c"
+    readonly property color _buttonGray:        "#f5f5f5"
+    readonly property color _rowPressed:        _darkTheme ? qgcPal.windowShade : "#F2F2F2"
     // Wide side gutters like the reference (~12% each side)
     readonly property real  _horizontalPad:     Math.max(ScreenTools.defaultFontPixelWidth * 8, width * 0.12)
     readonly property real  _rowHeight:         ScreenTools.defaultFontPixelHeight * 3.2
@@ -65,8 +78,6 @@ Rectangle {
         anchors.fill: parent
     }
 
-    QGCPalette { id: qgcPal }
-
     SettingsPagesModel { id: settingsPagesModel }
 
     Component.onCompleted: {
@@ -104,7 +115,7 @@ Rectangle {
                 Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.35
                 Layout.alignment:       Qt.AlignVCenter
                 source:                 rowRoot.iconSource
-                color:                  settingsView._titleColor
+                color:                  settingsView._accentGreen
                 visible:                rowRoot.iconSource !== ""
                 fillMode:               Image.PreserveAspectFit
             }
@@ -156,7 +167,7 @@ Rectangle {
                 QGCLabel {
                     anchors.centerIn:   parent
                     text:               qsTr("Application Settings")
-                    color:              settingsView._titleColor
+                    color:              settingsView._headingColor
                     font.pointSize:     ScreenTools.largeFontPointSize
                     font.weight:        Font.DemiBold
                 }
@@ -173,7 +184,7 @@ Rectangle {
                         width:              parent.height * 0.4
                         height:             width
                         source:             "/res/XDeleteBlack.svg"
-                        color:              settingsView._secondaryText
+                        color:              settingsView._iconColor
                         opacity:            closeMouse.containsMouse ? 1.0 : 0.85
                     }
 
@@ -184,6 +195,14 @@ Rectangle {
                         cursorShape:    Qt.PointingHandCursor
                         onClicked:      settingsView._closeSettings()
                     }
+                }
+
+                Rectangle {
+                    anchors.left:   parent.left
+                    anchors.right:  parent.right
+                    anchors.bottom: parent.bottom
+                    height:         1
+                    color:          settingsView._dividerColor
                 }
             }
 
@@ -220,7 +239,7 @@ Rectangle {
                                 anchors.left:           parent.left
                                 anchors.right:          parent.right
                                 height:                 ScreenTools.defaultFontPixelHeight * 0.55
-                                color:                  "#F2F2F7"
+                                color:                  settingsView._sectionBandColor
                                 visible:                parent.isDivider
                             }
 
@@ -278,7 +297,9 @@ Rectangle {
                         id:                 track
                         anchors.fill:       parent
                         radius:             height / 2
-                        color:              resetToggle.checked ? "#34C759" : "#E8E8ED"
+                        color:              resetToggle.checked
+                                            ? settingsView._accentGreen
+                                            : (settingsView._darkTheme ? "#3A3A3C" : settingsView._buttonGray)
 
                         Behavior on color { ColorAnimation { duration: 180 } }
 
@@ -348,7 +369,7 @@ Rectangle {
 
             Rectangle {
                 anchors.fill: parent
-                color:        qgcPal.window
+                color:        settingsView._pageBackground
             }
 
             Rectangle {
@@ -359,19 +380,21 @@ Rectangle {
                 height:         settingsView._headerHeight
                 color:          settingsView._pageBackground
 
+                // Back — same size/margin as close for balanced header
                 Item {
+                    id:                     backButton
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
                     anchors.leftMargin:     settingsView._horizontalPad
-                    height:                 ScreenTools.defaultFontPixelHeight * 2.2
+                    height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
 
-                    QGCLabel {
+                    QGCColoredImage {
                         anchors.centerIn:   parent
-                        text:               "‹"
-                        color:              settingsView._titleColor
-                        font.pointSize:     ScreenTools.largeFontPointSize
-                        font.weight:        Font.Medium
+                        width:              ScreenTools.defaultFontPixelHeight * 0.95
+                        height:             width
+                        source:             "qrc:/InstrumentValueIcons/arrow-thin-left.svg"
+                        color:              settingsView._iconColor
                     }
 
                     MouseArea {
@@ -381,12 +404,45 @@ Rectangle {
                     }
                 }
 
+                // Title — truly centered on the page (same as reference)
                 QGCLabel {
-                    anchors.centerIn:   parent
-                    text:               detailRoot.pageTitle
-                    color:              settingsView._titleColor
-                    font.pointSize:     ScreenTools.largeFontPointSize
-                    font.weight:        Font.DemiBold
+                    anchors.centerIn:       parent
+                    width:                  parent.width - (backButton.width + closeButton.width
+                                                           + settingsView._horizontalPad * 2
+                                                           + ScreenTools.defaultFontPixelWidth * 2)
+                    horizontalAlignment:    Text.AlignHCenter
+                    elide:                  Text.ElideRight
+                    text:                   detailRoot.pageTitle
+                    color:                  settingsView._headingColor
+                    font.pointSize:         ScreenTools.largeFontPointSize
+                    font.weight:            Font.DemiBold
+                }
+
+                // Close — mirrors back button
+                Item {
+                    id:                     closeButton
+                    anchors.right:          parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    anchors.rightMargin:    settingsView._horizontalPad
+                    height:                 ScreenTools.defaultFontPixelHeight * 2.0
+                    width:                  height
+
+                    QGCColoredImage {
+                        anchors.centerIn:   parent
+                        width:              ScreenTools.defaultFontPixelHeight * 0.85
+                        height:             width
+                        source:             "/res/XDeleteBlack.svg"
+                        color:              settingsView._iconColor
+                        opacity:            detailCloseMouse.containsMouse ? 1.0 : 0.85
+                    }
+
+                    MouseArea {
+                        id:             detailCloseMouse
+                        anchors.fill:   parent
+                        hoverEnabled:   true
+                        cursorShape:    Qt.PointingHandCursor
+                        onClicked:      settingsView._closeSettings()
+                    }
                 }
 
                 Rectangle {

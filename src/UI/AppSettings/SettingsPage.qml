@@ -14,13 +14,16 @@ Item {
 
     QGCFlickable {
         anchors.fill:   parent
-        contentWidth:   mainLayout.width
+        contentWidth:   width
         contentHeight:  mainLayout.height
 
         ColumnLayout {
             id:         mainLayout
             x:          Math.max(0, root.width / 2 - width / 2)
-            width:      Math.max(implicitWidth, ScreenTools.defaultFontPixelWidth * 50)
+            // Wider than the old ~50ch panel — use most of the available page width
+            width:      Math.max(implicitWidth,
+                                 Math.min(root.width - ScreenTools.defaultFontPixelWidth * 6,
+                                          root.width * 0.80))
             spacing:    ScreenTools.defaultFontPixelHeight
         }
     }

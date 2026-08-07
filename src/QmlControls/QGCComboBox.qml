@@ -8,13 +8,13 @@ import QGroundControl.Controls
 
 T.ComboBox {
     id:             control
-    padding:        ScreenTools.comboBoxPadding
+    padding:        ScreenTools.comboBoxPadding * 1.1
     spacing:        ScreenTools.defaultFontPixelWidth
     font.pointSize: ScreenTools.defaultFontPointSize
     font.family:    ScreenTools.normalFontFamily
     implicitWidth:  Math.max(background ? background.implicitWidth : 0,
                              contentItem.implicitWidth + leftPadding + rightPadding + padding)
-    implicitHeight: Math.max(background ? background.implicitHeight : 0,
+    implicitHeight: Math.max(ScreenTools.defaultFontPixelHeight * 1.95,
                              Math.max(contentItem.implicitHeight, indicator ? indicator.implicitHeight : 0) + topPadding + bottomPadding)
     baselineOffset: contentItem.y + text.baselineOffset
     leftPadding:    padding + (!control.mirrored || !indicator || !indicator.visible ? 0 : indicator.width + spacing)
@@ -80,26 +80,19 @@ T.ComboBox {
         contentItem: Text {
             text:                   _text
             font:                   control.font
-            color:                  control.currentIndex === index ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            color:                  control.currentIndex === index ? "#ffffff" : qgcPal.buttonText
             verticalAlignment:      Text.AlignVCenter
         }
 
         background: Rectangle {
-            color:                  control.currentIndex === index ? qgcPal.buttonHighlight : qgcPal.button
+            color:                  control.currentIndex === index ? "#00a04c" : qgcPal.button
         }
 
         highlighted:                control.highlightedIndex === index
     }
 
-    indicator: QGCColoredImage {
-        anchors.rightMargin:    control.padding
-        anchors.right:          parent.right
-        anchors.verticalCenter: parent.verticalCenter
-        height:                 ScreenTools.defaultFontPixelWidth
-        width:                  height
-        source:                 "/qmlimages/arrow-down.png"
-        color:                  qgcPal.buttonText
-    }
+    // Closed combo shows selected value in green + white text (like Medium option)
+    readonly property bool _selectedLook: qgcPal.globalTheme === QGCPalette.Light
 
     // The label of the button
     contentItem: QGCLabel {
@@ -108,21 +101,23 @@ T.ComboBox {
         anchors.horizontalCenter:   centeredLabel ? parent.horizontalCenter : undefined
         text:                       control.alternateText === "" ? control.currentText : control.alternateText
         font:                       control.font
-        color:                      qgcPal.buttonText
+        color:                      (_selectedLook || _showHighlight) ? "#ffffff" : qgcPal.buttonText
     }
 
     background: Rectangle {
-        color:          qgcPal.button
-        border.color:   control.visualFocus ? qgcPal.brandingBlue : "transparent"
-        border.width:   control.visualFocus ? 2 : 0
+        color:          _showHighlight || _selectedLook ? "#00a04c" : qgcPal.button
+        border.width:   0
         radius:         ScreenTools.defaultBorderRadius * 2
+    }
 
-        Rectangle {
-            anchors.fill:   parent
-            color:          qgcPal.buttonHighlight
-            opacity:        _showHighlight ? 1 : control.enabled && control.hovered ? .2 : 0
-            radius:         parent.radius
-        }
+    indicator: QGCColoredImage {
+        anchors.rightMargin:    control.padding
+        anchors.right:          parent.right
+        anchors.verticalCenter: parent.verticalCenter
+        height:                 ScreenTools.defaultFontPixelWidth * 1.1
+        width:                  height
+        source:                 "/qmlimages/arrow-down.png"
+        color:                  (_selectedLook || _showHighlight) ? "#ffffff" : qgcPal.buttonText
     }
 
     popup: T.Popup {
@@ -140,20 +135,12 @@ T.ComboBox {
             currentIndex:           control.highlightedIndex
             highlightMoveDuration:  0
 
-            Rectangle {
-                z:              10
-                width:          parent.width
-                height:         parent.height
-                color:          "transparent"
-                border.color:   qgcPal.text
-            }
-
             T.ScrollIndicator.vertical: ScrollIndicator { }
         }
 
         background: Rectangle {
             color:          qgcPal.window
-            border.color:   qgcPal.text
+            border.width:   0
             radius:         ScreenTools.defaultBorderRadius
         }
     }

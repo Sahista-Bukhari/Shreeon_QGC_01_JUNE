@@ -34,10 +34,10 @@ AbstractButton   {
             id:                     indicator
             anchors.right:          parent.right
             anchors.verticalCenter: parent.verticalCenter
-            height:                 ScreenTools.defaultFontPixelHeight * 1.2
+            height:                 ScreenTools.defaultFontPixelHeight * 1.35
             width:                  height * 1.8
             radius:                 height / 2
-            color:                  checked ? qgcPal.colorGreen : qgcPal.windowShadeDark
+            color:                  checked ? qgcPal.colorGreen : "#f5f5f5"
             border.width:           0
             
             // Track background behavior
@@ -47,10 +47,12 @@ AbstractButton   {
                 id:                     knob
                 anchors.verticalCenter: parent.verticalCenter
                 x:                      checked ? parent.width - width - 2 : 2
-                height:                 parent.height - 4
+                height:                 parent.height - 5
                 width:                  height
                 radius:                 height / 2
-                color:                  qgcPal.text
+                color:                  "#FFFFFF"
+                border.width:           0.5
+                border.color:           "#E5E5EA"
                 
                 Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.InOutQuad } }
             }

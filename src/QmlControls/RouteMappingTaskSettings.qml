@@ -9,7 +9,7 @@ import QGroundControl.FactControls
 Rectangle {
     id: root
 
-    readonly property color _accentGreen:     "#23a800"
+    readonly property color _accentGreen:     "#00a04c"
     readonly property color _accentSoftGreen: "#efffee"
     readonly property color _titleColor:      "#3f3f3f"
     readonly property color _bodyColor:       "#6a6a6a"
@@ -488,7 +488,7 @@ Rectangle {
                     enabled:            index === 0 || root.boundaryRouteEnabled
                     opacity:            enabled ? 1.0 : 0.45
                     radius:             root._radius
-                    color:              root.routeMode === index ? root._accentSoftGreen : "white"
+                    color:              root.routeMode === index ? root._accentSoftGreen : "#ffffff"
                     border.width:       root.routeMode === index ? 2 : 1
                     border.color:       root.routeMode === index ? root._accentGreen : root._cardBorderIdle
 
@@ -574,7 +574,7 @@ Rectangle {
                 readonly property bool highlighted: root.spraySettingsExpanded
                                                     || spraySettingsHeaderMouseArea.containsMouse
                                                     || spraySettingsHeaderMouseArea.pressed
-                color:                  highlighted ? root._accentGreen : "white"
+                color:                  highlighted ? root._accentGreen : "#ffffff"
                 border.width:           1
                 border.color:           highlighted ? root._accentGreen : root._cardBorderIdle
 
@@ -593,7 +593,7 @@ Rectangle {
                         width:              ScreenTools.defaultFontPixelHeight * 1.15
                         height:             width
                         source:             "/res/Nozel.png"
-                        color:              nozzleSprayHeader.highlighted ? "white" : root._titleColor
+                        color:              nozzleSprayHeader.highlighted ? "#ffffff" : root._titleColor
                         fillMode:           Image.PreserveAspectFit
                     }
 
@@ -601,7 +601,7 @@ Rectangle {
                         Layout.fillWidth:   true
                         Layout.leftMargin:  root._pad * 0.35
                         text:               qsTr("Nozzle Spraying")
-                        color:              nozzleSprayHeader.highlighted ? "white" : root._titleColor
+                        color:              nozzleSprayHeader.highlighted ? "#ffffff" : root._titleColor
                         font.weight:        Font.Medium
                         font.pointSize:     ScreenTools.defaultFontPointSize
                     }
@@ -611,7 +611,7 @@ Rectangle {
                         width:            ScreenTools.defaultFontPixelHeight * 0.65
                         height:           width
                         source:           "/res/DropArrow.svg"
-                        color:            nozzleSprayHeader.highlighted ? "white" : root._bodyColor
+                        color:            nozzleSprayHeader.highlighted ? "#ffffff" : root._bodyColor
                         rotation:         root.spraySettingsExpanded ? 180 : 0
 
                         Behavior on rotation {
@@ -924,7 +924,7 @@ Rectangle {
                     Rectangle {
                         Layout.fillWidth:       true
                         Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.15
-                        color:                  root.resolution === index ? root._accentGreen : "white"
+                        color:                  root.resolution === index ? root._accentGreen : "#ffffff"
                         border.width:           1
                         border.color:           root.resolution === index ? root._accentGreen : root._cardBorderIdle
                         radius:                 root._radius
@@ -932,7 +932,7 @@ Rectangle {
                         QGCLabel {
                             anchors.centerIn:   parent
                             text:               modelData
-                            color:              root.resolution === index ? "white" : root._bodyColor
+                            color:              root.resolution === index ? "#ffffff" : root._bodyColor
                             font.weight:        Font.Medium
                         }
 
@@ -969,7 +969,7 @@ Rectangle {
                 readonly property bool highlighted: root.sprayPatternExpanded
                                                     || sprayPatternHeaderMouseArea.containsMouse
                                                     || sprayPatternHeaderMouseArea.pressed
-                color:                  highlighted ? root._accentGreen : "white"
+                color:                  highlighted ? root._accentGreen : "#ffffff"
                 border.width:           1
                 border.color:           highlighted ? root._accentGreen : root._cardBorderIdle
 
@@ -985,7 +985,7 @@ Rectangle {
                     QGCLabel {
                         Layout.fillWidth: true
                         text:            root.patternSectionTitle
-                        color:            sprayPatternHeader.highlighted ? "white" : root._titleColor
+                        color:            sprayPatternHeader.highlighted ? "#ffffff" : root._titleColor
                         font.weight:      Font.Medium
                         font.pointSize:   ScreenTools.defaultFontPointSize
                     }
@@ -995,7 +995,7 @@ Rectangle {
                         width:            ScreenTools.defaultFontPixelHeight * 0.65
                         height:           width
                         source:           "/res/DropArrow.svg"
-                        color:            sprayPatternHeader.highlighted ? "white" : root._bodyColor
+                        color:            sprayPatternHeader.highlighted ? "#ffffff" : root._bodyColor
                         rotation:         root.sprayPatternExpanded ? 180 : 0
 
                         Behavior on rotation {
@@ -1251,7 +1251,7 @@ Rectangle {
                 readonly property bool highlighted: root.missionExpanded
                                                     || missionHeaderMouseArea.containsMouse
                                                     || missionHeaderMouseArea.pressed
-                color:                  highlighted ? root._accentGreen : "white"
+                color:                  highlighted ? root._accentGreen : "#ffffff"
                 border.width:           1
                 border.color:           highlighted ? root._accentGreen : root._cardBorderIdle
 
@@ -1267,7 +1267,7 @@ Rectangle {
                     QGCLabel {
                         Layout.fillWidth: true
                         text:             qsTr("Take Off")
-                        color:            takeoffHeader.highlighted ? "white" : root._titleColor
+                        color:            takeoffHeader.highlighted ? "#ffffff" : root._titleColor
                         font.weight:      Font.Medium
                         font.pointSize:   ScreenTools.defaultFontPointSize
                     }
@@ -1277,7 +1277,7 @@ Rectangle {
                         width:            ScreenTools.defaultFontPixelHeight * 0.65
                         height:           width
                         source:           "/res/DropArrow.svg"
-                        color:            takeoffHeader.highlighted ? "white" : root._bodyColor
+                        color:            takeoffHeader.highlighted ? "#ffffff" : root._bodyColor
                         rotation:         root.missionExpanded ? 180 : 0
 
                         Behavior on rotation {
@@ -1391,7 +1391,7 @@ Rectangle {
                         Layout.fillWidth:       true
                         Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.15
                         color:                  (root._misResumeExactEnabled === modelData.enabledValue)
-                                                ? root._accentGreen : "white"
+                                                ? root._accentGreen : "#ffffff"
                         border.width:           1
                         border.color:           (root._misResumeExactEnabled === modelData.enabledValue)
                                                 ? root._accentGreen : root._cardBorderIdle
@@ -1401,7 +1401,7 @@ Rectangle {
                             anchors.centerIn: parent
                             text:             modelData.label
                             color:            (root._misResumeExactEnabled === modelData.enabledValue)
-                                              ? "white" : root._bodyColor
+                                              ? "#ffffff" : root._bodyColor
                             font.weight:      Font.Medium
                         }
 
