@@ -521,6 +521,13 @@ Item {
                         source: "/res/XDeleteBlack.svg"
                         width: height
                     }
+
+                    RippleEffect {
+                        id: closeRipple
+                        rippleColor: Qt.rgba(0, 0, 0, 0.16)
+                        clipRadius: parent.width / 2
+                    }
+
                     MouseArea {
                         id: closeMouseArea
                         anchors.fill: parent
@@ -528,7 +535,10 @@ Item {
                         hoverEnabled: true
 
                         // X closes mode picker and returns to Custom Home Page
-                        onClicked: mainWindow.showCustomHomePage()
+                        onClicked: function(mouse) {
+                            closeRipple.tap(mouse.x, mouse.y)
+                            mainWindow.showCustomHomePage()
+                        }
                     }
                 }
             }
@@ -588,10 +598,18 @@ Item {
                     cursorShape: Qt.PointingHandCursor
                     hoverEnabled: true
 
-                    onClicked: {
+                    onClicked: function(mouse) {
+                        settingsRipple.tap(mouse.x, mouse.y)
                         mainWindow.showSettingsTool();
                         control.isOpen = false;
                     }
+                }
+
+                RippleEffect {
+                    id: settingsRipple
+                    anchors.fill: settingsMouseArea
+                    rippleColor: Qt.rgba(0, 0, 0, 0.14)
+                    clipRadius: ScreenTools.defaultFontPixelWidth * 0.6
                 }
             }
 
@@ -953,15 +971,26 @@ Item {
                     }
                 }
             }
+
+            RippleEffect {
+                id: cardRipple
+                z: 7
+                rippleColor: Qt.rgba(1, 1, 1, 0.38)
+                clipRadius: control._cardRadius
+            }
+
             MouseArea {
                 id: mouseArea
                 anchors.fill: parent
                 cursorShape: control._selectingMode ? Qt.ArrowCursor : Qt.PointingHandCursor
                 enabled: !control._selectingMode
                 hoverEnabled: true
-                z: 7
+                z: 8
 
-                onClicked: cardRoot.clicked()
+                onClicked: function(mouse) {
+                    cardRipple.tap(mouse.x, mouse.y)
+                    cardRoot.clicked()
+                }
             }
         }
     }

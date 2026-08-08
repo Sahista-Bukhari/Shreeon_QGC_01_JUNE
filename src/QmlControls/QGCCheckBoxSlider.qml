@@ -26,7 +26,7 @@ AbstractButton   {
             anchors.verticalCenter: parent.verticalCenter
             text:           control.text
             color:          (typeof mainWindow !== "undefined" && mainWindow && mainWindow.activeMissionEditor === "customMission")
-                            ? "#ffffff" : qgcPal.text
+                            ? "#3f3f3f" : qgcPal.text
             visible:        control.text !== ""
         }
 
@@ -37,8 +37,9 @@ AbstractButton   {
             height:                 ScreenTools.defaultFontPixelHeight * 1.35
             width:                  height * 1.8
             radius:                 height / 2
-            color:                  checked ? qgcPal.colorGreen : "#f5f5f5"
+            color:                  checked ? "#00a651" : "#e8e8e8"
             border.width:           0
+            clip:                   true
             
             // Track background behavior
             Behavior on color { ColorAnimation { duration: 150 } }
@@ -53,8 +54,25 @@ AbstractButton   {
                 color:                  "#FFFFFF"
                 border.width:           0.5
                 border.color:           "#E5E5EA"
+                z:                      1
                 
                 Behavior on x { NumberAnimation { duration: 150; easing.type: Easing.InOutQuad } }
+            }
+
+            RippleEffect {
+                id: sliderRipple
+                rippleColor: control.checked
+                             ? Qt.rgba(1, 1, 1, 0.40)
+                             : Qt.rgba(0, 0, 0, 0.16)
+                clipRadius: indicator.radius
+            }
+
+            Connections {
+                target: control
+                function onPressedChanged() {
+                    if (control.pressed)
+                        sliderRipple.tapCenter()
+                }
             }
         }
     }

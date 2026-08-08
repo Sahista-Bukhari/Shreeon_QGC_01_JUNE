@@ -31,6 +31,14 @@ Button {
     property int _verticalPadding: Math.round(ScreenTools.defaultFontPixelHeight * heightFactor)
     property bool _showIcon: control.icon.source != ""
 
+    readonly property bool _customMission: typeof mainWindow !== "undefined"
+                                           && mainWindow
+                                           && mainWindow.activeMissionEditor === "customMission"
+    readonly property color _cmAccent: "#00a651"
+    readonly property color _cmHoverGray: "#e8e8e8"
+    readonly property color _cmBorder: "#e2e2e2"
+    readonly property color _cmBody:   "#6a6a6a"
+
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
 
     background: Rectangle {
@@ -38,16 +46,33 @@ Button {
         implicitWidth: ScreenTools.implicitButtonWidth
         implicitHeight: ScreenTools.implicitButtonHeight
         radius: height / 2
-        color: checked ? Qt.rgba(0.14, 0.69, 0.36, 0.48) : (control.hovered ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.06))
-        border.width: checked ? 1 : 0
-        border.color: Qt.rgba(1, 1, 1, 0.35)
         antialiasing: true
+
+        color: {
+            if (control._customMission) {
+                if (checked)
+                    return control._cmAccent
+                if (control.hovered)
+                    return control._cmHoverGray
+                return "#ffffff"
+            }
+            return checked ? Qt.rgba(0.14, 0.69, 0.36, 0.48)
+                           : (control.hovered ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.06))
+        }
+        border.width: control._customMission ? 1 : (checked ? 1 : 0)
+        border.color: {
+            if (control._customMission)
+                return checked ? control._cmAccent : control._cmBorder
+            return Qt.rgba(1, 1, 1, 0.35)
+        }
 
         Behavior on color { ColorAnimation { duration: 150 } }
 
         RippleEffect {
             id: tabRipple
-            rippleColor: Qt.rgba(1, 1, 1, 0.42)
+            rippleColor: control._customMission
+                         ? (checked ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(0, 0, 0, 0.12))
+                         : Qt.rgba(1, 1, 1, 0.42)
             clipRadius: backRect.radius
         }
 
@@ -71,7 +96,7 @@ Button {
             source: control.icon.source
             height: source === "" ? 0 : ScreenTools.defaultFontPixelHeight
             width: height
-            color: "#ffffff"
+            color: text.color
             fillMode: Image.PreserveAspectFit
             sourceSize.height: height
             visible: _showIcon
@@ -84,7 +109,11 @@ Button {
             text: control.text
             font.pointSize: control.pointSize
             font.family: ScreenTools.normalFontFamily
-            color: "#ffffff"
+            color: {
+                if (control._customMission)
+                    return checked ? "#ffffff" : control._cmBody
+                return "#ffffff"
+            }
             visible: !_showIcon
         }
     }

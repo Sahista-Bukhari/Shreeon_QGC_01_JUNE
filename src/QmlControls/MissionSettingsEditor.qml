@@ -11,7 +11,7 @@ import QGroundControl.FactControls
 Rectangle {
     id: root
     width: availableWidth
-    height: valuesColumn.height + (_margin * 2)
+    height: valuesColumn.height + (root._pad * 2)
     color: "transparent"
     radius: ScreenTools.defaultBorderRadius
 
@@ -38,13 +38,13 @@ Rectangle {
     readonly property string _vehicleLabel: qsTr("Vehicle")
     readonly property real _margin: ScreenTools.defaultFontPixelWidth / 2
 
-    // Fields-style dark glass + readable light text
-    readonly property color _fieldsBg:        Qt.rgba(0.03, 0.03, 0.03, 0.28)
-    readonly property color _accentGreen:     "#23a800"
-    readonly property color _accentSoftGreen: "#efffee"
-    readonly property color _titleColor:      "#ffffff"
-    readonly property color _bodyColor:       Qt.rgba(1, 1, 1, 0.88)
-    readonly property color _cardBorderIdle:  Qt.rgba(1, 1, 1, 0.28)
+    // Route Mapping Task Settings light theme on Custom Mission
+    readonly property color _fieldsBg:        "transparent"
+    readonly property color _accentGreen:     "#00a651"
+    readonly property color _accentSoftGreen: "#e8e8e8"
+    readonly property color _titleColor:      "#3f3f3f"
+    readonly property color _bodyColor:       "#6a6a6a"
+    readonly property color _cardBorderIdle:  "#e2e2e2"
     readonly property real  _pad:             ScreenTools.defaultFontPixelWidth * 1.05
     readonly property real  _radius:          ScreenTools.defaultFontPixelWidth * 0.75
 
@@ -105,81 +105,89 @@ Rectangle {
         }
     }
 
-    // Shared nozzle-style value stepper used by altitude / speed
-    component NozzleValueBox: Rectangle {
+    // Application Settings–style value stepper: gray circular - / +
+    component NozzleValueBox: Item {
         property string valueText
         property bool controlsEnabled: true
         signal minusClicked
         signal plusClicked
 
-        radius:                 root._radius
-        color:                  Qt.rgba(1, 1, 1, 0.88)
-        border.width:           1
-        border.color:           Qt.rgba(1, 1, 1, 0.45)
-        opacity:                controlsEnabled ? 1.0 : 0.45
+        id: stepperRoot
+        implicitWidth: stepperRow.implicitWidth
+        implicitHeight: stepperRow.implicitHeight
+        opacity: controlsEnabled ? 1.0 : 0.45
 
         RowLayout {
-            anchors.fill:        parent
-            anchors.leftMargin:  ScreenTools.defaultFontPixelWidth * 0.35
-            anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.35
-            spacing:             0
+            id: stepperRow
+            anchors.centerIn: parent
+            spacing: ScreenTools.defaultFontPixelWidth * 1.5
 
             Rectangle {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.15
-                Layout.fillHeight:      true
-                Layout.topMargin:       2
-                Layout.bottomMargin:    2
-                radius:                 root._radius * 0.6
-                color:                  minusMouse.pressed ? "#ffe8e8" : "transparent"
+                Layout.preferredWidth:  height
+                Layout.preferredHeight: valueLabel.implicitHeight * 1.55
+                radius:                 height / 2
+                color:                  !controlsEnabled ? "#f0f0f0"
+                                      : (minusMouse.pressed || minusMouse.containsMouse) ? "#E53935" : "#f5f5f5"
                 enabled:                controlsEnabled
+
+                Behavior on color { ColorAnimation { duration: 120 } }
 
                 QGCLabel {
                     anchors.centerIn: parent
-                    text:             "−"
-                    color:            minusMouse.pressed ? "#e53935" : "#3f3f3f"
+                    text:             "-"
+                    color:            (minusMouse.pressed || minusMouse.containsMouse) && controlsEnabled
+                                      ? "#ffffff" : "#1C1C1E"
+                    font.pointSize:   ScreenTools.largeFontPointSize
                     font.weight:      Font.DemiBold
-                    font.pointSize:   ScreenTools.defaultFontPointSize
                 }
 
-                QGCMouseArea {
+                MouseArea {
                     id:           minusMouse
                     anchors.fill: parent
                     enabled:      controlsEnabled
-                    onClicked:    minusClicked()
+                    hoverEnabled: true
+                    cursorShape:  Qt.PointingHandCursor
+                    onClicked:    stepperRoot.minusClicked()
                 }
             }
 
             QGCLabel {
-                Layout.fillWidth:       true
+                id:                     valueLabel
+                Layout.minimumWidth:    ScreenTools.defaultFontPixelWidth * 8
                 horizontalAlignment:    Text.AlignHCenter
-                text:                   valueText
-                color:                  "#3f3f3f"
+                verticalAlignment:      Text.AlignVCenter
+                text:                   stepperRoot.valueText
+                color:                  "#1C1C1E"
                 font.weight:            Font.Medium
                 font.pointSize:         ScreenTools.defaultFontPointSize
             }
 
             Rectangle {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.15
-                Layout.fillHeight:      true
-                Layout.topMargin:       2
-                Layout.bottomMargin:    2
-                radius:                 root._radius * 0.6
-                color:                  plusMouse.pressed ? root._accentSoftGreen : "transparent"
+                Layout.preferredWidth:  height
+                Layout.preferredHeight: valueLabel.implicitHeight * 1.55
+                radius:                 height / 2
+                color:                  !controlsEnabled ? "#f0f0f0"
+                                      : (plusMouse.pressed || plusMouse.containsMouse) ? "#00a651" : "#f5f5f5"
                 enabled:                controlsEnabled
+
+                Behavior on color { ColorAnimation { duration: 120 } }
 
                 QGCLabel {
                     anchors.centerIn: parent
                     text:             "+"
-                    color:            "#3f3f3f"
+                    color:            (plusMouse.pressed || plusMouse.containsMouse) && controlsEnabled
+                                      ? "#ffffff" : "#1C1C1E"
+                    font.pointSize:   ScreenTools.largeFontPointSize
                     font.weight:      Font.DemiBold
-                    font.pointSize:   ScreenTools.defaultFontPointSize
                 }
 
-                QGCMouseArea {
+                MouseArea {
                     id:           plusMouse
                     anchors.fill: parent
                     enabled:      controlsEnabled
-                    onClicked:    plusClicked()
+                    hoverEnabled: true
+                    cursorShape:  Qt.PointingHandCursor
+                    onClicked:    stepperRoot.plusClicked()
                 }
             }
         }
@@ -187,10 +195,13 @@ Rectangle {
 
     ColumnLayout {
         id: valuesColumn
-        anchors.margins: _margin
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
+        // Even padding inside the Mission Settings card (left / top / right)
+        anchors.leftMargin: root._pad
+        anchors.topMargin: root._pad
+        anchors.rightMargin: root._pad
         spacing: ScreenTools.defaultFontPixelHeight / 2
 
         RowLayout {
@@ -205,7 +216,6 @@ Rectangle {
 
             QGCButton {
                 text:             QGroundControl.altitudeModeShortDescription(_missionController.globalAltitudeMode)
-                textColor:        root._titleColor
                 showBorder:       true
                 backRadius:       ScreenTools.defaultFontPixelHeight
 
@@ -274,8 +284,9 @@ Rectangle {
                 }
 
                 NozzleValueBox {
-                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 13
-                    Layout.fillHeight:      true
+                    Layout.alignment:       Qt.AlignVCenter
+                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 16
+                    Layout.preferredHeight: implicitHeight
                     valueText:              root._altitudeFact
                                             ? (Number(root._altitudeFact.value).toFixed(1)
                                                + (root._altitudeFact.units ? " " + root._altitudeFact.units : ""))
@@ -295,8 +306,6 @@ Rectangle {
             Layout.fillWidth: true
             text: qsTr("Apply New Altitude")
             visible: false
-            backgroundColor: root._fieldsBg
-            textColor: root._titleColor
             showBorder: true
 
             onClicked: mainWindow.showMessageDialog(qsTr("Apply New Altitude"),
@@ -377,8 +386,9 @@ Rectangle {
                 }
 
                 NozzleValueBox {
-                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 13
-                    Layout.fillHeight:      true
+                    Layout.alignment:       Qt.AlignVCenter
+                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 16
+                    Layout.preferredHeight: implicitHeight
                     controlsEnabled:        missionItem.speedSection.specifyFlightSpeed
                     valueText:              root._speedFact
                                             ? (Number(root._speedFact.value).toFixed(1)

@@ -38,15 +38,14 @@ Button {
     property int _verticalPadding: Math.round(ScreenTools.defaultFontPixelHeight * heightFactor) - (iconSource === "" ? 0 : Math.max(0, (_iconHeight - ScreenTools.defaultFontPixelHeight) / 2))
     property real _iconHeight: text.height * (compact ? 1.35 : 1.5)
 
-    // Liquid glass only on Custom Mission — Application Settings / Fly View stay solid
+    // Custom Mission uses Route Mapping white/green cards
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
                                            && mainWindow.activeMissionEditor === "customMission"
-    readonly property color _cmGlassTint: Qt.rgba(0.06, 0.10, 0.09, 0.40)
-    readonly property color _cmGlassTintHover: Qt.rgba(0.137, 0.659, 0.0, 0.30)
-    readonly property color _cmGlassTintPressed: Qt.rgba(0.137, 0.659, 0.0, 0.42)
-    readonly property color _primaryTint: Qt.rgba(0.137, 0.659, 0.0, 0.42)
-    readonly property color _primaryTintPressed: Qt.rgba(0.137, 0.659, 0.0, 0.58)
+    readonly property color _cmAccent: "#00a651"
+    readonly property color _cmHoverGray: "#e8e8e8"
+    readonly property color _cmBorder: "#e2e2e2"
+    readonly property color _cmTitle: "#3f3f3f"
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
@@ -75,28 +74,41 @@ Button {
             }
         }
 
-        // Custom Mission liquid glass only
-        LiquidGlassSurface {
+        // Custom Mission — green idle, gray hover (Application Settings style)
+        Rectangle {
             anchors.fill: parent
             visible: control._customMission
-            cornerRadius: control.backRadius
-            blurAmount: 14
-            tintColor: {
-                if (control.primary)
-                    return control.pressed || control.checked ? control._primaryTintPressed : control._primaryTint
+            radius: control.backRadius
+            color: {
                 if (control.pressed || control.checked)
-                    return control._cmGlassTintPressed
+                    return Qt.darker(control._cmAccent, 1.12)
                 if (control.enabled && control.hovered)
-                    return control._cmGlassTintHover
-                return control._cmGlassTint
+                    return control._cmHoverGray
+                return control._cmAccent
             }
-            rimColor: control.primary || control.pressed || control.checked || control.hovered
-                      ? Qt.rgba(0.45, 0.90, 0.15, 0.75)
-                      : Qt.rgba(1, 1, 1, control.showBorder ? 0.32 : 0)
-            innerGlow: "transparent"
-            accentColor: Qt.rgba(0.137, 0.659, 0.0, 0.14)
-            showGlint: false
-            pressed: control.pressed
+            border.width: 0
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+
+        RippleEffect {
+            id: buttonRipple
+            rippleColor: {
+                if (!control._customMission)
+                    return Qt.rgba(0, 0, 0, 0.18)
+                if (control.enabled && control.hovered && !(control.pressed || control.checked))
+                    return Qt.rgba(0, 0, 0, 0.12)
+                return Qt.rgba(1, 1, 1, 0.40)
+            }
+            clipRadius: control.backRadius
+        }
+
+        Connections {
+            target: control
+            function onPressedChanged() {
+                if (control.pressed)
+                    buttonRipple.tap(control.pressX, control.pressY)
+            }
         }
     }
 
@@ -122,10 +134,17 @@ Button {
             font.pointSize: control.pointSize
             font.family: control.font.family
             font.weight: fontWeight
-            color: control._customMission
-                   ? (control.enabled ? "#ffffff" : Qt.rgba(1, 1, 1, 0.45))
-                   : (_showHighlight ? qgcPal.buttonHighlightText
-                                     : (primary ? qgcPal.primaryButtonText : qgcPal.buttonText))
+            color: {
+                if (control._customMission) {
+                    if (!control.enabled)
+                        return Qt.rgba(0.25, 0.25, 0.25, 0.40)
+                    if (control.hovered && !(control.pressed || control.checked))
+                        return control._cmTitle
+                    return "#ffffff"
+                }
+                return _showHighlight ? qgcPal.buttonHighlightText
+                                      : (primary ? qgcPal.primaryButtonText : qgcPal.buttonText)
+            }
             visible: control.text !== ""
         }
     }

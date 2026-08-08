@@ -11,18 +11,21 @@ Rectangle {
     id:     geoFenceEditorRect
     height: geoFenceItems.y + geoFenceItems.height + (_margin * 2)
     radius: _radius
-    color:  Qt.rgba(0.14, 0.69, 0.36, 0.22)
+    color:  _lightTheme ? "#ffffff" : Qt.rgba(0.14, 0.69, 0.36, 0.22)
     border.width: 1
-    border.color: Qt.rgba(0.14, 0.69, 0.36, 0.85)
+    border.color: _lightTheme ? "#00a651" : Qt.rgba(0.14, 0.69, 0.36, 0.85)
 
     property var    myGeoFenceController
     property var    flightMap
 
+    readonly property bool  _lightTheme: typeof mainWindow !== "undefined"
+                                         && mainWindow
+                                         && mainWindow.activeMissionEditor === "customMission"
     readonly property real  _editFieldWidth:    Math.min(width - _margin * 2, ScreenTools.defaultFontPixelWidth * 15)
-    readonly property real  _margin:            ScreenTools.defaultFontPixelWidth / 2
-    readonly property real  _radius:            ScreenTools.defaultFontPixelWidth / 2
-    readonly property color _titleColor:        "#ffffff"
-    readonly property color _bodyColor:         Qt.rgba(1, 1, 1, 0.88)
+    readonly property real  _margin:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.05 : ScreenTools.defaultFontPixelWidth / 2
+    readonly property real  _radius:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 0.75 : ScreenTools.defaultFontPixelWidth / 2
+    readonly property color _titleColor:        "#3f3f3f"
+    readonly property color _bodyColor:         _lightTheme ? "#6a6a6a" : Qt.rgba(1, 1, 1, 0.88)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
 
@@ -34,7 +37,7 @@ Rectangle {
         text:               qsTr("GeoFence")
         color:              geoFenceEditorRect._titleColor
         font.weight:        Font.DemiBold
-        anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+        anchors.leftMargin: _margin
     }
 
     Rectangle {
@@ -44,10 +47,10 @@ Rectangle {
         anchors.right:      parent.right
         anchors.top:        geoFenceLabel.bottom
         height:             fenceColumn.y + fenceColumn.height + (_margin * 2)
-        color:              Qt.rgba(1, 1, 1, 0.08)
+        color:              _lightTheme ? "#f5f5f5" : Qt.rgba(1, 1, 1, 0.08)
         radius:             _radius
         border.width:       1
-        border.color:       Qt.rgba(1, 1, 1, 0.22)
+        border.color:       _lightTheme ? "#e2e2e2" : Qt.rgba(1, 1, 1, 0.22)
 
         Column {
             id:                 fenceColumn

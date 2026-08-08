@@ -13,8 +13,10 @@ Rectangle {
     id:         _root
     height:     visible ? (editorColumn.height + (_margin * 2)) : 0
     width:      availableWidth
-    color:      _glassTheme ? "transparent" : qgcPal.windowShadeDark
+    color:      _glassTheme ? "#ffffff" : qgcPal.windowShadeDark
     radius:     _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.55 : _radius
+    border.width: _glassTheme ? 1 : 0
+    border.color: _glassTheme ? "#e2e2e2" : "transparent"
 
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
                                         && mainWindow
@@ -29,7 +31,7 @@ Rectangle {
     property var    _vehicle:                   QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle : QGroundControl.multiVehicleManager.offlineEditingVehicle
     property real   _cameraMinTriggerInterval:  missionItem.cameraCalc.minTriggerInterval.rawValue
     readonly property real _radius:             ScreenTools.defaultFontPixelWidth / 2
-    readonly property color _bodyColor:         _glassTheme ? "#ffffff" : qgcPal.text
+    readonly property color _bodyColor:         _glassTheme ? "#3f3f3f" : qgcPal.text
 
     function polygonCaptureStarted() {
         missionItem.clearPolygon()
@@ -49,18 +51,6 @@ Rectangle {
     function polygonAdjustFinished() { }
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
-
-    LiquidGlassSurface {
-        anchors.fill: parent
-        visible: _root._glassTheme
-        enableBlur: false
-        cornerRadius: _root.radius
-        tintColor: Qt.rgba(1, 1, 1, 0.08)
-        rimColor: Qt.rgba(1, 1, 1, 0.22)
-        innerGlow: Qt.rgba(1, 1, 1, 0.10)
-        accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.06)
-        showGlint: false
-    }
 
     ColumnLayout {
         id:                 editorColumn

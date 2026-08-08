@@ -184,7 +184,16 @@ Item {
                     id: topIconMouse
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: root.showConnectionNotification()
+                    onClicked: function(mouse) {
+                        bellRipple.tap(mouse.x, mouse.y)
+                        root.showConnectionNotification()
+                    }
+                }
+
+                RippleEffect {
+                    id: bellRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: parent.width / 2
                 }
             }
         }
@@ -352,6 +361,12 @@ Item {
                         border.width: 1
                     }
 
+                    RippleEffect {
+                        id: homeCardRipple
+                        rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                        clipRadius: root._panelRadius
+                    }
+
                     Column {
                         anchors.centerIn: parent
                         spacing: ScreenTools.defaultFontPixelHeight * 0.35
@@ -446,7 +461,8 @@ Item {
                         id: cardMouse
                         anchors.fill: parent
                         cursorShape: Qt.PointingHandCursor
-                        onClicked: {
+                        onClicked: function(mouse) {
+                            homeCardRipple.tap(mouse.x, mouse.y)
                             if (modelData.action === "manual")
                                 root.userManualClicked()
                             else

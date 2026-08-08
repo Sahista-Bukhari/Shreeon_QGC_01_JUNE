@@ -20,7 +20,7 @@ Button {
 
     property real _horizontalMargin: ScreenTools.defaultFontPixelWidth
 
-    // Liquid glass only on Custom Mission — Application Settings stays solid
+    // Custom Mission uses Route Mapping white/green chrome
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
                                            && mainWindow.activeMissionEditor === "customMission"
@@ -40,21 +40,39 @@ Button {
             border.width: QGroundControl.corePlugin.showTouchAreas ? 3 : 0
         }
 
-        LiquidGlassSurface {
+        Rectangle {
             anchors.fill: parent
             visible: button._customMission
-            cornerRadius: height / 2
-            blurAmount: 12
-            tintColor: {
+            radius: height / 2
+            color: {
                 if (button.checked || button.pressed)
-                    return Qt.rgba(0.137, 0.659, 0.0, 0.48)
+                    return "#00a651"
                 if (button.hovered)
-                    return Qt.rgba(1, 1, 1, 0.18)
-                return Qt.rgba(1, 1, 1, 0.08)
+                    return "#e8e8e8"
+                return Qt.rgba(1, 1, 1, 0.92)
             }
-            rimColor: Qt.rgba(1, 1, 1, button.checked || button.hovered ? 0.40 : 0.18)
-            showGlint: false
-            pressed: button.pressed
+            border.width: 1
+            border.color: (button.checked || button.pressed) ? "#00a651" : "#e2e2e2"
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+
+        RippleEffect {
+            id: toolbarRipple
+            rippleColor: button._customMission
+                         ? ((button.checked || button.pressed)
+                            ? Qt.rgba(1, 1, 1, 0.40)
+                            : Qt.rgba(0, 0, 0, 0.14))
+                         : Qt.rgba(0, 0, 0, 0.16)
+            clipRadius: height / 2
+        }
+
+        Connections {
+            target: button
+            function onPressedChanged() {
+                if (button.pressed)
+                    toolbarRipple.tap(button.pressX, button.pressY)
+            }
         }
     }
 
@@ -67,8 +85,16 @@ Button {
             width:                  height
             sourceSize.height:      parent.height
             fillMode:               Image.PreserveAspectFit
-            color:                  logo ? "transparent"
-                                         : (button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText)
+            color: {
+                if (logo)
+                    return "transparent"
+                if (button._customMission) {
+                    if (button.checked || button.pressed)
+                        return "#ffffff"
+                    return "#3f3f3f"
+                }
+                return button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            }
             source:                 button.icon.source
             anchors.verticalCenter: parent.verticalCenter
         }
@@ -76,7 +102,14 @@ Button {
             id:                     _label
             visible:                text !== ""
             text:                   button.text
-            color:                  button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            color: {
+                if (button._customMission) {
+                    if (button.checked || button.pressed)
+                        return "#ffffff"
+                    return "#3f3f3f"
+                }
+                return button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText
+            }
             anchors.verticalCenter: parent.verticalCenter
         }
     }

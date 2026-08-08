@@ -2115,8 +2115,10 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             width: ScreenTools.defaultFontPixelHeight * 3.1
             height: ScreenTools.defaultFontPixelHeight * 5
-            radius: ScreenTools.defaultFontPixelWidth * 0.45
-            color: routeBackMouseArea.pressed ? Qt.rgba(1, 1, 1, 0.34) : Qt.rgba(1, 1, 1, 0.22)
+            radius: 0
+            color: routeBackMouseArea.pressed
+                   ? Qt.rgba(0.12, 0.12, 0.14, 0.55)
+                   : Qt.rgba(0.12, 0.12, 0.14, 0.38)
             opacity: _backButtonVisibleProgress
             z: QGroundControl.zOrderWidgets + 12
 
@@ -2133,12 +2135,21 @@ Item {
                 rotation: (1.0 - _taskSettingsOpenProgress) * 180
             }
 
+            RippleEffect {
+                id: routeBackRipple
+                rippleColor: Qt.rgba(1, 1, 1, 0.35)
+                clipRadius: 0
+            }
+
             // Attached navigator: collapse or reopen Task Settings in place.
             QGCMouseArea {
                 id: routeBackMouseArea
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: _root.toggleTaskSettings()
+                onClicked: function(mouse) {
+                    routeBackRipple.tap(mouse.x, mouse.y)
+                    _root.toggleTaskSettings()
+                }
             }
         }
 
@@ -2217,10 +2228,19 @@ Item {
                     mipmap: true
                 }
 
+                RippleEffect {
+                    id: importRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: _root.openRouteMappingImportDialog()
+                    onClicked: function(mouse) {
+                        importRipple.tap(mouse.x, mouse.y)
+                        _root.openRouteMappingImportDialog()
+                    }
                 }
             }
 
@@ -2242,10 +2262,19 @@ Item {
                     mipmap: true
                 }
 
+                RippleEffect {
+                    id: clearRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: _root.clearRouteMappingPlan()
+                    onClicked: function(mouse) {
+                        clearRipple.tap(mouse.x, mouse.y)
+                        _root.clearRouteMappingPlan()
+                    }
                 }
             }
         }
@@ -2329,6 +2358,7 @@ Item {
                 color: "white"
                 border.color: "#78d957"
                 border.width: 2
+                clip: true
 
                 QGCLabel {
                     anchors.centerIn: parent
@@ -2337,14 +2367,24 @@ Item {
                     font.bold: true
                 }
 
+                RippleEffect {
+                    id: plusRipple
+                    rippleColor: Qt.rgba(0, 0, 0, 0.18)
+                    clipRadius: _actionButtonRadius
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     enabled: _routeBoundaryEditable
-                    onClicked: addRouteMappingPoint()
+                    onClicked: function(mouse) {
+                        plusRipple.tap(mouse.x, mouse.y)
+                        addRouteMappingPoint()
+                    }
                 }
             }
 
             Rectangle {
+                id: addFieldButton
                 anchors.left: plusButton.right
                 anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.5
                 anchors.right: parent.right
@@ -2356,6 +2396,7 @@ Item {
                 opacity: _canCreateTakeoff ? 1.0 : 0.45
                 border.color: _taskSettingsVisible ? "#78d957" : "transparent"
                 border.width: _taskSettingsVisible ? 2 : 0
+                clip: true
 
                 QGCLabel {
                     id:addbtn
@@ -2365,11 +2406,20 @@ Item {
                     font.weight: Font.DemiBold
                 }
 
+                RippleEffect {
+                    id: addRipple
+                    rippleColor: Qt.rgba(0, 0, 0, 0.18)
+                    clipRadius: _actionButtonRadius
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     enabled: _canCreateTakeoff
                     cursorShape: _canCreateTakeoff ? Qt.PointingHandCursor : Qt.ForbiddenCursor
-                    onClicked: _root.onAddButtonClicked()
+                    onClicked: function(mouse) {
+                        addRipple.tap(mouse.x, mouse.y)
+                        _root.onAddButtonClicked()
+                    }
                 }
 
             }
@@ -2396,6 +2446,7 @@ Item {
                 radius: _actionButtonRadius
                 color: "white"
                 opacity: uploadEnabled ? 1.0 : 0.55
+                clip: true
 
                 Row {
                     id: routeUploadRow
@@ -2423,11 +2474,20 @@ Item {
                     }
                 }
 
+                RippleEffect {
+                    id: uploadRipple
+                    rippleColor: Qt.rgba(0, 0, 0, 0.18)
+                    clipRadius: _actionButtonRadius
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     enabled: routeUploadButton.uploadEnabled
                     cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: _root.uploadRouteMappingPlan()
+                    onClicked: function(mouse) {
+                        uploadRipple.tap(mouse.x, mouse.y)
+                        _root.uploadRouteMappingPlan()
+                    }
                     onPressed: routeUploadButton.scale = 0.96
                     onReleased: routeUploadButton.scale = 1.0
                     onCanceled: routeUploadButton.scale = 1.0
@@ -2440,6 +2500,7 @@ Item {
                 height: routeSaveButton.height
                 radius: _actionButtonRadius
                 color: "white"
+                clip: true
 
                 Row {
                     id: exitRow
@@ -2462,10 +2523,19 @@ Item {
                     }
                 }
 
+                RippleEffect {
+                    id: exitRipple
+                    rippleColor: Qt.rgba(0, 0, 0, 0.18)
+                    clipRadius: _actionButtonRadius
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: _root.exitRouteMappingPage()
+                    onClicked: function(mouse) {
+                        exitRipple.tap(mouse.x, mouse.y)
+                        _root.exitRouteMappingPage()
+                    }
                     onPressed: routeExitButton.scale = 0.96
                     onReleased: routeExitButton.scale = 1.0
                     onCanceled: routeExitButton.scale = 1.0
@@ -2479,6 +2549,7 @@ Item {
                 height: ScreenTools.defaultFontPixelHeight * 2
                 radius: _actionButtonRadius
                 color: "white"
+                clip: true
 
                 Row {
                     id: saveRow
@@ -2501,10 +2572,19 @@ Item {
                     }
                 }
 
+                RippleEffect {
+                    id: saveRipple
+                    rippleColor: Qt.rgba(0, 0, 0, 0.18)
+                    clipRadius: _actionButtonRadius
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     enabled: _surveyFinished || _canFinishRoute
-                    onClicked: _root.openSaveMappingTaskDialog()
+                    onClicked: function(mouse) {
+                        saveRipple.tap(mouse.x, mouse.y)
+                        _root.openSaveMappingTaskDialog()
+                    }
                 }
 
                 // Popup loader for "Saving Mapping Task" name entry dialog.
@@ -2566,10 +2646,17 @@ Item {
                     fillMode: Image.PreserveAspectFit
                 }
 
+                RippleEffect {
+                    id: logoRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: ScreenTools.defaultFontPixelWidth * 0.5
+                }
+
                 QGCMouseArea {
                     anchors.fill: parent
                     cursorShape: Qt.PointingHandCursor
-                    onClicked: {
+                    onClicked: function(mouse) {
+                        logoRipple.tap(mouse.x, mouse.y)
                         var point = shreeonLogoButton.mapToItem(mainWindow.contentItem, shreeonLogoButton.width / 2, shreeonLogoButton.height / 2)
                         mainWindow.showModeSelection(point)
                     }

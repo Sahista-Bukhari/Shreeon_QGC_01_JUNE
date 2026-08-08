@@ -119,9 +119,11 @@ Item {
                                                && mainWindow.activeMissionEditor === "customMission"
         readonly property real _panelRadius: ScreenTools.defaultFontPixelHeight * 0.55
         readonly property color _panelColor: _customMission
-                                             ? Qt.rgba(0.10, 0.12, 0.12, 0.58)
+                                             ? "#fbfbfb"
                                              : Qt.rgba(0.30, 0.32, 0.32, 0.78)
-        readonly property color _panelBorder: Qt.rgba(1, 1, 1, 0.32)
+        readonly property color _panelBorder: _customMission
+                                              ? "#e2e2e2"
+                                              : Qt.rgba(1, 1, 1, 0.32)
 
         Item {
             id: panelBody
@@ -131,23 +133,10 @@ Item {
 
             Rectangle {
                 anchors.fill: parent
-                visible: !dropDownItem._customMission
                 radius: dropDownItem._panelRadius
                 color: dropDownItem._panelColor
                 border.width: 1
                 border.color: dropDownItem._panelBorder
-            }
-
-            LiquidGlassSurface {
-                anchors.fill: parent
-                visible: dropDownItem._customMission
-                enableBlur: false
-                cornerRadius: dropDownItem._panelRadius
-                tintColor: Qt.rgba(0.10, 0.12, 0.12, 0.52)
-                rimColor: Qt.rgba(1, 1, 1, 0.38)
-                innerGlow: Qt.rgba(1, 1, 1, 0.12)
-                accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
-                showGlint: true
             }
         }
 

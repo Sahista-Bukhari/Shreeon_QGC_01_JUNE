@@ -86,7 +86,7 @@ Popup {
                                                && mainWindow
                                                && mainWindow.activeMissionEditor === "customMission"
         readonly property color _panelColor: _customMission
-                                             ? Qt.rgba(0.10, 0.12, 0.12, 0.72)
+                                             ? "#fbfbfb"
                                              : Qt.rgba(0.28, 0.30, 0.30, 0.78)
         readonly property real _panelRadius: ScreenTools.defaultFontPixelHeight / 2
 
@@ -98,23 +98,12 @@ Popup {
 
             Rectangle {
                 anchors.fill: parent
-                visible: !parent.parent._customMission
                 radius: parent.parent._panelRadius
                 color: parent.parent._panelColor
                 border.width: 1
-                border.color: Qt.rgba(1, 1, 1, 0.28)
-            }
-
-            LiquidGlassSurface {
-                anchors.fill: parent
-                visible: parent.parent._customMission
-                enableBlur: false
-                cornerRadius: parent.parent._panelRadius
-                tintColor: Qt.rgba(0.10, 0.12, 0.12, 0.68)
-                rimColor: Qt.rgba(1, 1, 1, 0.38)
-                innerGlow: Qt.rgba(1, 1, 1, 0.12)
-                accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
-                showGlint: true
+                border.color: parent.parent._customMission
+                              ? "#e2e2e2"
+                              : Qt.rgba(1, 1, 1, 0.28)
             }
         }
 

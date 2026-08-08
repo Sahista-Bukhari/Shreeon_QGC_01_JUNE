@@ -489,20 +489,17 @@ Item {
             property real _outerPad: ScreenTools.defaultFontPixelWidth * 1.1
             property real _cellGap: ScreenTools.defaultFontPixelWidth * 0.4
             property real _cellSize: (width - (_outerPad * 2) - _cellGap) / 2
-            // Match Mission Settings / PlanViewRightPanel liquid glass
-            readonly property real  _glassRadius: ScreenTools.defaultFontPixelWidth / 2
-            readonly property color _glassTint:   Qt.rgba(0.06, 0.10, 0.09, 0.34)
-            readonly property color _glassRim:    Qt.rgba(1, 1, 1, 0.32)
+            // Route Mapping Task Settings theme — keep strip layout, light chrome
+            readonly property real  _panelRadius: ScreenTools.defaultFontPixelWidth * 0.75
+            readonly property color _panelFill:   "#ffffff"
+            readonly property color _panelBorder: "#e2e2e2"
 
-            LiquidGlassSurface {
+            Rectangle {
                 anchors.fill: parent
-                backgroundSource: editorMap
-                cornerRadius: toolStrip._glassRadius
-                blurAmount: 20
-                tintColor: toolStrip._glassTint
-                rimColor: toolStrip._glassRim
-                accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
-                showGlint: false
+                radius: toolStrip._panelRadius
+                color: toolStrip._panelFill
+                border.width: 1
+                border.color: toolStrip._panelBorder
             }
 
             Binding {
@@ -730,9 +727,9 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
-            anchors.topMargin: planToolBar.height + _toolsMargin
-            anchors.bottomMargin: _toolsMargin
-            anchors.rightMargin: _toolsMargin
+            anchors.topMargin: planToolBar.height
+            anchors.bottomMargin: 0
+            anchors.rightMargin: 0
             width: _utmspEnabled ? _rightPanelWidth + ScreenTools.defaultFontPixelWidth * 21.667 : _rightPanelWidth
             planMasterController: _planMasterController
             editorMap: editorMap

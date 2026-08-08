@@ -65,11 +65,11 @@ Popup {
     property bool   _acceptAllowed:     acceptButton.visible
     property bool   _rejectAllowed:     rejectButton.visible
     property int    _previousValidationErrorCount: 0
-    readonly property bool _customMissionChrome: typeof mainWindow !== "undefined"
-                                                 && mainWindow.activeMissionEditor === "customMission"
+    // Custom Mission now shares Route Mapping white dialog chrome (no dark glass).
+    readonly property bool _customMissionChrome: false
 
     // Match RouteMappingTaskSettings light form colors on white popup surfaces.
-    readonly property color _accentGreen:            "#23a800"
+    readonly property color _accentGreen:            "#00a651"
     readonly property color _accentSoftGreen:        "#efffee"
     readonly property color _titleColor:             "#3f3f3f"
     readonly property color _bodyColor:              "#6a6a6a"

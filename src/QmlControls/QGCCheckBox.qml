@@ -17,12 +17,16 @@ CheckBox {
     }
 
     property color  textColor:              qgcPal.buttonText
-    property color  uncheckedBorderColor:   qgcPal.text
+    property color  uncheckedBorderColor:   _customMission ? "#00a651" : qgcPal.text
     property bool   textBold:               false
     property real   textFontPointSize:      ScreenTools.defaultFontPointSize
     property ButtonGroup buttonGroup: null
 
     property bool _noText: text === ""
+    readonly property bool _customMission: typeof mainWindow !== "undefined"
+                                           && mainWindow
+                                           && mainWindow.activeMissionEditor === "customMission"
+    readonly property color _accentGreen: "#00a651"
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
@@ -35,15 +39,13 @@ CheckBox {
     }
 
     contentItem: Text {
-        //implicitWidth:  _noText ? 0 : text.implicitWidth + ScreenTools.defaultFontPixelWidth * 0.25
-        //implicitHeight: _noText ? 0 : Math.max(text.implicitHeight, ScreenTools.checkBoxIndicatorSize)
         leftPadding:        control.indicator.width + control.spacing
         verticalAlignment:  Text.AlignVCenter
         text:               control.text
         font.pointSize:     textFontPointSize
         font.bold:          control.textBold
         font.family:        ScreenTools.normalFontFamily
-        color:              control.textColor
+        color:              control._customMission ? "#3f3f3f" : control.textColor
     }
 
     indicator:  Rectangle {
@@ -51,9 +53,9 @@ CheckBox {
         implicitHeight: implicitWidth
         x:              control.leftPadding
         y:              parent.height / 2 - height / 2
-        color:          control.checked ? qgcPal.colorGreen : "transparent"
-        border.color:   control.checked ? qgcPal.colorGreen : control.uncheckedBorderColor
-        border.width:   control.checked ? 0 : 1
+        color:          control.checked ? control._accentGreen : "transparent"
+        border.color:   control.checked ? control._accentGreen : control.uncheckedBorderColor
+        border.width:   control.checked ? 0 : 2
         radius:         ScreenTools.defaultBorderRadius / 2
         opacity:        control.checkedState === Qt.PartiallyChecked ? 0.5 : 1
 

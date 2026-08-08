@@ -11,13 +11,22 @@ import QGroundControl.FactControls
 /// Mission item edit control
 Rectangle {
     id:             _root
-    height:         _currentItem ? (editorLoader.y + editorLoader.height + _innerMargin) : (topRowLayout.y + topRowLayout.height + _margin)
+    height:         _currentItem
+                        ? (editorLoader.y + editorLoader.height + (_lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin))
+                        : (topRowLayout.y + topRowLayout.height + (_lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _margin))
     color:          "transparent"
     radius:         _radius
     opacity:        1.0
-    border.width:   1
-    border.color:   _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.85)
-                                 : (_readyForSave ? Qt.rgba(1, 1, 1, 0.28) : "#23a800")
+    // Light theme draws its own bordered card below so ListView clip can't eat the outline.
+    // Dark theme keeps the root border.
+    border.width:   _lightTheme ? 0 : 1
+    border.color: {
+        if (_lightTheme)
+            return "transparent"
+        return _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.85)
+                            : (_readyForSave ? Qt.rgba(1, 1, 1, 0.28) : "#23a800")
+    }
+    clip:           _lightTheme
 
     property var    map                 ///< Map control
     property var    masterController
@@ -31,7 +40,10 @@ Rectangle {
     property var    _masterController:          masterController
     property var    _missionController:         _masterController.missionController
     property bool   _currentItem:               missionItem.isCurrentItem
-    property color  _outerTextColor:            "#ffffff"
+    readonly property bool _lightTheme: typeof mainWindow !== "undefined"
+                                        && mainWindow
+                                        && mainWindow.activeMissionEditor === "customMission"
+    property color  _outerTextColor:            _lightTheme ? "#3f3f3f" : "#ffffff"
     property bool   _noMissionItemsAdded:       ListView.view.model.count === 1
     property real   _sectionSpacer:             ScreenTools.defaultFontPixelWidth / 2  // spacing between section headings
     property bool   _singleComplexItem:         _missionController.complexMissionItemNames.length === 1
@@ -40,18 +52,49 @@ Rectangle {
     readonly property real  _editFieldWidth:    Math.min(width - _innerMargin * 2, ScreenTools.defaultFontPixelWidth * 12)
     readonly property real  _margin:            ScreenTools.defaultFontPixelWidth * 0.7
     readonly property real  _innerMargin:       ScreenTools.defaultFontPixelWidth * 0.55
-    readonly property real  _radius:            ScreenTools.defaultFontPixelHeight * 0.55
+    readonly property real  _radius:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 0.75 : ScreenTools.defaultFontPixelHeight * 0.55
     readonly property real  _hamburgerSize:     commandPicker.height * 0.75
     readonly property real  _trashSize:         commandPicker.height * 0.75
     readonly property bool  _waypointsOnlyMode: QGroundControl.corePlugin.options.missionWaypointsOnly
+    readonly property color _cardBorderColor: {
+        if (!_lightTheme)
+            return "transparent"
+        if (_currentItem)
+            return "#00a651"
+        return _readyForSave ? "#e2e2e2" : "#00a651"
+    }
 
     QGCPalette {
         id: qgcPal
         colorGroupEnabled: enabled
     }
 
+    // Custom Mission: white fill + outline drawn above content so it can't be covered
+    Rectangle {
+        anchors.fill: parent
+        visible: _root._lightTheme
+        z: -1
+        radius: _root._radius
+        color: "#ffffff"
+        border.width: 0
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: _root._lightTheme
+        z: 100
+        radius: _root._radius
+        color: "transparent"
+        border.width: 1
+        border.color: _root._cardBorderColor
+        antialiasing: true
+        // Let clicks pass through to the card content underneath
+        enabled: false
+    }
+
     LiquidGlassSurface {
         anchors.fill: parent
+        visible: !_root._lightTheme
         cornerRadius: _root._radius
         blurAmount: 16
         tintColor: _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.22) : Qt.rgba(0.08, 0.10, 0.10, 0.55)
@@ -62,7 +105,9 @@ Rectangle {
 
     RippleEffect {
         id: itemRipple
-        rippleColor: Qt.rgba(1, 1, 1, 0.32)
+        rippleColor: _root._lightTheme
+                     ? (_currentItem ? Qt.rgba(0.0, 0.63, 0.30, 0.28) : Qt.rgba(0, 0, 0, 0.12))
+                     : Qt.rgba(1, 1, 1, 0.32)
         duration: 520
         clipRadius: _radius
     }
@@ -94,9 +139,10 @@ Rectangle {
 
     Row {
         id:                 topRowLayout
-        anchors.margins:    _margin
         anchors.left:       parent.left
         anchors.top:        parent.top
+        anchors.leftMargin: _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _margin
+        anchors.topMargin:  _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _margin
         spacing:            _margin
 
         Rectangle {
@@ -105,7 +151,7 @@ Rectangle {
             width:                  _hamburgerSize
             height:                 width
             border.width:           1
-            border.color:           "#23a800"
+            border.color:           "#00a651"
             color:                  "white"
             radius:                 width / 2
             visible:                !_readyForSave
@@ -115,7 +161,7 @@ Rectangle {
                 anchors.centerIn:   parent
                 //: Indicator in Plan view to show mission item is not ready for save/send
                 text:               qsTr("?")
-                color:              "#23a800"
+                color:              "#00a651"
                 font.pointSize:     ScreenTools.smallFontPointSize
             }
         }
@@ -129,7 +175,7 @@ Rectangle {
             fillMode:               Image.PreserveAspectFit
             mipmap:                 true
             smooth:                 true
-            color:                  "#ffffff"
+            color:                  _outerTextColor
             visible:                _currentItem && missionItem.sequenceNumber !== 0
             source:                 "/res/TrashDelete.svg"
 
@@ -278,7 +324,7 @@ Rectangle {
 
                     QGCLabel {
                         text:       qsTr("Item #%1").arg(missionItem.sequenceNumber)
-                        color:      "#ffffff"
+                        color:      _outerTextColor
                         enabled:    false
                     }
                 }
@@ -289,15 +335,17 @@ Rectangle {
 
     QGCColoredImage {
         id:                     hamburger
-        anchors.margins:        _margin
         anchors.right:          parent.right
+        anchors.rightMargin:    _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _margin
+        anchors.topMargin:      _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _margin
+        anchors.bottomMargin:   _margin
         anchors.verticalCenter: topRowLayout.verticalCenter
         width:                  _hamburgerSize
         height:                 _hamburgerSize
         sourceSize.height:      _hamburgerSize
         source:                 "qrc:/qmlimages/Hamburger.svg"
         visible:                missionItem.isCurrentItem && missionItem.sequenceNumber !== 0
-        color:                  "#ffffff"
+        color:                  _outerTextColor
 
         QGCMouseArea {
             fillItem:   hamburger
@@ -347,14 +395,17 @@ Rectangle {
 
     Loader {
         id:                 editorLoader
-        anchors.margins:    _innerMargin
         anchors.left:       parent.left
+        anchors.right:      parent.right
         anchors.top:        topRowLayout.bottom
+        anchors.leftMargin:  _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin
+        anchors.topMargin:   _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin
+        anchors.rightMargin: _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin
         source:             _currentItem ? missionItem.editorQml : ""
         asynchronous:       true
 
         property var    masterController:   _masterController
-        property real   availableWidth:     _root.width - (anchors.margins * 2) ///< How wide the editor should be
+        property real   availableWidth:     _root.width - anchors.leftMargin - anchors.rightMargin ///< How wide the editor should be
         property var    editorRoot:         _root
     }
 }

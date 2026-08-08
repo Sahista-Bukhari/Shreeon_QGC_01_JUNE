@@ -12,8 +12,10 @@ Rectangle {
     id:         _root
     height:     childrenRect.y + childrenRect.height + _margin
     width:      availableWidth
-    color:      _glassTheme ? "transparent" : qgcPal.windowShadeDark
+    color:      _glassTheme ? "#ffffff" : qgcPal.windowShadeDark
     radius:     _glassTheme ? ScreenTools.defaultFontPixelHeight * 0.55 : ScreenTools.defaultFontPixelWidth / 2
+    border.width: _glassTheme ? 1 : 0
+    border.color: _glassTheme ? "#e2e2e2" : "transparent"
 
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
                                         && mainWindow.activeMissionEditor === "customMission"
@@ -53,17 +55,6 @@ Rectangle {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
-    LiquidGlassSurface {
-        anchors.fill: parent
-        visible: _root._glassTheme
-        cornerRadius: _root.radius
-        blurAmount: 14
-        tintColor: Qt.rgba(0.12, 0.14, 0.14, 0.55)
-        rimColor: Qt.rgba(1, 1, 1, 0.18)
-        innerGlow: "transparent"
-        showGlint: false
-    }
-
     ColumnLayout {
         id:                 editorColumn
         anchors.margins:    _margin
@@ -77,7 +68,7 @@ Rectangle {
             wrapMode:               Text.WordWrap
             horizontalAlignment:    Text.AlignHCenter
             text:                   transectAreaDefinitionHelp
-            color:                  _glassTheme ? "#ffffff" : qgcPal.text
+            color:                  _glassTheme ? "#3f3f3f" : qgcPal.text
             visible:                !transectAreaDefinitionComplete || _missionItem.wizardMode
         }
 

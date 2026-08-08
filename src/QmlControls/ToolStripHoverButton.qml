@@ -34,9 +34,16 @@ Button {
                                            && mainWindow.activeMissionEditor === "customMission"
     property real imageScale:        forceImageScale11 && (text == "") ? 0.8 : 0.6
     property real contentMargins:    _customMission ? (innerText.height * 0.18) : (innerText.height * 0.1)
-    property color _currentContentColor:  _customMission
-                                          ? ((checked || pressed) ? "#ffffff" : Qt.rgba(1, 1, 1, enabled ? 0.92 : 0.45))
-                                          : ((checked || pressed) ? qgcPal.buttonHighlightText : qgcPal.windowTransparentText)
+
+    // Custom Mission: Route Mapping white/green. Other pages keep map-glass look.
+    property color _currentContentColor: {
+        if (_customMission) {
+            if (checked || pressed)
+                return "#ffffff"
+            return enabled ? "#3f3f3f" : Qt.rgba(0.25, 0.25, 0.25, 0.40)
+        }
+        return (checked || pressed) ? qgcPal.buttonHighlightText : qgcPal.windowTransparentText
+    }
     property color _currentContentColorSecondary:  (checked || pressed) ? qgcPal.windowTransparentText : qgcPal.buttonHighlight
 
     signal dropped(int index)
@@ -148,35 +155,45 @@ Button {
         id: buttonBkRect
         property real radius: ScreenTools.defaultFontPixelWidth / 2
 
+        // Custom Mission — white idle, gray hover, green selected
+        Rectangle {
+            anchors.fill: parent
+            visible: control._customMission
+            radius: buttonBkRect.radius
+            color: {
+                if (control.checked || control.pressed)
+                    return "#00a651"
+                if (control.enabled && control.hovered)
+                    return "#e8e8e8"
+                return "#ffffff"
+            }
+            border.width: 1
+            border.color: {
+                if (control.checked || control.pressed)
+                    return "#00a651"
+                return "#e2e2e2"
+            }
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on border.color { ColorAnimation { duration: 120 } }
+        }
+
+        // Other pages — map glass
         LiquidGlassSurface {
             anchors.fill: parent
+            visible: !control._customMission
             backgroundSource: control.glassBackgroundSource
             cornerRadius: buttonBkRect.radius
-            blurAmount: control._customMission ? 18 : 12
-            // Custom Mission: match Mission Settings panel glass
+            blurAmount: 12
             tintColor: {
-                if (control._customMission) {
-                    if (control.checked || control.pressed)
-                        return Qt.rgba(0.14, 0.66, 0.00, 0.38)
-                    if (control.enabled && control.hovered)
-                        return Qt.rgba(0.14, 0.66, 0.00, 0.28)
-                    return Qt.rgba(0.06, 0.10, 0.09, 0.40)
-                }
                 if (control.checked || control.pressed)
                     return Qt.rgba(0.14, 0.69, 0.36, 0.42)
                 if (control.enabled && control.hovered)
                     return Qt.rgba(1, 1, 1, 0.18)
                 return Qt.rgba(1, 1, 1, 0.10)
             }
-            rimColor: {
-                if (control._customMission) {
-                    if (control.checked || control.pressed || control.hovered)
-                        return Qt.rgba(0.55, 1.0, 0.72, 0.55)
-                    return Qt.rgba(1, 1, 1, 0.32)
-                }
-                return (control.checked || control.pressed || control.hovered)
-                       ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(1, 1, 1, 0.22)
-            }
+            rimColor: (control.checked || control.pressed || control.hovered)
+                      ? Qt.rgba(1, 1, 1, 0.40) : Qt.rgba(1, 1, 1, 0.22)
             accentColor: Qt.rgba(0.14, 0.69, 0.36, 0.08)
             showGlint: false
             pressed: control.pressed
@@ -184,7 +201,11 @@ Button {
 
         RippleEffect {
             id: stripRipple
-            rippleColor: Qt.rgba(1, 1, 1, 0.40)
+            rippleColor: control._customMission
+                         ? ((control.checked || control.pressed)
+                            ? Qt.rgba(1, 1, 1, 0.40)
+                            : Qt.rgba(0, 0, 0, 0.14))
+                         : Qt.rgba(1, 1, 1, 0.40)
             clipRadius: buttonBkRect.radius
         }
 

@@ -38,17 +38,33 @@ Item {
 
     QGCPalette { id: qgcPal }
 
+    readonly property bool  _customMission: typeof mainWindow !== "undefined"
+                                            && mainWindow
+                                            && mainWindow.activeMissionEditor === "customMission"
     readonly property real  _glassRadius: ScreenTools.defaultFontPixelHeight * 0.9
     readonly property color _glassTint:   Qt.rgba(0.06, 0.10, 0.09, 0.34)
     readonly property color _glassRim:    Qt.rgba(1, 1, 1, 0.32)
-    readonly property color _accentGreen: "#23a800"
+    readonly property color _accentGreen: "#00a651"
+    readonly property color _accentSoft:  "#e8e8e8"
+    readonly property color _panelFill:   "#ffffff"
     readonly property color _titleColor:  "#3f3f3f"
     readonly property color _cardBorder:  "#e2e2e2"
     readonly property real  _cardRadius:  ScreenTools.defaultFontPixelWidth * 0.75
 
+    // Custom Mission: flush square white panel (Task Settings style). Plan View keeps map glass.
+    Rectangle {
+        id: rightPanelSolid
+        anchors.fill: parent
+        visible: root._customMission
+        radius: 0
+        color: root._panelFill
+        border.width: 0
+    }
+
     LiquidGlassSurface {
         id:               rightPanelBackground
         anchors.fill:     parent
+        visible:          !root._customMission
         backgroundSource: editorMap
         cornerRadius:     root._glassRadius
         blurAmount:       20
@@ -59,29 +75,60 @@ Item {
     }
 
 
-    // Open/Close panel — wider Task Settings tab with liquid glass
+    // Open/Close — Custom Mission: Task Settings dark square + caret; Plan View: glass tab
     Item {
         id:                     panelOpenCloseButton
         anchors.right:          parent.left
         anchors.verticalCenter: parent.verticalCenter
-        width:                  toggleButtonRect.width - root._cardRadius
+        width:                  root._customMission ? toggleButtonRect.width : (toggleButtonRect.width - root._cardRadius)
         height:                 toggleButtonRect.height
-        clip:                   true
+        clip:                   !root._customMission
 
         property bool _expanded: root.anchors.right == root.parent.right
         readonly property bool _highlighted: toggleMouse.containsMouse || toggleMouse.pressed
 
         Item {
             id:             toggleButtonRect
-            width:          ScreenTools.defaultFontPixelWidth * 4.6
-            height:         ScreenTools.defaultFontPixelHeight * 4.2
+            width:          root._customMission
+                            ? ScreenTools.defaultFontPixelHeight * 3.1
+                            : ScreenTools.defaultFontPixelWidth * 4.6
+            height:         root._customMission
+                            ? ScreenTools.defaultFontPixelHeight * 5
+                            : ScreenTools.defaultFontPixelHeight * 4.2
 
+            // Custom Mission — Task Settings style dark translucent square handle
+            Rectangle {
+                anchors.fill: parent
+                visible: root._customMission
+                radius: 0
+                color: panelOpenCloseButton._highlighted
+                       ? Qt.rgba(0.12, 0.12, 0.14, 0.55)
+                       : Qt.rgba(0.12, 0.12, 0.14, 0.38)
+
+                Behavior on color { ColorAnimation { duration: 120 } }
+            }
+
+            Image {
+                anchors.centerIn: parent
+                visible: root._customMission
+                source: "/res/caret-left.png"
+                width: ScreenTools.defaultFontPixelHeight * 1.4
+                height: width
+                fillMode: Image.PreserveAspectFit
+                // Expanded (panel open on right): point right to close; collapsed: point left to open
+                rotation: panelOpenCloseButton._expanded ? 180 : 0
+                z: 1
+
+                Behavior on rotation { NumberAnimation { duration: 180 } }
+            }
+
+            // Plan View — rounded glass tab
             LiquidGlassSurface {
                 anchors.fill:     parent
+                visible:          !root._customMission
                 backgroundSource: editorMap
                 cornerRadius:     root._cardRadius * 1.4
                 blurAmount:       18
-                // Idle state matches Mission Settings panel glass so the tab doesn't look like a different chrome
                 tintColor:        panelOpenCloseButton._highlighted
                                   ? Qt.rgba(0.14, 0.66, 0.00, 0.32)
                                   : root._glassTint
@@ -96,6 +143,7 @@ Item {
             QGCLabel {
                 id:                 toggleButtonLabel
                 anchors.centerIn:   parent
+                visible:            !root._customMission
                 text:               panelOpenCloseButton._expanded ? ">" : "<"
                 color:              "white"
                 font.weight:        Font.DemiBold
@@ -108,8 +156,10 @@ Item {
             RippleEffect {
                 id: toggleRipple
                 z:  2
-                rippleColor: Qt.rgba(1, 1, 1, 0.42)
-                clipRadius: root._cardRadius * 1.4
+                rippleColor: root._customMission
+                             ? Qt.rgba(1, 1, 1, 0.35)
+                             : Qt.rgba(1, 1, 1, 0.42)
+                clipRadius: root._customMission ? 0 : root._cardRadius * 1.4
             }
         }
 
@@ -132,19 +182,21 @@ Item {
         }
     }
 
-    //-------------------------------------------------------
-    // Right Panel Controls
+    // Right panel content — solid or glass background depending on theme
     Item {
-        anchors.fill: rightPanelBackground
+        anchors.fill: root._customMission ? rightPanelSolid : rightPanelBackground
 
         DeadMouseArea {
             anchors.fill:   parent
         }
 
         ColumnLayout {
-            anchors.fill:       parent
-            anchors.margins:    ScreenTools.defaultFontPixelWidth * 0.55
-            spacing:            ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.fill:         parent
+            anchors.topMargin:    ScreenTools.defaultFontPixelWidth * (root._customMission ? 1.45 : 0.55)
+            anchors.bottomMargin: ScreenTools.defaultFontPixelWidth * (root._customMission ? 0.75 : 0.55)
+            anchors.leftMargin:   ScreenTools.defaultFontPixelWidth * (root._customMission ? 1.45 : 0.55)
+            anchors.rightMargin:  ScreenTools.defaultFontPixelWidth * (root._customMission ? 1.45 : 0.55)
+            spacing:              ScreenTools.defaultFontPixelHeight * 0.5
 
             QGCTabBar {
                 Layout.fillWidth: true
@@ -191,12 +243,19 @@ Item {
                     clip:               true
                     currentIndex:       _missionController.currentPlanViewSeqNum
                     highlightMoveDuration: 250
+                    // Keep a clear gap so the card border is never clipped on any side
+                    leftMargin:         root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                    rightMargin:        root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                    topMargin:          root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                    bottomMargin:       root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
 
                     delegate: MissionItemEditor {
                         map:                editorMap
                         masterController:   planMasterController
                         missionItem:        object
                         width:              missionItemEditorListView.width
+                                            - missionItemEditorListView.leftMargin
+                                            - missionItemEditorListView.rightMargin
                         readOnly:           false
 
                         onClicked: _missionController.setCurrentPlanViewSeqNum(object.sequenceNumber, false)

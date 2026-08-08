@@ -1,13 +1,26 @@
 import QtQuick
+import Qt5Compat.GraphicalEffects
 
 Item {
     id: root
     anchors.fill: parent
     z: 50
+    clip: clipRadius <= 0
 
     property color rippleColor: Qt.rgba(1, 1, 1, 0.38)
     property int duration: 460
     property real clipRadius: 0
+
+    layer.enabled: clipRadius > 0
+    layer.smooth: true
+    layer.effect: OpacityMask {
+        maskSource: Rectangle {
+            width: root.width
+            height: root.height
+            radius: root.clipRadius
+            color: "white"
+        }
+    }
 
     function tap(px, py) {
         var cx = (px === undefined || px < 0) ? width / 2 : px

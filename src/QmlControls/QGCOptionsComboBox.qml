@@ -20,15 +20,15 @@ ComboBox {
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
                                         && mainWindow.activeMissionEditor === "customMission"
 
-    Component.onCompleted: indicator.color = Qt.binding(function() { return _controlQGCPal.text })
+    Component.onCompleted: indicator.color = Qt.binding(function() { return control._glassTheme ? "#ffffff" : _controlQGCPal.text })
 
     background: Rectangle {
         implicitWidth:                  ScreenTools.implicitComboBoxWidth
         implicitHeight:                 ScreenTools.implicitComboBoxHeight
         radius:                         control._glassTheme ? height / 2 : 0
-        color:                          control._glassTheme ? Qt.rgba(1, 1, 1, 0.14) : _controlQGCPal.window
+        color:                          control._glassTheme ? "#00a651" : _controlQGCPal.window
         border.width:                   enabled ? 1 : 0
-        border.color:                   control._glassTheme ? Qt.rgba(1, 1, 1, 0.30) : "#999"
+        border.color:                   control._glassTheme ? "#00a651" : "#999"
     }
 
     /*! Adding the Combobox list item to the theme.  */

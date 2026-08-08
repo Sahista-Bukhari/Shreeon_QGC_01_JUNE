@@ -30,7 +30,7 @@ QGCPopupDialog {
 
             QGCLabel {
                 text: qsTr("Category:")
-                color: _glassTheme ? "#ffffff" : qgcPal.text
+                color: _glassTheme ? "#3f3f3f" : qgcPal.text
             }
 
             QGCComboBox {
@@ -61,24 +61,16 @@ QGCPopupDialog {
                 height: commandColumn.height + ScreenTools.defaultFontPixelHeight * (_glassTheme ? 1.15 : 1)
 
                 property var    mavCmdInfo: modelData
-                property color  textColor:  _glassTheme ? "#ffffff" : QGroundControl.globalPalette.buttonText
+                property color  textColor:  _glassTheme ? "#3f3f3f" : QGroundControl.globalPalette.buttonText
 
                 Rectangle {
                     anchors.fill: parent
-                    visible: !_glassTheme
-                    color: QGroundControl.globalPalette.button
-                }
-
-                LiquidGlassSurface {
-                    anchors.fill: parent
-                    visible: _glassTheme
-                    cornerRadius: _cardRadius
-                    blurAmount: 12
-                    tintColor: commandMouse.pressed ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(1, 1, 1, 0.14)
-                    rimColor: Qt.rgba(1, 1, 1, 0.32)
-                    innerGlow: "transparent"
-                    showGlint: false
-                    pressed: commandMouse.pressed
+                    radius: _glassTheme ? _cardRadius : 0
+                    color: _glassTheme
+                           ? (commandMouse.pressed ? "#efffee" : "#ffffff")
+                           : QGroundControl.globalPalette.button
+                    border.width: _glassTheme ? 1 : 0
+                    border.color: _glassTheme ? "#e2e2e2" : "transparent"
                 }
 
                 Column {
@@ -100,7 +92,7 @@ QGCPopupDialog {
                         anchors.right:      parent.right
                         text:               mavCmdInfo.description
                         wrapMode:           Text.WordWrap
-                        color:              _glassTheme ? Qt.rgba(1, 1, 1, 0.72) : textColor
+                        color:              _glassTheme ? "#6a6a6a" : textColor
                     }
                 }
 

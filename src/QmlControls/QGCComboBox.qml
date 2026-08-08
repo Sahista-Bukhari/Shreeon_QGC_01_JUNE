@@ -85,14 +85,20 @@ T.ComboBox {
         }
 
         background: Rectangle {
-            color:                  control.currentIndex === index ? "#00a04c" : qgcPal.button
+            color:                  control.currentIndex === index ? "#00a651" : qgcPal.button
         }
 
         highlighted:                control.highlightedIndex === index
     }
 
-    // Closed combo shows selected value in green + white text (like Medium option)
-    readonly property bool _selectedLook: qgcPal.globalTheme === QGCPalette.Light
+    // Closed combo: green idle, gray hover on Custom Mission / Light theme
+    readonly property bool _customMission: typeof mainWindow !== "undefined"
+                                           && mainWindow
+                                           && mainWindow.activeMissionEditor === "customMission"
+    readonly property bool _selectedLook: _customMission || qgcPal.globalTheme === QGCPalette.Light
+    readonly property color _accentGreen: "#00a651"
+    readonly property color _hoverGray: "#e8e8e8"
+    readonly property bool _hoverGrayLook: _selectedLook && control.enabled && control.hovered && !control.pressed
 
     // The label of the button
     contentItem: QGCLabel {
@@ -101,13 +107,27 @@ T.ComboBox {
         anchors.horizontalCenter:   centeredLabel ? parent.horizontalCenter : undefined
         text:                       control.alternateText === "" ? control.currentText : control.alternateText
         font:                       control.font
-        color:                      (_selectedLook || _showHighlight) ? "#ffffff" : qgcPal.buttonText
+        color: {
+            if (control._hoverGrayLook)
+                return "#3f3f3f"
+            if (control._selectedLook || control._showHighlight)
+                return "#ffffff"
+            return qgcPal.buttonText
+        }
     }
 
     background: Rectangle {
-        color:          _showHighlight || _selectedLook ? "#00a04c" : qgcPal.button
+        color: {
+            if (control._hoverGrayLook)
+                return control._hoverGray
+            if (control._showHighlight || control._selectedLook)
+                return control._accentGreen
+            return qgcPal.button
+        }
         border.width:   0
         radius:         ScreenTools.defaultBorderRadius * 2
+
+        Behavior on color { ColorAnimation { duration: 120 } }
     }
 
     indicator: QGCColoredImage {
@@ -117,7 +137,13 @@ T.ComboBox {
         height:                 ScreenTools.defaultFontPixelWidth * 1.1
         width:                  height
         source:                 "/qmlimages/arrow-down.png"
-        color:                  (_selectedLook || _showHighlight) ? "#ffffff" : qgcPal.buttonText
+        color: {
+            if (control._hoverGrayLook)
+                return "#3f3f3f"
+            if (control._selectedLook || control._showHighlight)
+                return "#ffffff"
+            return qgcPal.buttonText
+        }
     }
 
     popup: T.Popup {

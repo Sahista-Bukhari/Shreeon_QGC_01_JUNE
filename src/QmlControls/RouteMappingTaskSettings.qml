@@ -88,8 +88,8 @@ Rectangle {
 
     signal areaRouteSelected()
 
-    color:  "#fbfbfb"
-    radius: _radius
+    color:  "#ffffff"
+    radius: 0
     clip:   true
 
     // Slider writes are debounced while dragging so survey rebuilds are not
@@ -441,10 +441,13 @@ Rectangle {
 
     QGCFlickable {
         id: taskSettingsFlickable
-        anchors.fill:       parent
-        anchors.margins:    root._pad
-        contentWidth:       width
-        contentHeight:      taskSettingsColumn.implicitHeight
+        anchors.fill:         parent
+        anchors.topMargin:    root._pad * 1.55
+        anchors.bottomMargin: root._pad
+        anchors.leftMargin:   root._pad * 1.55
+        anchors.rightMargin:  root._pad * 1.55
+        contentWidth:         width
+        contentHeight:        taskSettingsColumn.implicitHeight
         clip:               true
 
         ColumnLayout {
@@ -550,10 +553,20 @@ Rectangle {
                         }
                     }
 
+                    RippleEffect {
+                        id: routeModeRipple
+                        rippleColor: root.routeMode === index
+                                     ? Qt.rgba(0.0, 0.63, 0.30, 0.28)
+                                     : Qt.rgba(0, 0, 0, 0.14)
+                        clipRadius: root._radius
+                    }
+
                     QGCMouseArea {
                         anchors.fill:   parent
                         enabled:        index === 0 || root.boundaryRouteEnabled
-                        onClicked: {
+                        cursorShape:    enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                        onClicked: function(mouse) {
+                            routeModeRipple.tap(mouse.x, mouse.y)
                             root.routeMode = index
                             if (index === 0) {
                                 root.areaRouteSelected()
@@ -620,12 +633,23 @@ Rectangle {
                     }
                 }
 
+                RippleEffect {
+                    id: spraySettingsRipple
+                    rippleColor: nozzleSprayHeader.highlighted
+                                 ? Qt.rgba(1, 1, 1, 0.40)
+                                 : Qt.rgba(0, 0, 0, 0.14)
+                    clipRadius: root._radius
+                }
+
                 QGCMouseArea {
                     id:           spraySettingsHeaderMouseArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
-                    onClicked:    root.spraySettingsExpanded = !root.spraySettingsExpanded
+                    onClicked: function(mouse) {
+                        spraySettingsRipple.tap(mouse.x, mouse.y)
+                        root.spraySettingsExpanded = !root.spraySettingsExpanded
+                    }
                 }
             }
 
@@ -745,10 +769,20 @@ Rectangle {
                                     font.pointSize:   ScreenTools.mediumFontPointSize
                                 }
 
+                                RippleEffect {
+                                    id: nozzleMinusRipple
+                                    rippleColor: Qt.rgba(0.90, 0.22, 0.21, 0.28)
+                                    clipRadius: root._radius * 0.7
+                                }
+
                                 QGCMouseArea {
                                     id:           nozzleMinusMouse
                                     anchors.fill: parent
-                                    onClicked:    root._nudgeRateFact(root._sprayNozRateFact, -1)
+                                    cursorShape:  Qt.PointingHandCursor
+                                    onClicked: function(mouse) {
+                                        nozzleMinusRipple.tap(mouse.x, mouse.y)
+                                        root._nudgeRateFact(root._sprayNozRateFact, -1)
+                                    }
                                 }
                             }
 
@@ -778,10 +812,20 @@ Rectangle {
                                     font.pointSize:   ScreenTools.mediumFontPointSize
                                 }
 
+                                RippleEffect {
+                                    id: nozzlePlusRipple
+                                    rippleColor: Qt.rgba(0.0, 0.63, 0.30, 0.28)
+                                    clipRadius: root._radius * 0.7
+                                }
+
                                 QGCMouseArea {
                                     id:           nozzlePlusMouse
                                     anchors.fill: parent
-                                    onClicked:    root._nudgeRateFact(root._sprayNozRateFact, 1)
+                                    cursorShape:  Qt.PointingHandCursor
+                                    onClicked: function(mouse) {
+                                        nozzlePlusRipple.tap(mouse.x, mouse.y)
+                                        root._nudgeRateFact(root._sprayNozRateFact, 1)
+                                    }
                                 }
                             }
                         }
@@ -859,10 +903,20 @@ Rectangle {
                                     font.pointSize:   ScreenTools.mediumFontPointSize
                                 }
 
+                                RippleEffect {
+                                    id: pumpMinusRipple
+                                    rippleColor: Qt.rgba(0.90, 0.22, 0.21, 0.28)
+                                    clipRadius: root._radius * 0.7
+                                }
+
                                 QGCMouseArea {
                                     id:           pumpMinusMouse
                                     anchors.fill: parent
-                                    onClicked:    root._nudgeRateFact(root._sprayPumpRateFact, -1)
+                                    cursorShape:  Qt.PointingHandCursor
+                                    onClicked: function(mouse) {
+                                        pumpMinusRipple.tap(mouse.x, mouse.y)
+                                        root._nudgeRateFact(root._sprayPumpRateFact, -1)
+                                    }
                                 }
                             }
 
@@ -892,10 +946,20 @@ Rectangle {
                                     font.pointSize:   ScreenTools.mediumFontPointSize
                                 }
 
+                                RippleEffect {
+                                    id: pumpPlusRipple
+                                    rippleColor: Qt.rgba(0.0, 0.63, 0.30, 0.28)
+                                    clipRadius: root._radius * 0.7
+                                }
+
                                 QGCMouseArea {
                                     id:           pumpPlusMouse
                                     anchors.fill: parent
-                                    onClicked:    root._nudgeRateFact(root._sprayPumpRateFact, 1)
+                                    cursorShape:  Qt.PointingHandCursor
+                                    onClicked: function(mouse) {
+                                        pumpPlusRipple.tap(mouse.x, mouse.y)
+                                        root._nudgeRateFact(root._sprayPumpRateFact, 1)
+                                    }
                                 }
                             }
                         }
@@ -936,9 +1000,19 @@ Rectangle {
                             font.weight:        Font.Medium
                         }
 
+                        RippleEffect {
+                            id: resolutionRipple
+                            rippleColor: root.resolution === index
+                                         ? Qt.rgba(1, 1, 1, 0.40)
+                                         : Qt.rgba(0, 0, 0, 0.14)
+                            clipRadius: root._radius
+                        }
+
                         QGCMouseArea {
                             anchors.fill: parent
-                            onClicked: {
+                            cursorShape:  Qt.PointingHandCursor
+                            onClicked: function(mouse) {
+                                resolutionRipple.tap(mouse.x, mouse.y)
                                 root.resolution = index
                                 root.applyResolutionPreset()
                             }
@@ -1004,12 +1078,23 @@ Rectangle {
                     }
                 }
 
+                RippleEffect {
+                    id: sprayPatternRipple
+                    rippleColor: sprayPatternHeader.highlighted
+                                 ? Qt.rgba(1, 1, 1, 0.40)
+                                 : Qt.rgba(0, 0, 0, 0.14)
+                    clipRadius: root._radius
+                }
+
                 QGCMouseArea {
                     id:           sprayPatternHeaderMouseArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
-                    onClicked:    root.sprayPatternExpanded = !root.sprayPatternExpanded
+                    onClicked: function(mouse) {
+                        sprayPatternRipple.tap(mouse.x, mouse.y)
+                        root.sprayPatternExpanded = !root.sprayPatternExpanded
+                    }
                 }
             }
             // Survey-only parameters. Altitude changes survey waypoint heights;
@@ -1218,12 +1303,19 @@ Rectangle {
                     font.weight:      Font.Medium
                 }
 
+                RippleEffect {
+                    id: rotateEntryRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.42)
+                    clipRadius: root._radius
+                }
+
                 QGCMouseArea {
                     id:           rotateEntryMouseArea
                     anchors.fill: parent
                     enabled:      parent.enabled
                     cursorShape:  enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
-                    onClicked: {
+                    onClicked: function(mouse) {
+                        rotateEntryRipple.tap(mouse.x, mouse.y)
                         if (root.surveyItem) {
                             root.surveyItem.rotateEntryPoint()
                         }
@@ -1286,12 +1378,23 @@ Rectangle {
                     }
                 }
 
+                RippleEffect {
+                    id: missionHeaderRipple
+                    rippleColor: takeoffHeader.highlighted
+                                 ? Qt.rgba(1, 1, 1, 0.40)
+                                 : Qt.rgba(0, 0, 0, 0.14)
+                    clipRadius: root._radius
+                }
+
                 QGCMouseArea {
                     id:           missionHeaderMouseArea
                     anchors.fill: parent
                     hoverEnabled: true
                     cursorShape:  Qt.PointingHandCursor
-                    onClicked:    root.missionExpanded = !root.missionExpanded
+                    onClicked: function(mouse) {
+                        missionHeaderRipple.tap(mouse.x, mouse.y)
+                        root.missionExpanded = !root.missionExpanded
+                    }
                 }
             }
 
@@ -1405,9 +1508,21 @@ Rectangle {
                             font.weight:      Font.Medium
                         }
 
+                        RippleEffect {
+                            id: resumeExactRipple
+                            rippleColor: (root._misResumeExactEnabled === modelData.enabledValue)
+                                         ? Qt.rgba(1, 1, 1, 0.40)
+                                         : Qt.rgba(0, 0, 0, 0.14)
+                            clipRadius: root._radius
+                        }
+
                         QGCMouseArea {
                             anchors.fill: parent
-                            onClicked:    root._setEnableDisableFact(root._misResumeExactFact, modelData.enabledValue)
+                            cursorShape:  Qt.PointingHandCursor
+                            onClicked: function(mouse) {
+                                resumeExactRipple.tap(mouse.x, mouse.y)
+                                root._setEnableDisableFact(root._misResumeExactFact, modelData.enabledValue)
+                            }
                         }
                     }
                 }

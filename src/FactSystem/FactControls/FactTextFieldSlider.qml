@@ -28,7 +28,13 @@ Rectangle {
 
     property bool _loadComplete:            false
     property bool _showSlider:              fact && fact.userMin !== undefined && fact.userMax !== undefined
-    property color _ftfsBackgroundColor:    Qt.rgba(qgcPal.windowShadeLight.r, qgcPal.windowShadeLight.g, qgcPal.windowShadeLight.b, 0.2)
+    readonly property bool _customMission:  typeof mainWindow !== "undefined"
+                                            && mainWindow
+                                            && mainWindow.activeMissionEditor === "customMission"
+    // Custom Mission: neutral grey inner sections (not soft green)
+    property color _ftfsBackgroundColor:    _customMission
+                                            ? "#f0f0f0"
+                                            : Qt.rgba(qgcPal.windowShadeLight.r, qgcPal.windowShadeLight.g, qgcPal.windowShadeLight.b, 0.2)
 
     function updateSliderToClampedValue() {
         if (!_showSlider || !sliderLoader.item || !control.fact) {
@@ -109,6 +115,7 @@ Rectangle {
                 from:                   control.fact.userMin
                 to:                     control.fact.userMax
                 showBoundaryValues:     true
+                activeColor:            "#00a651"
                 barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.10)
                 handleRadius:           ScreenTools.defaultFontPixelHeight * 0.38
                 live:                   true

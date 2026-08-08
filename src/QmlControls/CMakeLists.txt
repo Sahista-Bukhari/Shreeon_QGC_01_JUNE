@@ -262,6 +262,7 @@ qt_add_qml_module(QGroundControlControlsModule
     QML_FILES UserManualViewer.qml
     QML_FILES LiquidGlassSurface.qml
     QML_FILES RippleEffect.qml
+    QML_FILES CustomMissionTheme.qml
     QML_FILES MissionStatusToolButton.qml
 )
 

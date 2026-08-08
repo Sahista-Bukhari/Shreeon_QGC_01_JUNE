@@ -29,11 +29,8 @@ QGCPopupDialog {
             Layout.fillWidth:       true
             wrapMode:               Text.WordWrap
             horizontalAlignment:    Text.AlignHCenter
-            // White on Custom Mission glass dialogs; dark on white dialogs elsewhere
-            color:                  (typeof mainWindow !== "undefined"
-                                     && mainWindow
-                                     && mainWindow.activeMissionEditor === "customMission")
-                                    ? "#ffffff" : "#3f3f3f"
+            // Always dark text — dialogs use white Route Mapping chrome
+            color:                  "#3f3f3f"
         }
     }
 }
