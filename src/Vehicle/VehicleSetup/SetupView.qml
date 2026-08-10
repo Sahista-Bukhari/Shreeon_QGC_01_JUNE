@@ -28,7 +28,9 @@ Rectangle {
     readonly property color _dividerColor:      _darkTheme ? qgcPal.windowShade : "#f6f6f6"
     readonly property color _accentGreen:       "#00a04c"
     readonly property color _rowPressed:        _darkTheme ? qgcPal.windowShade : "#F2F2F2"
-    readonly property real  _horizontalPad:     Math.max(ScreenTools.defaultFontPixelWidth * 8, width * 0.12)
+    // Half-screen panel: tighter gutters so list + detail pages use the width well
+    readonly property real  _horizontalPad:     Math.max(ScreenTools.defaultFontPixelWidth * 2.5, width * 0.06)
+    readonly property real  _headerIconPad:     ScreenTools.defaultFontPixelWidth * 1.2
     readonly property real  _rowHeight:         ScreenTools.defaultFontPixelHeight * 3.2
     readonly property real  _headerHeight:      ScreenTools.toolbarHeight
 
@@ -154,18 +156,33 @@ Rectangle {
             anchors.rightMargin:    setupView._horizontalPad
             spacing:                ScreenTools.defaultFontPixelWidth * 1.5
 
-            QGCColoredImage {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.35
-                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.35
+            Item {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 2.2
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.2
                 Layout.alignment:       Qt.AlignVCenter
-                source:                 rowRoot.iconSource
-                color:                  rowRoot.setupComplete ? setupView._accentGreen : "#E53935"
                 visible:                rowRoot.iconSource !== ""
-                fillMode:               Image.PreserveAspectFit
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius:       width / 2
+                    color:        rowRoot.setupComplete
+                                  ? Qt.rgba(0, 160 / 255, 76 / 255, 0.12)
+                                  : Qt.rgba(229 / 255, 57 / 255, 53 / 255, 0.12)
+                }
+
+                QGCColoredImage {
+                    anchors.centerIn:   parent
+                    width:              parent.width * 0.52
+                    height:             width
+                    source:             rowRoot.iconSource
+                    color:              rowRoot.setupComplete ? setupView._accentGreen : "#E53935"
+                    fillMode:           Image.PreserveAspectFit
+                }
             }
 
             QGCLabel {
                 Layout.fillWidth:   true
+                Layout.alignment:   Qt.AlignVCenter
                 text:               rowRoot.label
                 color:              setupView._titleColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
@@ -175,12 +192,14 @@ Rectangle {
             Rectangle {
                 Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.55
                 Layout.preferredHeight: Layout.preferredWidth
+                Layout.alignment:       Qt.AlignVCenter
                 radius:                 width / 2
                 color:                  "#E53935"
                 visible:                !rowRoot.setupComplete
             }
 
             QGCLabel {
+                Layout.alignment:   Qt.AlignVCenter
                 visible:            rowRoot.showChevron
                 text:               "›"
                 color:              setupView._secondaryText
@@ -231,7 +250,7 @@ Rectangle {
                 Item {
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.rightMargin:    setupView._horizontalPad
+                    anchors.rightMargin:    setupView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
 
@@ -373,12 +392,12 @@ Rectangle {
                 color:          setupView._pageBackground
                 z:              20
 
-                // Back — return to Vehicle Configuration list
+                // Back — far left edge
                 Item {
                     id:                     backButton
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin:     setupView._horizontalPad
+                    anchors.leftMargin:     setupView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
                     z:                      21
@@ -409,7 +428,7 @@ Rectangle {
                 QGCLabel {
                     anchors.centerIn:       parent
                     width:                  parent.width - (backButton.width + closeButton.width
-                                                           + setupView._horizontalPad * 2
+                                                           + setupView._headerIconPad * 2
                                                            + ScreenTools.defaultFontPixelWidth * 2)
                     horizontalAlignment:    Text.AlignHCenter
                     elide:                  Text.ElideRight
@@ -423,7 +442,7 @@ Rectangle {
                     id:                     closeButton
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.rightMargin:    setupView._horizontalPad
+                    anchors.rightMargin:    setupView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
                     z:                      21
@@ -461,7 +480,10 @@ Rectangle {
                 anchors.right:          parent.right
                 anchors.top:            detailHeader.bottom
                 anchors.bottom:         parent.bottom
-                anchors.margins:        ScreenTools.defaultFontPixelWidth
+                anchors.leftMargin:     setupView._horizontalPad * 0.5
+                anchors.rightMargin:    setupView._horizontalPad * 0.5
+                anchors.topMargin:      ScreenTools.defaultFontPixelHeight * 0.35
+                anchors.bottomMargin:   ScreenTools.defaultFontPixelHeight * 0.35
                 z:                      1
 
                 property var vehicleComponent: detailRoot.vehicleComponent
@@ -474,6 +496,12 @@ Rectangle {
                     } else if (detailRoot.pageSource !== "") {
                         source = detailRoot.pageSource
                     }
+                }
+
+                onWidthChanged: {
+                    // Let Flow / Grid pages reflow when the half-panel width settles
+                    if (item && typeof item.computeSummaryBoxSize === "function")
+                        item.computeSummaryBoxSize()
                 }
             }
         }

@@ -689,7 +689,7 @@ ApplicationWindow {
                     })
     }
 
-    function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav, hideToolbar) {
+    function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav, hideToolbar, halfWidth) {
         toolDrawer.backIcon         = flyView.visible ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
         toolDrawer.toolTitle        = toolTitle
         toolDrawer.toolSource       = toolSource
@@ -698,6 +698,7 @@ ApplicationWindow {
         toolDrawer.centeredTitle    = fromFlyViewBackNav === true
         toolDrawer.returnToFlyView  = fromFlyViewBackNav === true && flyView.visible
         toolDrawer.hideToolbar      = hideToolbar === true
+        toolDrawer.halfWidth        = halfWidth === true
         toolDrawer.visible          = true
         applyUiTheme()
     }
@@ -707,8 +708,8 @@ ApplicationWindow {
     }
 
     function showVehicleConfig(fromFlyViewBackNav) {
-        // Vehicle Config provides its own header + close control (same as Application Settings)
-        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true)
+        // Half of main screen; SetupView provides its own header + close
+        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true, true)
     }
 
     function showVehicleConfigParametersPage() {
@@ -927,13 +928,11 @@ ApplicationWindow {
         }
     }
 
-    Rectangle {
+    Item {
         id:             toolDrawer
         anchors.fill:   parent
         visible:        false
-        color:          hideToolbar
-                        ? (mainWindow.uiThemeMode === mainWindow.themeBlack ? qgcPal.window : "white")
-                        : qgcPal.window
+        z:              QGroundControl.zOrderTopMost + 1
 
         property var backIcon
         property string toolTitle
@@ -943,6 +942,8 @@ ApplicationWindow {
         property bool centeredTitle:    false
         property bool returnToFlyView:  false
         property bool hideToolbar:      false
+        // Vehicle Config (and similar): occupy right half of the main window
+        property bool halfWidth:        false
 
         onVisibleChanged: {
             if (!toolDrawer.visible) {
@@ -951,92 +952,118 @@ ApplicationWindow {
                 centeredTitle = false
                 returnToFlyView = false
                 hideToolbar = false
+                halfWidth = false
                 mainWindow.applyUiTheme()
             }
         }
 
-        // This need to block click event leakage to underlying map.
-        DeadMouseArea {
+        // Dimmed area over the other half — click closes the panel
+        Rectangle {
             anchors.fill: parent
+            visible:      toolDrawer.halfWidth
+            color:        Qt.rgba(0, 0, 0, 0.35)
+            z:            0
+
+            MouseArea {
+                anchors.fill: parent
+                onClicked:    toolDrawer.visible = false
+            }
         }
 
         Rectangle {
-            id:             toolDrawerToolbar
-            anchors.left:   parent.left
-            anchors.right:  parent.right
-            anchors.top:    parent.top
-            height:         toolDrawer.hideToolbar ? 0 : ScreenTools.toolbarHeight
-            visible:        !toolDrawer.hideToolbar
-            color: Qt.rgba(0, 0, 0, 0.35)
+            id:                 toolDrawerPanel
+            anchors.top:        parent.top
+            anchors.bottom:     parent.bottom
+            anchors.right:      parent.right
+            width:              toolDrawer.halfWidth ? Math.round(parent.width * 0.5) : parent.width
+            color:              toolDrawer.hideToolbar
+                                ? (mainWindow.uiThemeMode === mainWindow.themeBlack ? qgcPal.window : "white")
+                                : qgcPal.window
+            z:                  1
 
-            QGCToolBarButton {
-                id:                 backButton
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth
-                anchors.left:       parent.left
-                anchors.top:        parent.top
-                anchors.bottom:     parent.bottom
-                visible:            toolDrawer.showBackButton
-                icon.source:        "/res/chevron-double-left.svg"
-                iconSize:           ScreenTools.smallFontPixelHeight * 1.6
-                onClicked: {
-                    if (toolDrawer.returnToFlyView) {
-                        mainWindow.showFlyView()
-                    } else if (toolDrawer.showBackButton) {
-                        // Return to the mission editor page that opened Vehicle Config / Analyze
-                        mainWindow.showActiveMissionEditor(false)
-                    } else {
-                        mainWindow.showPlanView()
-                    }
-                }
+            // Block clicks from reaching the map under the panel
+            DeadMouseArea {
+                anchors.fill: parent
             }
 
-            QGCLabel {
-                id:                     toolbarDrawerCenteredText
-                anchors.centerIn:       parent
-                visible:                toolDrawer.centeredTitle
-                text:                   toolDrawer.toolTitle
-                font.pointSize:         ScreenTools.largeFontPointSize
-            }
-
-            RowLayout {
-                id:                 toolDrawerToolbarLayout
-                anchors.leftMargin: ScreenTools.defaultFontPixelWidth
-                anchors.left:       parent.left
-                anchors.top:        parent.top
-                anchors.bottom:     parent.bottom
-                spacing:            ScreenTools.defaultFontPixelWidth
-                visible:            !toolDrawer.centeredTitle
+            Rectangle {
+                id:             toolDrawerToolbar
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.top:    parent.top
+                height:         toolDrawer.hideToolbar ? 0 : ScreenTools.toolbarHeight
+                visible:        !toolDrawer.hideToolbar
+                color: Qt.rgba(0, 0, 0, 0.35)
 
                 QGCToolBarButton {
-                    id: qgcButton
-                    height: parent.height
-                    icon.source: "/res/QGCLogoFull.svg"
-                    logo: true
+                    id:                 backButton
+                    anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+                    anchors.left:       parent.left
+                    anchors.top:        parent.top
+                    anchors.bottom:     parent.bottom
+                    visible:            toolDrawer.showBackButton
+                    icon.source:        "/res/chevron-double-left.svg"
+                    iconSize:           ScreenTools.smallFontPixelHeight * 1.6
                     onClicked: {
-                        var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
-                        mainWindow.showModeSelection(point)
+                        if (toolDrawer.returnToFlyView) {
+                            mainWindow.showFlyView()
+                        } else if (toolDrawer.showBackButton) {
+                            // Return to the mission editor page that opened Vehicle Config / Analyze
+                            mainWindow.showActiveMissionEditor(false)
+                        } else {
+                            mainWindow.showPlanView()
+                        }
                     }
                 }
 
                 QGCLabel {
-                    id:             toolbarDrawerText
-                    text:           toolDrawer.toolTitle
-                    font.pointSize: ScreenTools.largeFontPointSize
+                    id:                     toolbarDrawerCenteredText
+                    anchors.centerIn:       parent
+                    visible:                toolDrawer.centeredTitle
+                    text:                   toolDrawer.toolTitle
+                    font.pointSize:         ScreenTools.largeFontPointSize
+                }
+
+                RowLayout {
+                    id:                 toolDrawerToolbarLayout
+                    anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+                    anchors.left:       parent.left
+                    anchors.top:        parent.top
+                    anchors.bottom:     parent.bottom
+                    spacing:            ScreenTools.defaultFontPixelWidth
+                    visible:            !toolDrawer.centeredTitle
+
+                    QGCToolBarButton {
+                        id: qgcButton
+                        height: parent.height
+                        icon.source: "/res/QGCLogoFull.svg"
+                        logo: true
+                        onClicked: {
+                            var point = qgcButton.mapToItem(mainWindow.contentItem, qgcButton.width / 2, qgcButton.height / 2)
+                            mainWindow.showModeSelection(point)
+                        }
+                    }
+
+                    QGCLabel {
+                        id:             toolbarDrawerText
+                        text:           toolDrawer.toolTitle
+                        font.pointSize: ScreenTools.largeFontPointSize
+                    }
                 }
             }
-        }
 
-        Loader {
-            id:             toolDrawerLoader
-            anchors.left:   parent.left
-            anchors.right:  parent.right
-            anchors.top:    toolDrawerToolbar.bottom
-            anchors.bottom: parent.bottom
+            Loader {
+                id:             toolDrawerLoader
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.top:    toolDrawerToolbar.bottom
+                anchors.bottom: parent.bottom
 
-            Connections {
-                target:                 toolDrawerLoader.item
-                ignoreUnknownSignals:   true
-                function onPopout() { toolDrawer.visible = false }
+                Connections {
+                    target:                 toolDrawerLoader.item
+                    ignoreUnknownSignals:   true
+                    function onPopout() { toolDrawer.visible = false }
+                }
             }
         }
     }

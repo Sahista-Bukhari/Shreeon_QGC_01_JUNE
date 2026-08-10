@@ -309,11 +309,29 @@ Item {
         id: toolbarComponent
 
         PlanEditToolbar {
-            anchors.horizontalCenter:       mapControl.left
-            anchors.horizontalCenterOffset: mapControl.centerViewport.left + (mapControl.centerViewport.width / 2)
-            y:                              mapControl.centerViewport.top
-            z:                              QGroundControl.zOrderMapItems + 2
-            availableWidth:                 mapControl.centerViewport.width
+            // Custom Mission: second row under Open/Save/Upload/Clear. Else: centered.
+            x: {
+                if (mapControl.planEditToolbarSecondRow === true
+                        && typeof mapControl.planEditToolbarX === "number") {
+                    return mapControl.planEditToolbarX
+                }
+                if (mapControl.planEditToolbarAlignLeft === true) {
+                    return mapControl.centerViewport.left
+                }
+                return mapControl.centerViewport.left + (mapControl.centerViewport.width / 2) - (width / 2)
+            }
+            y: {
+                if (mapControl.planEditToolbarSecondRow === true
+                        && typeof mapControl.planEditToolbarY === "number") {
+                    return mapControl.planEditToolbarY
+                }
+                return mapControl.centerViewport.top
+            }
+            z: QGroundControl.zOrderMapItems + 2
+            availableWidth: mapControl.planEditToolbarSecondRow === true
+                            ? Math.max(ScreenTools.defaultFontPixelWidth * 40,
+                                       mapControl.width - x - (typeof mapControl._rightToolWidth === "number" ? mapControl._rightToolWidth : 0) - ScreenTools.defaultFontPixelWidth)
+                            : mapControl.centerViewport.width
 
             QGCButton {
                 compact:            true

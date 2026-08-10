@@ -48,11 +48,16 @@ Button {
                 if (button.checked || button.pressed)
                     return "#00a651"
                 if (button.hovered)
-                    return "#e8e8e8"
-                return Qt.rgba(1, 1, 1, 0.92)
+                    return Qt.rgba(0.18, 0.18, 0.18, 0.72)
+                // Match PlanViewToolBar dark translucent chrome
+                return Qt.rgba(0.12, 0.12, 0.14, 0.55)
             }
             border.width: 1
-            border.color: (button.checked || button.pressed) ? "#00a651" : "#e2e2e2"
+            border.color: {
+                if (button.checked || button.pressed)
+                    return "#00a651"
+                return Qt.rgba(1, 1, 1, 0.28)
+            }
 
             Behavior on color { ColorAnimation { duration: 120 } }
         }
@@ -60,9 +65,7 @@ Button {
         RippleEffect {
             id: toolbarRipple
             rippleColor: button._customMission
-                         ? ((button.checked || button.pressed)
-                            ? Qt.rgba(1, 1, 1, 0.40)
-                            : Qt.rgba(0, 0, 0, 0.14))
+                         ? Qt.rgba(1, 1, 1, 0.35)
                          : Qt.rgba(0, 0, 0, 0.16)
             clipRadius: height / 2
         }
@@ -91,7 +94,7 @@ Button {
                 if (button._customMission) {
                     if (button.checked || button.pressed)
                         return "#ffffff"
-                    return "#3f3f3f"
+                    return "#ffffff"
                 }
                 return button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText
             }
@@ -106,7 +109,7 @@ Button {
                 if (button._customMission) {
                     if (button.checked || button.pressed)
                         return "#ffffff"
-                    return "#3f3f3f"
+                    return "#ffffff"
                 }
                 return button.checked ? qgcPal.buttonHighlightText : qgcPal.buttonText
             }

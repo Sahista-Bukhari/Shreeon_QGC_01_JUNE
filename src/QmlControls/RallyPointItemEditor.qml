@@ -18,9 +18,10 @@ Rectangle {
     border.width: 1
     border.color: {
         if (_lightTheme)
-            return _currentItem ? "#00a651" : "#e2e2e2"
+            return _currentItem ? "#c8c8c8" : "#e2e2e2"
         return _currentItem ? Qt.rgba(0.14, 0.69, 0.36, 0.85) : Qt.rgba(1, 1, 1, 0.28)
     }
+    antialiasing: !_lightTheme
 
     signal clicked()
 
@@ -66,6 +67,8 @@ Rectangle {
             anchors.verticalCenter: parent.verticalCenter
             text:                   qsTr("Rally Point")
             color:                  _outerTextColor
+            font.weight:            _lightTheme ? Font.Medium : Font.Normal
+            font.pointSize:         ScreenTools.defaultFontPointSize
         }
 
         QGCColoredImage {

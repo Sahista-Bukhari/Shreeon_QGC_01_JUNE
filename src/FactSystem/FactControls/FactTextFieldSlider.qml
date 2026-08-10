@@ -22,7 +22,7 @@ Rectangle {
     signal enableCheckboxClicked
 
     id:             control
-    implicitHeight: mainLayout.implicitHeight
+    implicitHeight: mainLayout.implicitHeight + (_innerPad * 2)
     color:          backgroundColor
     radius:         ScreenTools.defaultBorderRadius
 
@@ -31,10 +31,16 @@ Rectangle {
     readonly property bool _customMission:  typeof mainWindow !== "undefined"
                                             && mainWindow
                                             && mainWindow.activeMissionEditor === "customMission"
-    // Custom Mission: neutral grey inner sections (not soft green)
-    property color _ftfsBackgroundColor:    _customMission
+    readonly property bool _lightTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode !== mainWindow.themeBlack
+        return qgcPal.globalTheme === QGCPalette.Light
+    }
+    // Light / white pages: solid grey band; keep soft tint only for dark theme
+    property color _ftfsBackgroundColor:    _lightTheme
                                             ? "#f0f0f0"
                                             : Qt.rgba(qgcPal.windowShadeLight.r, qgcPal.windowShadeLight.g, qgcPal.windowShadeLight.b, 0.2)
+    readonly property real _innerPad:       ScreenTools.defaultFontPixelWidth * 1.15
 
     function updateSliderToClampedValue() {
         if (!_showSlider || !sliderLoader.item || !control.fact) {
@@ -71,9 +77,15 @@ Rectangle {
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
     ColumnLayout {
-        id:         mainLayout
-        width:      parent.width
-        spacing:    0
+        id:                 mainLayout
+        anchors.left:       parent.left
+        anchors.right:      parent.right
+        anchors.top:        parent.top
+        anchors.leftMargin: control._innerPad
+        anchors.rightMargin: control._innerPad
+        anchors.topMargin:  control._innerPad
+        anchors.bottomMargin: control._innerPad
+        spacing:            ScreenTools.defaultFontPixelHeight * 0.35
 
         RowLayout {
             spacing: ScreenTools.defaultFontPixelWidth

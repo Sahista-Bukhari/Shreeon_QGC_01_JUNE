@@ -10,7 +10,8 @@ Rectangle {
     radius: _radius
     color:  _lightTheme ? "#ffffff" : Qt.rgba(0.14, 0.69, 0.36, 0.22)
     border.width: 1
-    border.color: _lightTheme ? "#00a651" : Qt.rgba(0.14, 0.69, 0.36, 0.85)
+    border.color: _lightTheme ? "#c8c8c8" : Qt.rgba(0.14, 0.69, 0.36, 0.85)
+    antialiasing: !_lightTheme
 
     property var controller ///< RallyPointController
 
@@ -28,10 +29,13 @@ Rectangle {
         id:                 editorLabel
         anchors.margins:    _margin
         anchors.left:       parent.left
+        anchors.right:      parent.right
         anchors.top:        parent.top
         text:               qsTr("Rally Points")
         color:              outerEditorRect._titleColor
-        font.weight:        Font.DemiBold
+        font.weight:        Font.Medium
+        font.pointSize:     _lightTheme ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
+        horizontalAlignment: Text.AlignLeft
     }
 
     Rectangle {

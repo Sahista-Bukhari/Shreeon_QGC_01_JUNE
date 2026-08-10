@@ -35,6 +35,8 @@ Rectangle {
     readonly property color _rowPressed:        _darkTheme ? qgcPal.windowShade : "#F2F2F2"
     // Wide side gutters like the reference (~12% each side)
     readonly property real  _horizontalPad:     Math.max(ScreenTools.defaultFontPixelWidth * 8, width * 0.12)
+    // Header back/close sit near the window edges, not in the content gutter
+    readonly property real  _headerIconPad:     ScreenTools.defaultFontPixelWidth * 1.2
     readonly property real  _rowHeight:         ScreenTools.defaultFontPixelHeight * 3.2
     readonly property real  _headerHeight:      ScreenTools.toolbarHeight
 
@@ -110,18 +112,31 @@ Rectangle {
             anchors.rightMargin:    settingsView._horizontalPad
             spacing:                ScreenTools.defaultFontPixelWidth * 1.5
 
-            QGCColoredImage {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.35
-                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.35
+            Item {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 2.2
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.2
                 Layout.alignment:       Qt.AlignVCenter
-                source:                 rowRoot.iconSource
-                color:                  settingsView._accentGreen
                 visible:                rowRoot.iconSource !== ""
-                fillMode:               Image.PreserveAspectFit
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius:       width / 2
+                    color:        Qt.rgba(0, 160 / 255, 76 / 255, 0.12)
+                }
+
+                QGCColoredImage {
+                    anchors.centerIn:   parent
+                    width:              parent.width * 0.52
+                    height:             width
+                    source:             rowRoot.iconSource
+                    color:              settingsView._accentGreen
+                    fillMode:           Image.PreserveAspectFit
+                }
             }
 
             QGCLabel {
                 Layout.fillWidth:   true
+                Layout.alignment:   Qt.AlignVCenter
                 text:               rowRoot.label
                 color:              settingsView._titleColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
@@ -129,6 +144,7 @@ Rectangle {
             }
 
             QGCLabel {
+                Layout.alignment:   Qt.AlignVCenter
                 visible:            rowRoot.showChevron
                 text:               "›"
                 color:              settingsView._secondaryText
@@ -175,7 +191,7 @@ Rectangle {
                 Item {
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.rightMargin:    settingsView._horizontalPad
+                    anchors.rightMargin:    settingsView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.2
                     width:                  height
 
@@ -380,12 +396,12 @@ Rectangle {
                 height:         settingsView._headerHeight
                 color:          settingsView._pageBackground
 
-                // Back — same size/margin as close for balanced header
+                // Back — far left edge of the header
                 Item {
                     id:                     backButton
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin:     settingsView._horizontalPad
+                    anchors.leftMargin:     settingsView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
 
@@ -408,7 +424,7 @@ Rectangle {
                 QGCLabel {
                     anchors.centerIn:       parent
                     width:                  parent.width - (backButton.width + closeButton.width
-                                                           + settingsView._horizontalPad * 2
+                                                           + settingsView._headerIconPad * 2
                                                            + ScreenTools.defaultFontPixelWidth * 2)
                     horizontalAlignment:    Text.AlignHCenter
                     elide:                  Text.ElideRight
@@ -418,12 +434,12 @@ Rectangle {
                     font.weight:            Font.DemiBold
                 }
 
-                // Close — mirrors back button
+                // Close — far right edge of the header
                 Item {
                     id:                     closeButton
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.rightMargin:    settingsView._horizontalPad
+                    anchors.rightMargin:    settingsView._headerIconPad
                     height:                 ScreenTools.defaultFontPixelHeight * 2.0
                     width:                  height
 

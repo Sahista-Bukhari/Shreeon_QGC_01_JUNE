@@ -9,9 +9,10 @@ Rectangle {
     anchors.fill:   parent
     anchors.rightMargin: ScreenTools.defaultFontPixelWidth
     anchors.leftMargin:  ScreenTools.defaultFontPixelWidth
-    color:          qgcPal.window
+    color:          typeof setupView !== "undefined" && setupView ? setupView._pageBackground : qgcPal.window
 
-    property real _minSummaryW:     ScreenTools.isTinyScreen ? ScreenTools.defaultFontPixelWidth * 28 : ScreenTools.defaultFontPixelWidth * 36
+    // Prefer a single column in the half-screen Vehicle Config panel
+    property real _minSummaryW:     ScreenTools.isTinyScreen ? ScreenTools.defaultFontPixelWidth * 22 : ScreenTools.defaultFontPixelWidth * 28
     property real _summaryBoxWidth: _minSummaryW
     property real _summaryBoxSpace: ScreenTools.defaultFontPixelWidth * 2
 

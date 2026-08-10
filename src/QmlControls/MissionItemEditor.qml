@@ -59,9 +59,8 @@ Rectangle {
     readonly property color _cardBorderColor: {
         if (!_lightTheme)
             return "transparent"
-        if (_currentItem)
-            return "#00a651"
-        return _readyForSave ? "#e2e2e2" : "#00a651"
+        // Thin gray outline for Custom Mission cards
+        return _currentItem ? "#c8c8c8" : "#e2e2e2"
     }
 
     QGCPalette {
@@ -69,7 +68,7 @@ Rectangle {
         colorGroupEnabled: enabled
     }
 
-    // Custom Mission: white fill + outline drawn above content so it can't be covered
+    // Custom Mission: white fill + crisp thin outline above content
     Rectangle {
         anchors.fill: parent
         visible: _root._lightTheme
@@ -85,10 +84,10 @@ Rectangle {
         z: 100
         radius: _root._radius
         color: "transparent"
+        // Hairline green/gray frame — keep thin on all sides
         border.width: 1
         border.color: _root._cardBorderColor
-        antialiasing: true
-        // Let clicks pass through to the card content underneath
+        antialiasing: false
         enabled: false
     }
 
@@ -202,8 +201,9 @@ Rectangle {
                 QGCLabel {
                     text:           missionItem.commandName
                     color:          _outerTextColor
-                    font.bold:      true
-                    font.pointSize: ScreenTools.mediumFontPointSize
+                    font.bold:      !_lightTheme
+                    font.weight:    _lightTheme ? Font.Medium : Font.Normal
+                    font.pointSize: _lightTheme ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
                 }
 
                 QGCColoredImage {
@@ -244,8 +244,9 @@ Rectangle {
             verticalAlignment:      Text.AlignVCenter
             text:                   missionItem.commandName
             color:                  _outerTextColor
-            font.bold:              true
-            font.pointSize:         ScreenTools.mediumFontPointSize
+            font.bold:              !_lightTheme
+            font.weight:            _lightTheme ? Font.Medium : Font.Normal
+            font.pointSize:         _lightTheme ? ScreenTools.defaultFontPointSize : ScreenTools.mediumFontPointSize
         }
     }
 

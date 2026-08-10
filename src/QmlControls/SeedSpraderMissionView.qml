@@ -139,7 +139,8 @@ Item {
                                               && _missionController.isInsertTakeoffValid
     readonly property var _routeSegmentInsertPoints: {
         var insertPoints = []
-        if (!_routeBoundaryEditable || fieldTracePointsModel.count < 2) {
+        // Once the pattern exists, native QGC polygon split/vertex handles take over.
+        if (!_routeBoundaryEditable || _hasCalculatedSurvey || fieldTracePointsModel.count < 2) {
             return insertPoints
         }
 
@@ -507,7 +508,7 @@ Item {
         }
         polygon.endReset()
         polygon.traceMode = false
-        polygon.interactive = false
+        polygon.interactive = true
         return true
     }
 
@@ -580,7 +581,7 @@ Item {
             if (surveyPolygon && surveyPolygon.count === fieldTracePointsModel.count) {
                 surveyPolygon.adjustVertex(pointIndex, coordinate)
                 surveyPolygon.traceMode = false
-                surveyPolygon.interactive = false
+                surveyPolygon.interactive = true
             } else {
                 _updateSurveyPolygonFromTrace(_cachedSurveyItem)
             }
@@ -636,6 +637,29 @@ Item {
         _missionController.setCurrentPlanViewSeqNum(surveyItem.sequenceNumber, true)
 
         _surveyFinished = true
+    }
+
+    // Rebuilds boundary waypoints from the survey polygon (used after native center/vertex drag).
+    function _syncFieldTraceFromSurveyPolygon() {
+        if (!_cachedSurveyItem || !_cachedSurveyItem.surveyAreaPolygon) {
+            return
+        }
+
+        var polygon = _cachedSurveyItem.surveyAreaPolygon
+        if (polygon.count < 3) {
+            return
+        }
+
+        fieldTracePointsModel.clear()
+        for (var i = 0; i < polygon.count; i++) {
+            var coordinate = polygon.vertexCoordinate(i)
+            fieldTracePointsModel.append({
+                                            lat: coordinate.latitude,
+                                            lon: coordinate.longitude,
+                                            alt: coordinate.altitude
+                                        })
+        }
+        _selectedWaypointIndex = -1
     }
 
     // Opens the left task-settings sidebar panel.
@@ -904,7 +928,7 @@ Item {
         if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
             polygon.traceMode = false
-            polygon.interactive = false
+            polygon.interactive = true
             for (var i = 0; i < polygon.count; i++) {
                 var coordinate = polygon.vertexCoordinate(i)
                 fieldTracePointsModel.append({
@@ -1710,7 +1734,7 @@ Item {
             }
 
             MapItemView {
-                visible: _root._areaRouteActive
+                visible: _root._areaRouteActive && !_root._hasCalculatedSurvey
                 model: fieldTracePointsModel
 
                 delegate: MapQuickItem {
@@ -1807,16 +1831,28 @@ Item {
                 line.width: _root._showSavedMappingOverlay ? 1.5 : 2
                 path: {
                     var boundaryPoints = []
-                    for (var i = 0; i < fieldTracePointsModel.count; i++) {
-                        var point = fieldTracePointsModel.get(i)
-                        boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                    // Once the pattern exists, follow the survey polygon so center-drag moves the outline live.
+                    if (_root._hasCalculatedSurvey
+                            && _root._cachedSurveyItem
+                            && _root._cachedSurveyItem.surveyAreaPolygon) {
+                        var polyPath = _root._cachedSurveyItem.surveyAreaPolygon.path
+                        for (var pi = 0; pi < polyPath.length; pi++) {
+                            boundaryPoints.push(polyPath[pi])
+                        }
+                    } else {
+                        for (var i = 0; i < fieldTracePointsModel.count; i++) {
+                            var point = fieldTracePointsModel.get(i)
+                            boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                        }
                     }
                     if (boundaryPoints.length >= 3) {
                         boundaryPoints.push(boundaryPoints[0])
                     }
                     return boundaryPoints
                 }
-                visible: _root._areaRouteActive && fieldTracePointsModel.count >= 2
+                visible: _root._areaRouteActive
+                         && (_root._hasCalculatedSurvey
+                             || fieldTracePointsModel.count >= 2)
                 z: QGroundControl.zOrderMapItems + 1
             }
 
@@ -1875,6 +1911,46 @@ Item {
                       : []
                 visible: _root._hasCalculatedSurvey
                 z: QGroundControl.zOrderMapItems + 2
+            }
+
+            // Native QGC polygon editing (center + vertex handles) once the pattern exists.
+            // Keep fill/border transparent — Seed Spreader draws its own boundary/transects.
+            Loader {
+                active: _root._areaRouteActive
+                        && _root._cachedSurveyItem
+                        && _root._cachedSurveyItem.surveyAreaPolygon
+                        && _root._cachedSurveyItem.surveyAreaPolygon.count >= 3
+
+                sourceComponent: Component {
+                    QGCMapPolygonVisuals {
+                        mapControl: routeMap
+                        mapPolygon: _root._cachedSurveyItem.surveyAreaPolygon
+                        interactive: true
+                        showToolsToolbar: false
+                        borderWidth: 0
+                        borderColor: "transparent"
+                        interiorColor: "transparent"
+                        interiorOpacity: 0
+                    }
+                }
+            }
+
+            Connections {
+                target: _root._hasCalculatedSurvey && _root._cachedSurveyItem
+                        ? _root._cachedSurveyItem.surveyAreaPolygon
+                        : null
+
+                function onPathChanged() {
+                    if (target && !target.centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
+
+                function onCenterDragChanged(centerDrag) {
+                    if (!centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
             }
 
             MapQuickItem {

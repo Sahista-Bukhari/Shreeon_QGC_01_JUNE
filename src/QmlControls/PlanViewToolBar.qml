@@ -84,17 +84,46 @@ Rectangle {
 
         Item { Layout.fillWidth: true }
 
-        QGCToolBarButton {
+        Item {
             id: backButton
             Layout.alignment: Qt.AlignVCenter
-            height: ScreenTools.defaultFontPixelHeight * 2.55
-            implicitWidth: height * 1.55
-            icon.source: "/res/chevron-double-left.svg"
-            iconSize: ScreenTools.defaultFontPixelHeight * 1.45
-            onClicked: _root.exitPlanEditMode()
+            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2.55
+            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.55
+
+            Rectangle {
+                anchors.centerIn: parent
+                width: parent.width
+                height: width
+                radius: width / 2
+                color: backMouse.pressed
+                       ? Qt.rgba(0.18, 0.18, 0.18, 0.72)
+                       : Qt.rgba(0.12, 0.12, 0.14, 0.55)
+                border.width: 1
+                border.color: Qt.rgba(1, 1, 1, 0.28)
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: parent.width * 0.48
+                    height: width
+                    source: "/res/chevron-double-left.svg"
+                    color: "white"
+                    fillMode: Image.PreserveAspectFit
+                }
+            }
+
+            MouseArea {
+                id: backMouse
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                onClicked: _root.exitPlanEditMode()
+            }
         }
 
         PlanToolBarIndicators {
+            // Custom Mission shows these just below the toolbar instead
+            visible: typeof mainWindow === "undefined"
+                     || !mainWindow
+                     || mainWindow.activeMissionEditor !== "customMission"
             Layout.alignment: Qt.AlignVCenter
             planMasterController: _root.planMasterController
             compact: true

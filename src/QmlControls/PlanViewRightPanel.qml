@@ -198,9 +198,28 @@ Item {
             anchors.rightMargin:  ScreenTools.defaultFontPixelWidth * (root._customMission ? 1.45 : 0.55)
             spacing:              ScreenTools.defaultFontPixelHeight * 0.5
 
+            // Task Settings–style main heading (Custom Mission only)
+            QGCLabel {
+                visible:                root._customMission
+                Layout.fillWidth:       true
+                Layout.topMargin:       ScreenTools.defaultFontPixelHeight * 0.15
+                Layout.bottomMargin:    ScreenTools.defaultFontPixelHeight * 0.15
+                text: {
+                    if (root._editingTool === root._editingToolFence)
+                        return qsTr("Fence Settings")
+                    if (root._editingTool === root._editingToolRally)
+                        return qsTr("Rally Settings")
+                    return qsTr("Mission Settings")
+                }
+                color:                  root._titleColor
+                font.weight:            Font.Medium
+                font.pointSize:         ScreenTools.defaultFontPointSize
+                horizontalAlignment:    Text.AlignHCenter
+            }
+
             QGCTabBar {
                 Layout.fillWidth: true
-                Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.15
+                Layout.topMargin: root._customMission ? 0 : ScreenTools.defaultFontPixelHeight * 0.15
 
                 QGCTabButton {
                     text:       qsTr("Mission")
@@ -279,9 +298,14 @@ Item {
 
             Column {
                 spacing: ScreenTools.defaultFontPixelHeight / 2
+                width:   parent ? parent.width : 0
+                // Match Mission list inset so card borders aren't clipped
+                leftPadding:  root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                rightPadding: root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                topPadding:   root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
 
                 GeoFenceEditor {
-                    width:                  parent.width
+                    width:                  parent.width - parent.leftPadding - parent.rightPadding
                     myGeoFenceController:   root._geoFenceController
                     flightMap:              root.editorMap
                 }
@@ -294,14 +318,18 @@ Item {
 
             Column {
                 spacing: ScreenTools.defaultFontPixelHeight / 2
+                width:   parent ? parent.width : 0
+                leftPadding:  root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                rightPadding: root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+                topPadding:   root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
 
                 RallyPointEditorHeader {
-                    width:              parent.width
+                    width:              parent.width - parent.leftPadding - parent.rightPadding
                     controller:         root._rallyPointController
                 }
 
                 RallyPointItemEditor {
-                    width:              parent.width
+                    width:              parent.width - parent.leftPadding - parent.rightPadding
                     visible:            root._rallyPointController.points.count
                     rallyPoint:         root._rallyPointController.currentRallyPoint
                     controller:         root._rallyPointController

@@ -101,6 +101,8 @@ Item {
 
         MouseArea {
             anchors.fill:   parent
+            // Keep under the tool strip so Takeoff / Waypoint / Open / Save stay
+            // clickable while the Pattern panel is open.
             z:              toolStrip.z - 1
             onClicked:      dropPanel.hide()
         }

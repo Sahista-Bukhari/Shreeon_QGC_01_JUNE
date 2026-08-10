@@ -69,11 +69,19 @@ Button {
                 toolStripAction.triggered(this)
             } else if (checked) {
                 var stripItem = (dropPanel && dropPanel.toolStrip) ? dropPanel.toolStrip : parent
-                // Anchor to the full strip's right edge (not this button's right edge).
-                // In Custom Mission's 2-column grid, Pattern is left-column — using
-                // button.width would place the panel over Waypoint/Return.
+                // Prefer full-strip right edge so Custom Mission's 2-column Pattern
+                // button does not open the panel over Waypoint/Return.
+                var edgeWidth = (typeof stripItem.dropPanelEdgeX === "number" && stripItem.dropPanelEdgeX > 0)
+                                ? stripItem.dropPanelEdgeX
+                                : stripItem.width
                 var buttonTopInStrip = mapToItem(stripItem, 0, 0)
-                var panelEdgeTopPoint = Qt.point(stripItem.width, buttonTopInStrip.y)
+                // dropPanel may be a child of the strip (stock ToolStrip) or a sibling
+                // (Custom Mission). Always map into dropPanel.parent coordinates.
+                var stripOrigin = stripItem.mapToItem(dropPanel.parent, 0, 0)
+                var panelEdgeTopPoint = Qt.point(
+                    stripOrigin.x + (dropPanel.dropToLeft ? 0 : edgeWidth),
+                    stripOrigin.y + buttonTopInStrip.y
+                )
                 dropPanel.show(panelEdgeTopPoint, toolStripAction.dropPanelComponent, this)
                 checked = true
                 control.dropped(buttonIndex >= 0 ? buttonIndex : 0)

@@ -270,12 +270,30 @@ Item {
             zoomLevel: QGroundControl.flightMapZoom
             center: QGroundControl.flightMapPosition
 
-            // This is the center rectangle of the map which is not obscured by tools
-            property rect centerViewport: Qt.rect(_leftToolWidth + _margin,  planToolBar.height + _margin, editorMap.width - _leftToolWidth - _rightToolWidth - (_margin * 2), (missionStatus.visible ? missionStatus.y : height - _margin) - planToolBar.height - _margin)
+            // Free map area below the plan-action strip + Survey tools second row
+            property real _planEditToolbarRowHeight: ScreenTools.defaultFontPixelHeight * 2.6
+            property real _centerViewportTop: {
+                if (planActionStrip.visible) {
+                    return planActionStrip.y + planActionStrip.height + _margin + _planEditToolbarRowHeight
+                }
+                return planToolBar.height + _margin
+            }
+            property rect centerViewport: Qt.rect(_leftToolWidth + _margin,
+                                                  _centerViewportTop,
+                                                  editorMap.width - _leftToolWidth - _rightToolWidth - (_margin * 2),
+                                                  (missionStatus.visible ? missionStatus.y : height - _margin) - _centerViewportTop)
 
+            // Left tools for map fit (Takeoff strip). Survey toolbar uses planEditToolbarX/Y.
             property real _leftToolWidth: toolStrip.x + toolStrip.width
             property real _rightToolWidth: rightPanel.width + rightPanel.anchors.rightMargin
             property real _nonInteractiveOpacity: 0.5
+            // Survey / Polygon tools: same UI, second row under Open/Save/Upload/Clear/Menu
+            property bool planEditToolbarAlignLeft: true
+            property bool planEditToolbarSecondRow: true
+            property real planEditToolbarX: planActionStrip.visible ? planActionStrip.x : (toolStrip.x + toolStrip.width + _margin)
+            property real planEditToolbarY: planActionStrip.visible
+                                            ? (planActionStrip.y + planActionStrip.height + ScreenTools.defaultFontPixelHeight * 0.35)
+                                            : (planToolBar.height + _margin)
 
             // Initial map position duplicates Fly view position
             Component.onCompleted: editorMap.center = QGroundControl.flightMapPosition
@@ -465,6 +483,35 @@ Item {
                 opacity: _editingLayer != _layerUTMSP ? editorMap._nonInteractiveOpacity : 1
                 resetCheck: _resetGeofencePolygon
             }
+
+            // Same center crosshair as Route Mapping — aim here, then press +
+            Item {
+                id: centerTarget
+                anchors.centerIn: parent
+                width: ScreenTools.defaultFontPixelHeight * 2.5
+                height: width
+                z: QGroundControl.zOrderWidgets + 10
+                visible: _editingLayer === _layerMission
+
+                property real lineLength: width * 0.45
+
+                Repeater {
+                    model: [
+                        { x: parent.width / 2 - 1, y: 0, w: 2, h: centerTarget.lineLength },
+                        { x: parent.width / 2 - 1, y: parent.height - centerTarget.lineLength, w: 2, h: centerTarget.lineLength },
+                        { x: 0, y: parent.height / 2 - 1, w: centerTarget.lineLength, h: 2 },
+                        { x: parent.width - centerTarget.lineLength, y: parent.height / 2 - 1, w: centerTarget.lineLength, h: 2 }
+                    ]
+
+                    Rectangle {
+                        x: modelData.x
+                        y: modelData.y
+                        width: modelData.w
+                        height: modelData.h
+                        color: "white"
+                    }
+                }
+            }
         }
 
         //-----------------------------------------------------------
@@ -485,6 +532,10 @@ Item {
             property bool _isMissionLayer: _editingLayer == _layerMission
             property var _dropPanel: dropPanel
             property bool dropLeft: false
+            // Open Pattern panel past Open/Save strip so those buttons stay usable
+            property real dropPanelEdgeX: planActionStrip.visible
+                                         ? (planActionStrip.x + planActionStrip.width - x)
+                                         : width
             // Space between strip edge and buttons (outer padding area)
             property real _outerPad: ScreenTools.defaultFontPixelWidth * 1.1
             property real _cellGap: ScreenTools.defaultFontPixelWidth * 0.4
@@ -696,11 +747,6 @@ Item {
                 onTriggered: missionStatus.showMissionStatus()
             }
 
-            ToolStripDropPanel {
-                id: dropPanel
-                toolStrip: toolStrip
-            }
-
             function allAddClickBoolsOff() {
                 _addWaypointOnClick = false
                 _addROIOnClick = false
@@ -713,9 +759,239 @@ Item {
             signal dropped(int index)
         }
 
+        // Above both strips so Pattern/Menu panels aren't covered
+        ToolStripDropPanel {
+            id: dropPanel
+            toolStrip: toolStrip
+            z: QGroundControl.zOrderTopMost
+        }
+
+        // Plan file actions — same white/gray Takeoff-panel button UI, beside the tool strip
+        Item {
+            id: planActionStrip
+            anchors.left: toolStrip.visible ? toolStrip.right : parent.left
+            anchors.leftMargin: _toolsMargin
+            anchors.top: toolStrip.visible ? toolStrip.top : parent.top
+            anchors.topMargin: toolStrip.visible ? 0 : (planToolBar.height + _toolsMargin)
+            z: QGroundControl.zOrderWidgets
+            width: actionInner.width + (toolStrip._outerPad * 2)
+            height: actionInner.height + (toolStrip._outerPad * 2)
+            visible: planToolBar.visible
+
+            readonly property real _cellSize: toolStrip._cellSize
+            readonly property real _cellGap: toolStrip._cellGap
+            readonly property bool _hasPlanItems: _planMasterController.containsItems
+            readonly property bool _syncInProgress: _planMasterController.syncInProgress
+            readonly property bool _utmspEnabled: QGroundControl.utmspSupported
+            readonly property bool _controllerDirty: _planMasterController.dirty
+
+            Rectangle {
+                anchors.fill: parent
+                radius: toolStrip._panelRadius
+                color: toolStrip._panelFill
+                border.width: 1
+                border.color: toolStrip._panelBorder
+            }
+
+            Row {
+                id: actionInner
+                anchors.left: parent.left
+                anchors.top: parent.top
+                anchors.margins: toolStrip._outerPad
+                spacing: planActionStrip._cellGap
+
+                ToolStripHoverButton {
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: openPlanAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 10
+                }
+
+                ToolStripHoverButton {
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: savePlanAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 11
+                }
+
+                ToolStripHoverButton {
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: uploadPlanAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 12
+                }
+
+                ToolStripHoverButton {
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: clearPlanAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 13
+                }
+
+                ToolStripHoverButton {
+                    id: planMenuButton
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: planMenuAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 14
+                }
+            }
+
+            ToolStripAction {
+                id: openPlanAction
+                text: qsTr("Open")
+                iconSource: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
+                enabled: !planActionStrip._syncInProgress
+                onTriggered: {
+                    if (_planMasterController.dirty) {
+                        mainWindow.showMessageDialog(qsTr("Open Plan"),
+                                                     qsTr("You have unsaved/unsent changes. Loading a new Plan will lose these changes. Are you sure?"),
+                                                     Dialog.Yes | Dialog.Cancel,
+                                                     function() { _planMasterController.loadFromSelectedFile() })
+                    } else {
+                        _planMasterController.loadFromSelectedFile()
+                    }
+                }
+            }
+
+            ToolStripAction {
+                id: savePlanAction
+                text: _planMasterController.currentPlanFile === "" ? qsTr("Save As") : qsTr("Save")
+                iconSource: "/res/modern-icons/MaterialSymbolsSave.svg"
+                enabled: !planActionStrip._syncInProgress && planActionStrip._hasPlanItems
+                onTriggered: {
+                    if (_planMasterController.currentPlanFile !== "") {
+                        _planMasterController.saveToCurrent()
+                        mainWindow.showMessageDialog(qsTr("Save"),
+                                                     qsTr("Plan saved to `%1`").arg(_planMasterController.currentPlanFile),
+                                                     Dialog.Ok)
+                    } else {
+                        _planMasterController.saveToSelectedFile()
+                    }
+                }
+            }
+
+            ToolStripAction {
+                id: uploadPlanAction
+                text: qsTr("Upload")
+                iconSource: "/res/modern-icons/MaterialSymbolsUpload2Rounded.svg"
+                enabled: planActionStrip._utmspEnabled
+                         ? (!planActionStrip._syncInProgress && UTMSPStateStorage.enableMissionUploadButton)
+                         : (!planActionStrip._syncInProgress && planActionStrip._hasPlanItems)
+                visible: !planActionStrip._syncInProgress
+                onTriggered: {
+                    mainWindow.confirmUploadToFlyView(mainWindow.activeMissionEditor, function() {
+                        if (planActionStrip._utmspEnabled) {
+                            QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(true)
+                            UTMSPStateStorage.removeFlightPlanState = true
+                            UTMSPStateStorage.indicatorDisplayStatus = true
+                        }
+                        if (_planMasterController.upload()) {
+                            mainWindow.markMissionPlanUploaded(mainWindow.activeMissionEditor)
+                        }
+                    })
+                }
+            }
+
+            ToolStripAction {
+                id: clearPlanAction
+                text: qsTr("Clear")
+                iconSource: "/res/modern-icons/MaterialSymbolsDeleteRounded.svg"
+                enabled: !planActionStrip._syncInProgress
+                onTriggered: mainWindow.confirmClearRouteMappingPlan()
+            }
+
+            // Opens under the Menu button (not via takeoff-strip side panel)
+            ToolStripAction {
+                id: planMenuAction
+                text: qsTr("Menu")
+                iconSource: "qrc:/qmlimages/Hamburger.svg"
+                onTriggered: {
+                    var origin = planMenuButton.mapToItem(globals.parent, 0, 0)
+                    var panel = planMenuDropPanelComponent.createObject(mainWindow, {
+                        clickRect: Qt.rect(origin.x, origin.y, planMenuButton.width, planMenuButton.height),
+                        dropBelow: true
+                    })
+                    panel.open()
+                }
+            }
+
+            Component {
+                id: planMenuDropPanelComponent
+
+                DropPanel {
+                    id: planMenuDrop
+                    dropBelow: true
+
+                    sourceComponent: Component {
+                        ColumnLayout {
+                            spacing: ScreenTools.defaultFontPixelHeight / 3
+
+                            QGCButton {
+                                Layout.fillWidth: true
+                                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 18
+                                text: qsTr("Save as KML")
+                                compact: true
+                                heightFactor: 0.32
+                                enabled: !planActionStrip._syncInProgress && planActionStrip._hasPlanItems
+                                onClicked: {
+                                    planMenuDrop.close()
+                                    if (_missionController.visualItems.count > 1)
+                                        _planMasterController.saveKmlToSelectedFile()
+                                }
+                            }
+
+                            QGCButton {
+                                Layout.fillWidth: true
+                                text: qsTr("Download")
+                                iconSource: "/res/modern-icons/MaterialSymbolsDownload2Rounded.svg"
+                                compact: true
+                                heightFactor: 0.32
+                                enabled: planActionStrip._utmspEnabled
+                                         ? (!planActionStrip._syncInProgress && UTMSPStateStorage.enableMissionDownloadButton)
+                                         : !planActionStrip._syncInProgress
+                                visible: !planActionStrip._syncInProgress
+                                onClicked: {
+                                    planMenuDrop.close()
+                                    if (_planMasterController.dirty) {
+                                        mainWindow.showMessageDialog(qsTr("Download"),
+                                                                     qsTr("You have unsaved/unsent changes. Downloading from the Vehicle will lose these changes. Are you sure?"),
+                                                                     Dialog.Yes | Dialog.Cancel,
+                                                                     function() { _planMasterController.loadFromVehicle() })
+                                    } else {
+                                        _planMasterController.loadFromVehicle()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         MapScale {
             anchors.margins: _toolsMargin
-            anchors.left: toolStrip.right
+            anchors.left: planActionStrip.visible ? planActionStrip.right : toolStrip.right
             anchors.top: parent.top
             anchors.topMargin: planToolBar.height + _toolsMargin
             mapControl: editorMap
@@ -727,9 +1003,10 @@ Item {
             anchors.top: parent.top
             anchors.bottom: parent.bottom
             anchors.right: parent.right
-            anchors.topMargin: planToolBar.height
-            anchors.bottomMargin: 0
-            anchors.rightMargin: 0
+            // Match Route Mapping Task Settings / Plan View outer margins
+            anchors.topMargin: planToolBar.height + ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.6
+            anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 0.5
             width: _utmspEnabled ? _rightPanelWidth + ScreenTools.defaultFontPixelWidth * 21.667 : _rightPanelWidth
             planMasterController: _planMasterController
             editorMap: editorMap
@@ -829,7 +1106,7 @@ Item {
             QGCLabel {
                 id: patternTitle
                 text: qsTr("Create complex pattern")
-                color: "#ffffff"
+                color: "#3f3f3f"
                 font.bold: true
                 font.pointSize: ScreenTools.mediumFontPointSize
                 wrapMode: Text.NoWrap

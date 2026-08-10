@@ -21,12 +21,14 @@ Slider {
     property real _barHeight: Math.round(ScreenTools.defaultFontPixelHeight / 4) // Slimmer track
     property color activeColor: qgcPal.colorGreen
     property real barHeight: _barHeight
-    readonly property bool _customMissionPage: typeof mainWindow !== "undefined"
-                                               && mainWindow
-                                               && mainWindow.activeMissionEditor === "customMission"
-    property real handleRadius: _customMissionPage
-                                ? ScreenTools.defaultFontPixelHeight * 0.38
-                                : ScreenTools.defaultFontPixelHeight * 0.75
+
+    // Gray rounded knob + soft track on all light / white-theme pages
+    readonly property bool _lightTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode !== mainWindow.themeBlack
+        return qgcPal.globalTheme === QGCPalette.Light
+    }
+    property real handleRadius: ScreenTools.defaultFontPixelHeight * (_lightTheme ? 0.38 : 0.75)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
@@ -38,8 +40,8 @@ Slider {
         width: control.horizontal ? control.availableWidth : implicitWidth
         height: control.horizontal ? implicitHeight : control.availableHeight
         radius: height / 2
-        color: qgcPal.windowShadeDark
-        
+        color: control._lightTheme ? "#e8e8e8" : qgcPal.windowShadeDark
+
         // Active fill track
         Rectangle {
             width: control.horizontal ? control.visualPosition * parent.width : parent.width
@@ -60,7 +62,9 @@ Slider {
         height: control.handleRadius * 2
         implicitWidth: width
         implicitHeight: height
-        color: "white"
+        color: control._lightTheme ? "#f5f5f5" : "white"
+        border.width: control._lightTheme ? 1 : 0
+        border.color: control._lightTheme ? "#d0d0d0" : "transparent"
         radius: control.handleRadius
 
         Label {
@@ -69,7 +73,7 @@ Slider {
             anchors.centerIn: parent
             font.family: ScreenTools.normalFontFamily
             font.pointSize: ScreenTools.smallFontPointSize
-            color: "black"
+            color: control._lightTheme ? "#3f3f3f" : "black"
         }
     }
 
@@ -80,7 +84,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.from.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: Qt.rgba(1, 1, 1, 0.78)
+        color: control._lightTheme ? "#6a6a6a" : Qt.rgba(1, 1, 1, 0.78)
         visible: control.showBoundaryValues
     }
 
@@ -91,7 +95,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.to.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: Qt.rgba(1, 1, 1, 0.78)
+        color: control._lightTheme ? "#6a6a6a" : Qt.rgba(1, 1, 1, 0.78)
         visible: control.showBoundaryValues
     }
 }
