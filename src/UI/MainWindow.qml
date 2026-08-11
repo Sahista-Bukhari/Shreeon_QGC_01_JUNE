@@ -708,8 +708,10 @@ ApplicationWindow {
     }
 
     function showVehicleConfig(fromFlyViewBackNav) {
+        // Wider right panel so Vehicle Config content has more room
         // Half of main screen; SetupView provides its own header + close
         showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true, true)
+        toolDrawer.halfWidthRatio = 0.72
     }
 
     function showVehicleConfigParametersPage() {
@@ -942,8 +944,9 @@ ApplicationWindow {
         property bool centeredTitle:    false
         property bool returnToFlyView:  false
         property bool hideToolbar:      false
-        // Vehicle Config (and similar): occupy right half of the main window
+        // Vehicle Config (and similar): occupy most of the right side of the main window
         property bool halfWidth:        false
+        property real halfWidthRatio:   0.72
 
         onVisibleChanged: {
             if (!toolDrawer.visible) {
@@ -953,6 +956,7 @@ ApplicationWindow {
                 returnToFlyView = false
                 hideToolbar = false
                 halfWidth = false
+                halfWidthRatio = 0.72
                 mainWindow.applyUiTheme()
             }
         }
@@ -975,7 +979,9 @@ ApplicationWindow {
             anchors.top:        parent.top
             anchors.bottom:     parent.bottom
             anchors.right:      parent.right
-            width:              toolDrawer.halfWidth ? Math.round(parent.width * 0.5) : parent.width
+            width:              toolDrawer.halfWidth
+                                ? Math.round(parent.width * toolDrawer.halfWidthRatio)
+                                : parent.width
             color:              toolDrawer.hideToolbar
                                 ? (mainWindow.uiThemeMode === mainWindow.themeBlack ? qgcPal.window : "white")
                                 : qgcPal.window

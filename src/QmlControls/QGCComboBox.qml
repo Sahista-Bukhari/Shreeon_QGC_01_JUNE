@@ -8,13 +8,13 @@ import QGroundControl.Controls
 
 T.ComboBox {
     id:             control
-    padding:        ScreenTools.comboBoxPadding * 1.1
-    spacing:        ScreenTools.defaultFontPixelWidth
-    font.pointSize: ScreenTools.defaultFontPointSize
+    padding:        ScreenTools.comboBoxPadding * (compact ? 0.7 : 1.0)
+    spacing:        ScreenTools.defaultFontPixelWidth * (compact ? 0.5 : 0.85)
+    font.pointSize: compact ? ScreenTools.smallFontPointSize : ScreenTools.defaultFontPointSize
     font.family:    ScreenTools.normalFontFamily
     implicitWidth:  Math.max(background ? background.implicitWidth : 0,
                              contentItem.implicitWidth + leftPadding + rightPadding + padding)
-    implicitHeight: Math.max(ScreenTools.defaultFontPixelHeight * 1.95,
+    implicitHeight: Math.max(ScreenTools.defaultFontPixelHeight * (compact ? 1.45 : 1.75),
                              Math.max(contentItem.implicitHeight, indicator ? indicator.implicitHeight : 0) + topPadding + bottomPadding)
     baselineOffset: contentItem.y + text.baselineOffset
     leftPadding:    padding + (!control.mirrored || !indicator || !indicator.visible ? 0 : indicator.width + spacing)
@@ -22,6 +22,7 @@ T.ComboBox {
 
     property bool   centeredLabel:  false
     property bool   sizeToContents: false
+    property bool   compact:        false
     property string alternateText:  ""
 
     property real   _popupWidth:    width

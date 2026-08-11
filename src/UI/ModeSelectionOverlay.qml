@@ -494,8 +494,8 @@ Item {
                                             themeMenuPopup.close()
                                         }
                                     }
-                                }
-                            }
+                                }   
+                               }
                         }
                     }
                 }

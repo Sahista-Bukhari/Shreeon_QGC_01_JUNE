@@ -27,7 +27,7 @@ Item {
     // FIXME: The _vehicleIsRover checkl is a hack to work around https://github.com/PX4/Firmware/issues/10969
     property bool   _disableDueToFlying:    vehicleComponent ? (!_vehicleIsRover && !vehicleComponent.allowSetupWhileFlying && _vehicleFlying) : false
     property string _disableReason:         _disableDueToArmed ? qsTr("armed") : qsTr("flying")
-    property real   _margins:               ScreenTools.defaultFontPixelHeight * 0.5
+    property real   _margins:               ScreenTools.defaultFontPixelHeight * 0.3
     property string _pageTitle:             qsTr("%1 Config").arg(pageName)
 
     Component.onCompleted: {
@@ -38,40 +38,44 @@ Item {
 
     QGCFlickable {
         anchors.fill:   parent
-        contentWidth:   Math.max(availableWidth, pageLoader.x + pageLoader.item.width)
-        contentHeight:  Math.max(availableHeight, pageLoader.y + pageLoader.item.height)
+        contentWidth:   width
+        contentHeight:  Math.max(availableHeight, pageLoader.y + (pageLoader.item ? pageLoader.item.height : 0))
         clip:           true
 
-        RowLayout {
+        ColumnLayout {
             id:                 headingRow
             width:              availableWidth
-            spacing:            _margins
-            layoutDirection:    Qt.RightToLeft
+            spacing:            ScreenTools.defaultFontPixelHeight * 0.2
             visible:            showAdvanced || (pageDescription !== "" && !ScreenTools.isShortScreen)
 
-            QGCCheckBox {
-                id:         advancedCheckBox
-                text:       qsTr("Advanced")
-                visible:    showAdvanced
+            RowLayout {
+                Layout.fillWidth:   true
+                spacing:            _margins
+                layoutDirection:    Qt.RightToLeft
+
+                QGCCheckBox {
+                    id:         advancedCheckBox
+                    text:       qsTr("Advanced")
+                    visible:    showAdvanced
+                }
+
+                Item { Layout.fillWidth: true }
             }
 
-            ColumnLayout {
-                spacing:            _margins
+            QGCLabel {
                 Layout.fillWidth:   true
+                font.pointSize:     ScreenTools.mediumFontPointSize
+                font.bold:          true
+                text:               !setupView.enabled ? _pageTitle + "<font color=\"red\">" + qsTr(" (Disabled while the vehicle is %1)").arg(_disableReason) + "</font>" : _pageTitle
+                visible:            !ScreenTools.isShortScreen
+            }
 
-                QGCLabel {
-                    Layout.fillWidth:   true
-                    font.pointSize:     ScreenTools.largeFontPointSize
-                    text:               !setupView.enabled ? _pageTitle + "<font color=\"red\">" + qsTr(" (Disabled while the vehicle is %1)").arg(_disableReason) + "</font>" : _pageTitle
-                    visible:            !ScreenTools.isShortScreen
-                }
-
-                QGCLabel {
-                    Layout.fillWidth:   true
-                    wrapMode:           Text.WordWrap
-                    text:               pageDescription
-                    visible:            pageDescription !== "" && !ScreenTools.isShortScreen
-                }
+            QGCLabel {
+                Layout.fillWidth:   true
+                wrapMode:           Text.WordWrap
+                font.pointSize:     ScreenTools.smallFontPointSize
+                text:               pageDescription
+                visible:            pageDescription !== "" && !ScreenTools.isShortScreen
             }
         }
 
@@ -79,6 +83,7 @@ Item {
             id:                 pageLoader
             anchors.topMargin:  _margins
             anchors.top:        headingRow.bottom
+            width:              availableWidth
         }
 
         // Overlay to display when vehicle is armed and this setup page needs
