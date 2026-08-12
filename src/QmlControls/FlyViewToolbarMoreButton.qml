@@ -167,7 +167,7 @@ Item {
                     }
 
                     QGCLabel {
-                        text:                   qsTr("Vehicle Config")
+                        text:                   qsTr("Vehicle  Config")
                         font.pointSize:         ScreenTools.defaultFontPointSize
                         color:                  qgcPal.textFieldText
                         anchors.verticalCenter: parent.verticalCenter
@@ -182,6 +182,56 @@ Item {
                     onClicked: {
                         control.closeMenu()
                         mainWindow.showVehicleConfig(true)
+                    }
+                }
+            }
+
+            // Advanced
+            Item {
+                width:  parent.width
+                height: ScreenTools.defaultFontPixelHeight * 2.0
+
+                Rectangle {
+                    anchors.fill:   parent
+                    color:          qgcPal.colorGreen
+                    opacity:        advancedMouseArea.containsMouse ? 0.12 : 0
+                    visible:        advancedMouseArea.containsMouse
+                }
+
+                Row {
+                    spacing:                moreMenu._iconGap
+                    anchors.left:           parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+
+                    Item {
+                        width:  moreMenu._iconSize
+                        height: moreMenu._iconSize
+                        anchors.verticalCenter: parent.verticalCenter
+
+                        QGCColoredImage {
+                            anchors.fill:           parent
+                            source:                 "/qmlimages/CogWheel.svg"
+                            color:                  qgcPal.textFieldText
+                            fillMode:               Image.PreserveAspectFit
+                        }
+                    }
+
+                    QGCLabel {
+                        text:                   qsTr("Advanced")
+                        font.pointSize:         ScreenTools.defaultFontPointSize
+                        color:                  qgcPal.textFieldText
+                        anchors.verticalCenter: parent.verticalCenter
+                    }
+                }
+
+                MouseArea {
+                    id:             advancedMouseArea
+                    anchors.fill:   parent
+                    hoverEnabled:   true
+                    cursorShape:    Qt.PointingHandCursor
+                    onClicked: {
+                        control.closeMenu()
+                        mainWindow.showAdvancedTool(true)
                     }
                 }
             }

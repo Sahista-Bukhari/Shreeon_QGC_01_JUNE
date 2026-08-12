@@ -719,6 +719,15 @@ ApplicationWindow {
         toolDrawerLoader.item.showParametersPanel()
     }
 
+    function showVehicleConfigAdvancedPage() {
+        showAdvancedTool()
+    }
+
+    function showAdvancedTool(fromFlyViewBackNav) {
+        showTool(qsTr("Advanced"), "qrc:/qml/QGroundControl/VehicleSetup/AdvancedSetupView.qml", "/qmlimages/CogWheel.svg", fromFlyViewBackNav, true, true)
+        toolDrawer.halfWidthRatio = 0.72
+    }
+
     function showKnownVehicleComponentConfigPage(knownVehicleComponent) {
         showVehicleConfig()
         let vehicleComponent = globals.activeVehicle.autopilotPlugin.findKnownVehicleComponent(knownVehicleComponent)

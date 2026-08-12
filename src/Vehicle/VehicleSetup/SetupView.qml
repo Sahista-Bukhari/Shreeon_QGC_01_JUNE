@@ -100,6 +100,27 @@ Rectangle {
                     false, false, null)
     }
 
+    readonly property var _advancedOnlyMatchers: [
+        "AirframeComponent",
+        "ActuatorComponent",
+        "MotorComponent",
+        "TuningComponent",
+        "FlightBehavior"
+    ]
+
+    function _isAdvancedOnlyComponent(component) {
+        if (!component)
+            return false
+        var source = component.setupSource ? component.setupSource.toString() : ""
+        if (source === "")
+            return false
+        for (var i = 0; i < _advancedOnlyMatchers.length; i++) {
+            if (source.indexOf(_advancedOnlyMatchers[i]) >= 0)
+                return true
+        }
+        return false
+    }
+
     function _closeSetup() {
         setupView.popout()
         if (typeof mainWindow !== "undefined" && mainWindow)
@@ -283,6 +304,17 @@ Rectangle {
                     }
 
                     SetupSideButton {
+                        label:      qsTr("Sprayer")
+                        iconSource: "/qmlimages/Shower.svg"
+                        pageKey:    "sprayer"
+                        onClicked:  setupView._selectPage(
+                                            "sprayer",
+                                            qsTr("Spraying System Settings"),
+                                            "qrc:/qml/QGroundControl/VehicleSetup/SprayerSetup.qml",
+                                            false, false, null)
+                    }
+
+                    SetupSideButton {
                         label:          qsTr("Optical Flow")
                         iconSource:     ""
                         pageKey:        "opticalFlow"
@@ -320,32 +352,10 @@ Rectangle {
                             iconSource:     modelData.iconResource
                             pageKey:        "component:" + modelData.name
                             setupComplete:  modelData.setupComplete
-                            buttonVisible:  modelData.setupSource.toString() !== ""
+                            buttonVisible:  modelData.setupSource.toString() !== "" &&
+                                            !setupView._isAdvancedOnlyComponent(modelData)
                             onClicked:      setupView.showVehicleComponentPanel(modelData)
                         }
-                    }
-
-                    SetupSideButton {
-                        label:          qsTr("Parameters")
-                        iconSource:     "/qmlimages/subMenuButtonImage.png"
-                        pageKey:        "parameters"
-                        buttonVisible:  QGroundControl.multiVehicleManager.parameterReadyVehicleAvailable &&
-                                        _activeVehicle &&
-                                        !_activeVehicle.usingHighLatencyLink &&
-                                        _corePlugin.showAdvancedUI
-                        onClicked:      setupView.showParametersPanel()
-                    }
-
-                    SetupSideButton {
-                        label:          qsTr("Firmware")
-                        iconSource:     "/qmlimages/FirmwareUpgradeIcon.png"
-                        pageKey:        "firmware"
-                        buttonVisible:  !ScreenTools.isMobile && _corePlugin.options.showFirmwareUpgrade
-                        onClicked:      setupView._selectPage(
-                                            "firmware",
-                                            qsTr("Firmware"),
-                                            "qrc:/qml/QGroundControl/VehicleSetup/FirmwareUpgrade.qml",
-                                            false, false, null)
                     }
                 }
             }

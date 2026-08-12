@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Layouts
 
 import QGroundControl
 import QGroundControl.Controls
@@ -61,7 +62,7 @@ Rectangle {
             QGCLabel {
                 width:			parent.width
                 wrapMode:		Text.WordWrap
-                color:			setupComplete ? qgcPal.text : qgcPal.warningText
+                color:			setupComplete ? "#8E8E93" : qgcPal.warningText
                 font.bold:      true
                 font.pointSize: ScreenTools.smallFontPointSize
                 horizontalAlignment: Text.AlignHCenter
@@ -72,65 +73,180 @@ Rectangle {
                 property bool setupComplete: QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle.autopilotPlugin.setupComplete : false
             }
 
-            Flow {
+            Column {
                 id:         _flowCtl
-                width:      _summaryRoot.width
-                spacing:    _summaryBoxSpace
+                width:      _summaryRoot.width - ScreenTools.defaultFontPixelWidth * 4
+                x:          ScreenTools.defaultFontPixelWidth * 2
+                spacing:    ScreenTools.defaultFontPixelHeight * 0.8
 
                 Repeater {
                     model: QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle.autopilotPlugin.vehicleComponents : undefined
 
-                    // Outer summary item rectangle
+                    // One full-width row per component
                     Rectangle {
-                        width:      _summaryBoxWidth
-                        height:     ScreenTools.defaultFontPixelHeight * 10.5
-                        color:      qgcPal.windowShade
-                        visible:    modelData.summaryQmlSource.toString() !== ""
+                        id:           rowCard
+                        width:        _flowCtl.width
+                        height:       ScreenTools.defaultFontPixelHeight * 8.5
+                        visible:      modelData.summaryQmlSource.toString() !== ""
+                        radius:       4
                         border.width: 1
-                        border.color: qgcPal.text
-                        Component.onCompleted: {
-                            border.color = Qt.rgba(border.color.r, border.color.g, border.color.b, 0.1)
+                        clip:         true
+
+                        readonly property real _titleColW:  ScreenTools.defaultFontPixelWidth * 16
+                        readonly property real _innerPadH:  ScreenTools.defaultFontPixelWidth  * 1.2
+                        readonly property real _innerPadV:  ScreenTools.defaultFontPixelHeight * 0.7
+                        readonly property bool _hovered:    rowMouse.containsMouse
+                        readonly property bool _pressed:    rowMouse.pressed
+
+                        // Smooth background color transition
+                        color: {
+                            if (_pressed)
+                                return Qt.rgba(0, 160/255, 76/255, 0.18)
+                            if (_hovered)
+                                return Qt.rgba(0, 160/255, 76/255, 0.08)
+                            return qgcPal.windowShade
+                        }
+                        Behavior on color { ColorAnimation { duration: 180 } }
+
+                        border.color: {
+                            if (_hovered || _pressed)
+                                return Qt.rgba(0, 160/255, 76/255, 0.55)
+                            return Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.15)
+                        }
+                        Behavior on border.color { ColorAnimation { duration: 180 } }
+
+                        // Green left accent bar — slides in on hover
+                        Rectangle {
+                            id:               accentBar
+                            anchors.left:     parent.left
+                            anchors.top:      parent.top
+                            anchors.bottom:   parent.bottom
+                            width:            3
+                            radius:           2
+                            color:            "#00a04c"
+                            opacity:          rowCard._hovered || rowCard._pressed ? 1.0 : 0.0
+                            Behavior on opacity { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
+                            x:                rowCard._hovered || rowCard._pressed ? 0 : -3
+                            Behavior on x     { NumberAnimation { duration: 200; easing.type: Easing.InOutQuad } }
                         }
 
-                        readonly property real titleHeight: ScreenTools.defaultFontPixelHeight * 1.65
+                        // Row title sidebar — title centered at top, then horizontal line
+                        Item {
+                            id:                   titleBar
+                            anchors.left:         parent.left
+                            anchors.top:          parent.top
+                            anchors.bottom:       parent.bottom
+                            anchors.leftMargin:   parent._innerPadH + 3  // offset for accent bar
+                            anchors.topMargin:    parent._innerPadV
+                            anchors.bottomMargin: parent._innerPadV
+                            width:                parent._titleColW
 
-                        // Title bar
-                        QGCButton {
-                            id:     titleBar
-                            width:  parent.width
-                            height: titleHeight
-                            text:   capitalizeWords(modelData.name)
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing:      ScreenTools.defaultFontPixelHeight * 0.35
 
-                            // Setup indicator
-                            Rectangle {
-                                anchors.rightMargin:    ScreenTools.defaultFontPixelWidth * 0.5
-                                anchors.right:          parent.right
-                                anchors.verticalCenter: parent.verticalCenter
-                                width:                  ScreenTools.defaultFontPixelWidth * 1.25
-                                height:                 width
-                                radius:                 width / 2
-                                color:                  modelData.setupComplete ? "#00d932" : "red"
-                                visible:                modelData.requiresSetup && modelData.setupSource !== ""
-                            }
+                                // Title centered at top
+                                Item {
+                                    Layout.fillWidth:   true
+                                    Layout.preferredHeight: titleLabel.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.1
 
-                            onClicked : {
-                                if (modelData.setupSource !== "") {
-                                    setupView.showVehicleComponentPanel(modelData)
+                                    QGCLabel {
+                                        id:                 titleLabel
+                                        anchors.horizontalCenter: parent.horizontalCenter
+                                        anchors.verticalCenter:   parent.verticalCenter
+                                        text:               capitalizeWords(modelData.name)
+                                        font.bold:          rowCard._hovered || rowCard._pressed
+                                        color:              rowCard._hovered || rowCard._pressed
+                                                            ? "#00a04c"
+                                                            : qgcPal.text
+                                        font.pointSize:     ScreenTools.defaultFontPointSize
+                                        horizontalAlignment: Text.AlignHCenter
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+                                    }
+
+                                    // Setup indicator dot
+                                    Rectangle {
+                                        anchors.right:          parent.right
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        anchors.rightMargin:    ScreenTools.defaultFontPixelWidth * 0.15
+                                        width:                  ScreenTools.defaultFontPixelWidth * 1.3
+                                        height:                 width
+                                        radius:                 width / 2
+                                        color:                  modelData.setupComplete ? "#00d932" : "red"
+                                        visible:                modelData.requiresSetup && modelData.setupSource !== ""
+                                    }
+                                }
+
+                                // Horizontal line below title
+                                Rectangle {
+                                    Layout.fillWidth:   true
+                                    Layout.preferredHeight: 1
+                                    color:  rowCard._hovered || rowCard._pressed
+                                            ? Qt.rgba(0, 160/255, 76/255, 0.45)
+                                            : Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.18)
+                                    Behavior on color { ColorAnimation { duration: 180 } }
+                                }
+
+                                // Component icon in remaining space below the line
+                                Item {
+                                    Layout.fillWidth:   true
+                                    Layout.fillHeight:  true
+                                    visible:            modelData.iconResource !== ""
+
+                                    QGCColoredImage {
+                                        anchors.centerIn: parent
+                                        width:            Math.min(parent.width * 0.55, parent.height * 0.7)
+                                        height:           width
+                                        source:           modelData.iconResource
+                                        color:            rowCard._hovered || rowCard._pressed
+                                                          ? "#00a04c"
+                                                          : "#8E8E93"
+                                        fillMode:         Image.PreserveAspectFit
+                                        Behavior on color { ColorAnimation { duration: 180 } }
+                                    }
                                 }
                             }
                         }
-                        // Summary Qml
-                        Rectangle {
-                            anchors.top:    titleBar.bottom
-                            anchors.bottom: parent.bottom
-                            width:          parent.width
-                            color:          "transparent"
-                            Loader {
-                                anchors.fill:       parent
-                                anchors.margins:    ScreenTools.defaultFontPixelWidth * 0.45
-                                source:             modelData.summaryQmlSource
 
-                                property var vehicleComponent: modelData
+                        // Vertical divider
+                        Rectangle {
+                            anchors.left:         titleBar.right
+                            anchors.top:          parent.top
+                            anchors.bottom:       parent.bottom
+                            anchors.topMargin:    parent._innerPadV
+                            anchors.bottomMargin: parent._innerPadV
+                            width:                1
+                            color:                rowCard._hovered || rowCard._pressed
+                                                  ? Qt.rgba(0, 160/255, 76/255, 0.4)
+                                                  : Qt.rgba(qgcPal.text.r, qgcPal.text.g, qgcPal.text.b, 0.15)
+                            Behavior on color { ColorAnimation { duration: 180 } }
+                        }
+
+                        // Right: summary content
+                        Loader {
+                            anchors.left:         titleBar.right
+                            anchors.right:        parent.right
+                            anchors.top:          parent.top
+                            anchors.bottom:       parent.bottom
+                            anchors.leftMargin:   parent._innerPadH
+                            anchors.rightMargin:  parent._innerPadH
+                            anchors.topMargin:    parent._innerPadV
+                            anchors.bottomMargin: parent._innerPadV
+                            source:               modelData.summaryQmlSource
+
+                            property var vehicleComponent: modelData
+                        }
+
+                        // Hover + click mouse area over whole row
+                        MouseArea {
+                            id:             rowMouse
+                            anchors.fill:   parent
+                            hoverEnabled:   true
+                            cursorShape:    modelData.setupSource !== "" ? Qt.PointingHandCursor : Qt.ArrowCursor
+                            onClicked: {
+                                if (modelData.setupSource !== "") {
+                                    setupView.showVehicleComponentPanel(modelData)
+                                }
                             }
                         }
                     }

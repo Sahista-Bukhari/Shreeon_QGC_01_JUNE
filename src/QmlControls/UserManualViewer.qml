@@ -232,8 +232,6 @@ Item {
         boundsBehavior: Flickable.StopAtBounds
         contentWidth: pagesColumn.width
         contentHeight: pagesColumn.height
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-        ScrollBar.horizontal: ScrollBar { policy: ScrollBar.AsNeeded }
 
         Column {
             id: pagesColumn

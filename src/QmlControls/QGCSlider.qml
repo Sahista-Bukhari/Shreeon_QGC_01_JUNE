@@ -18,54 +18,77 @@ Slider {
     wheelEnabled: false
 
     property real _implicitBarLength: Math.round(ScreenTools.defaultFontPixelWidth * 20)
-    property real _barHeight: Math.round(ScreenTools.defaultFontPixelHeight / 4) // Slimmer track
-    property color activeColor: qgcPal.colorGreen
+    property real _barHeight: Math.round(ScreenTools.defaultFontPixelHeight / 5)
+    property color activeColor: "#00a04c"
     property real barHeight: _barHeight
 
-    // Gray rounded knob + soft track on all light / white-theme pages
-    readonly property bool _lightTheme: {
-        if (typeof mainWindow !== "undefined" && mainWindow)
-            return mainWindow.uiThemeMode !== mainWindow.themeBlack
-        return qgcPal.globalTheme === QGCPalette.Light
-    }
-    property real handleRadius: ScreenTools.defaultFontPixelHeight * (_lightTheme ? 0.38 : 0.75)
+    readonly property color _trackInactive: Qt.rgba(0, 160 / 255, 76 / 255, 0.18)
+    readonly property real _thumbDiameter: ScreenTools.defaultFontPixelHeight * 0.72
+    property real handleRadius: _thumbDiameter / 2
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
-    background: Rectangle {
-        x: control.horizontal ? control.leftPadding : control.leftPadding + control.availableWidth / 2 - width / 2
-        y: control.horizontal ? control.topPadding + control.availableHeight / 2 - height / 2 : control.topPadding
-        implicitWidth: control.horizontal ? control._implicitBarLength : control.barHeight
-        implicitHeight: control.horizontal ? control.barHeight : control._implicitBarLength
-        width: control.horizontal ? control.availableWidth : implicitWidth
-        height: control.horizontal ? implicitHeight : control.availableHeight
-        radius: height / 2
-        color: control._lightTheme ? "#e8e8e8" : qgcPal.windowShadeDark
+    background: Item {
+        x: control.horizontal ? control.leftPadding : control.leftPadding + control.availableWidth / 2 - _track.width / 2
+        y: control.horizontal ? control.topPadding + control.availableHeight / 2 - _track.height / 2 : control.topPadding
+        width: control.horizontal ? control.availableWidth : _track.width
+        height: control.horizontal ? _track.height : control.availableHeight
 
-        // Active fill track
         Rectangle {
-            width: control.horizontal ? control.visualPosition * parent.width : parent.width
-            height: control.horizontal ? parent.height : control.visualPosition * parent.height
-            color: control.activeColor
-            radius: parent.radius
+            id: _track
+            anchors.centerIn: parent
+            implicitWidth: control.horizontal ? parent.width : control.barHeight
+            implicitHeight: control.horizontal ? control.barHeight : parent.height
+            width: implicitWidth
+            height: implicitHeight
+            radius: Math.min(width, height) / 2
+            color: control._trackInactive
+
+            Rectangle {
+                radius: parent.radius
+                color: control.activeColor
+
+                anchors.left: control.horizontal ? parent.left : undefined
+                anchors.right: control.horizontal ? undefined : parent.right
+                anchors.bottom: parent.bottom
+                anchors.top: control.horizontal ? undefined : undefined
+                anchors.verticalCenter: control.horizontal ? parent.verticalCenter : undefined
+
+                width: control.horizontal ? control.visualPosition * parent.width : parent.width
+                height: control.horizontal ? parent.height : control.visualPosition * parent.height
+            }
         }
     }
 
-    handle: Rectangle {
+    handle: Item {
         x: control.horizontal ?
                control.leftPadding + control.visualPosition * (control.availableWidth - width) :
                control.leftPadding + control.availableWidth / 2 - width / 2
         y: control.horizontal ?
                control.topPadding + control.availableHeight / 2 - height / 2 :
                control.topPadding + control.visualPosition * (control.availableHeight - height)
-        width: control.handleRadius * 2
-        height: control.handleRadius * 2
-        implicitWidth: width
-        implicitHeight: height
-        color: control._lightTheme ? "#f5f5f5" : "white"
-        border.width: control._lightTheme ? 1 : 0
-        border.color: control._lightTheme ? "#d0d0d0" : "transparent"
-        radius: control.handleRadius
+        width: control._thumbDiameter * 1.65
+        height: width
+
+        Rectangle {
+            anchors.centerIn: parent
+            width: parent.width
+            height: width
+            radius: width / 2
+            color: Qt.rgba(0, 160 / 255, 76 / 255, control.pressed ? 0.32 : (control.hovered ? 0.22 : 0.14))
+            visible: control.enabled
+        }
+
+        Rectangle {
+            id: thumb
+            anchors.centerIn: parent
+            width: control._thumbDiameter
+            height: width
+            radius: width / 2
+            color: control.activeColor
+            border.width: control.pressed ? 2 : 0
+            border.color: Qt.rgba(1, 1, 1, 0.55)
+        }
 
         Label {
             text: control.value.toFixed(control.to <= 1 ? 1 : 0)
@@ -73,7 +96,7 @@ Slider {
             anchors.centerIn: parent
             font.family: ScreenTools.normalFontFamily
             font.pointSize: ScreenTools.smallFontPointSize
-            color: control._lightTheme ? "#3f3f3f" : "black"
+            color: "white"
         }
     }
 
@@ -84,7 +107,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.from.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: control._lightTheme ? "#6a6a6a" : Qt.rgba(1, 1, 1, 0.78)
+        color: "#6a6a6a"
         visible: control.showBoundaryValues
     }
 
@@ -95,7 +118,7 @@ Slider {
         anchors.bottom: parent.bottom
         text: control.to.toFixed(1)
         font.pointSize: ScreenTools.smallFontPointSize
-        color: control._lightTheme ? "#6a6a6a" : Qt.rgba(1, 1, 1, 0.78)
+        color: "#6a6a6a"
         visible: control.showBoundaryValues
     }
 }

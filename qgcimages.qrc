@@ -205,6 +205,7 @@
         <file alias="VehicleNoseDownRotate.png">src/AutoPilotPlugins/PX4/Images/VehicleNoseDownRotate.png</file>
         <file alias="VehicleRight.png">src/AutoPilotPlugins/PX4/Images/VehicleRight.png</file>
         <file alias="VehicleRightRotate.png">src/AutoPilotPlugins/PX4/Images/VehicleRightRotate.png</file>
+        <file alias="Shower.svg">src/Vehicle/VehicleSetup/Shower.svg</file>
         <file alias="VehicleSummaryIcon.png">src/Vehicle/VehicleSetup/VehicleSummaryIcon.png</file>
         <file alias="VehicleTailDown.png">src/AutoPilotPlugins/PX4/Images/VehicleTailDown.png</file>
         <file alias="VehicleTailDownRotate.png">src/AutoPilotPlugins/PX4/Images/VehicleTailDownRotate.png</file>

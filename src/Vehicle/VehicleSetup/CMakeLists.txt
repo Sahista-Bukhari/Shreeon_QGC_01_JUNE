@@ -49,7 +49,9 @@ qt_add_qml_module(VehicleSetupModule
         OpticalFlowSensor.qml
         RemoteControlCalibration.qml
         SetupParameterEditor.qml
+        AdvancedSetupView.qml
         SetupView.qml
+        SprayerSetup.qml
         VehicleSummary.qml
     NO_PLUGIN
 )

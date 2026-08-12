@@ -257,7 +257,6 @@ SetupPage {
                                 flickable.flick(0, -300)
                             }
                         }
-                        ScrollBar.vertical: ScrollBar {}
                     }
                 }
             }

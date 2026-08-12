@@ -161,8 +161,6 @@ T.ComboBox {
             model:                  control.delegateModel
             currentIndex:           control.highlightedIndex
             highlightMoveDuration:  0
-
-            T.ScrollIndicator.vertical: ScrollIndicator { }
         }
 
         background: Rectangle {
