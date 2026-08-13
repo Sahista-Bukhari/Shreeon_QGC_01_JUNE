@@ -40,7 +40,7 @@ Item {
         height:                 width
         // source:                 "qrc:/qmlimages/HamburgerThin.svg"
         source:  "/res/gear-black.svg"
-        color:                  qgcPal.text
+        color:                  qgcPal.windowTransparentText
         fillMode:               Image.PreserveAspectFit
         opacity:                hamburgerMouseArea.containsMouse || moreMenu.visible ? 1.0 : 0.7
         Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -140,7 +140,6 @@ Item {
             Item {
                 width:  parent.width
                 height: ScreenTools.defaultFontPixelHeight * 2.0
-
                 Rectangle {
                     anchors.fill:   parent
                     color:          qgcPal.colorGreen

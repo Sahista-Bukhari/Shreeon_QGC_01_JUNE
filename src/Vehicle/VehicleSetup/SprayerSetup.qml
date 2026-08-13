@@ -1,6 +1,7 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
+import QtQuick.Dialogs
 import QtCore
 
 import QGroundControl
@@ -21,8 +22,11 @@ Rectangle {
     }
 
     readonly property color _pageBackground:    _darkTheme ? qgcPal.window : "#FFFFFF"
-    readonly property color _titleColor:        _darkTheme ? "#AEAEB2" : "#1C1C1E"
-    readonly property color _bodyColor:         _darkTheme ? "#8E8E93" : "#8E8E93"
+    readonly property color _titleColor:        _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:         _darkTheme ? "#8E8E93" : "#3A3A3C"
+    readonly property real  _titlePointSize:    ScreenTools.defaultFontPointSize + 1
+    readonly property real  _labelPointSize:    ScreenTools.defaultFontPointSize
+    readonly property real  _bodyPointSize:     ScreenTools.smallFontPointSize
     readonly property color _dividerColor:      _darkTheme ? qgcPal.windowShade : "#EFEFEF"
     readonly property color _accentGreen:       "#00a04c"
     readonly property color _cardIdleBorder:    _darkTheme ? qgcPal.windowShade : "#E6E6E6"
@@ -58,10 +62,19 @@ Rectangle {
     readonly property string _floatStatus: _payloadKg > 0.15 ? qsTr("Floating") : qsTr("Sunk down")
 
     property Fact _sprayEnFact: null
+    property Fact _sprayNozRateFact: null
+    property Fact _sprayPumpRateFact: null
+    property Fact _sprayRcNozFact: null
+    property Fact _sprayRcPumpFact: null
+    property bool _sprayParamsRequested: false
 
     readonly property bool _sprayingEnabled: _sprayEnFact !== null
                                              ? Number(_sprayEnFact.value) !== 0
                                              : sprayerSettings.sprayingEnabled
+    readonly property bool _sprayParamsAvailable: _sprayNozRateFact !== null
+                                                  || _sprayPumpRateFact !== null
+                                                  || _sprayRcNozFact !== null
+                                                  || _sprayRcPumpFact !== null
 
     Settings {
         id:       sprayerSettings
@@ -94,9 +107,32 @@ Rectangle {
 
     function _refreshSprayFacts() {
         root._sprayEnFact = root._lookupFact("SPRAY_EN")
+        root._sprayNozRateFact = root._lookupFact("SPRAY_NOZ_RATE")
+        root._sprayPumpRateFact = root._lookupFact("SPRAY_PUMP_RATE")
+        root._sprayRcNozFact = root._lookupFact("SPRAY_RC_NOZ")
+        root._sprayRcPumpFact = root._lookupFact("SPRAY_RC_PUMP")
+        if (!root._paramsReady || !paramControllerLoader.item)
+            return
+        var missing = []
+        if (!root._sprayNozRateFact)
+            missing.push("SPRAY_NOZ_RATE")
+        if (!root._sprayPumpRateFact)
+            missing.push("SPRAY_PUMP_RATE")
+        if (!root._sprayRcNozFact)
+            missing.push("SPRAY_RC_NOZ")
+        if (!root._sprayRcPumpFact)
+            missing.push("SPRAY_RC_PUMP")
+        if (!root._sprayEnFact)
+            missing.push("SPRAY_EN")
+        if (missing.length > 0 && !root._sprayParamsRequested) {
+            root._sprayParamsRequested = true
+            paramControllerLoader.item.getMissingParameters(missing)
+            sprayFactRefreshTimer.restart()
+        }
     }
 
     function _reloadParamController() {
+        root._sprayParamsRequested = false
         paramControllerLoader.active = false
         paramControllerLoader.active = true
     }
@@ -122,117 +158,425 @@ Rectangle {
         root._setEnableDisableFact(root._sprayEnFact, enabled)
     }
 
-    component SprinklerDiagram: Canvas {
-        id: diagram
+    function _factNumber(fact) {
+        if (!fact)
+            return NaN
+        var v = Number(fact.value)
+        return isFinite(v) ? v : NaN
+    }
 
-        property bool highlightFront: true
-        property bool highlightRear:  true
-        property bool arrowForward:   true
-        property color frameColor:    root._titleColor
-        property color arrowColor:    root._accentGreen
+    function _rateText(fact) {
+        var v = root._factNumber(fact)
+        return isFinite(v) ? v.toFixed(2) : "—"
+    }
 
-        onHighlightFrontChanged: requestPaint()
-        onHighlightRearChanged:  requestPaint()
-        onArrowForwardChanged:   requestPaint()
-        onFrameColorChanged:     requestPaint()
-        onWidthChanged:          requestPaint()
-        onHeightChanged:         requestPaint()
+    function _rcText(fact) {
+        var v = root._factNumber(fact)
+        return isFinite(v) ? String(Math.round(v)) : "—"
+    }
 
-        onPaint: {
-            var ctx = getContext("2d")
-            ctx.clearRect(0, 0, width, height)
+    function _openSprayParamsDialog() {
+        sprayParamsDialogComponent.createObject(mainWindow).open()
+    }
 
-            var w = width
-            var h = height
-            var cx = w * 0.50
-            var cy = diagram.arrowForward ? h * 0.58 : h * 0.46
-            var arm = Math.min(w, h) * 0.26
-            var r = Math.min(w, h) * 0.145
-            var motors = [
-                { x: cx - arm, y: cy - arm, front: true  },
-                { x: cx + arm, y: cy - arm, front: true  },
-                { x: cx - arm, y: cy + arm, front: false },
-                { x: cx + arm, y: cy + arm, front: false }
-            ]
+    component HeadingLabel: QGCLabel {
+        color:          root._titleColor
+        font.bold:      true
+        font.pointSize: root._titlePointSize
+        font.family:    ScreenTools.normalFontFamily
+    }
 
-            var i
-            for (i = 0; i < 4; i++) {
-                var m = motors[i]
-                if (!(m.front ? diagram.highlightFront : diagram.highlightRear))
-                    continue
-                ctx.beginPath()
-                ctx.fillStyle = "rgba(78, 195, 232, 0.40)"
-                ctx.arc(m.x, m.y, r * 1.42, 0, Math.PI * 2)
-                ctx.fill()
+    component SettingLabel: QGCLabel {
+        color:          root._titleColor
+        font.bold:      false
+        font.pointSize: root._labelPointSize
+        font.family:    ScreenTools.normalFontFamily
+    }
+
+    component BodyLabel: QGCLabel {
+        color:          root._bodyColor
+        font.bold:      false
+        font.pointSize: root._bodyPointSize
+        font.family:    ScreenTools.normalFontFamily
+        wrapMode:       Text.WordWrap
+    }
+
+    component RateRow: Column {
+        id: rateRow
+
+        property string title
+        property var    fact: null
+        property real   localValue: 0.33
+        property real   step: 0.01
+
+        readonly property real minVal: (fact && fact.minIsDefaultForType === false) ? Number(fact.min) : 0
+        readonly property real maxVal: (fact && fact.maxIsDefaultForType === false) ? Number(fact.max) : 1
+        readonly property real current: fact ? Number(fact.value) : localValue
+
+        function setValue(v) {
+            var clamped = Math.max(rateRow.minVal, Math.min(rateRow.maxVal, Number(v)))
+            clamped = Math.round(clamped * 1000) / 1000
+            if (rateRow.fact)
+                rateRow.fact.value = clamped
+            else
+                rateRow.localValue = clamped
+        }
+
+        width:   parent.width
+        spacing: ScreenTools.defaultFontPixelHeight * 0.28
+
+        SettingLabel {
+            text: rateRow.title
+        }
+
+        RowLayout {
+            width:   parent.width
+            spacing: ScreenTools.defaultFontPixelWidth * 0.75
+
+            QGCSlider {
+                Layout.fillWidth:  true
+                Layout.alignment:  Qt.AlignVCenter
+                from:              rateRow.minVal
+                to:                rateRow.maxVal
+                value:             rateRow.current
+                stepSize:          rateRow.step
+                onMoved:           rateRow.setValue(value)
             }
 
-            ctx.strokeStyle = diagram.frameColor
-            ctx.lineWidth = Math.max(2, Math.min(w, h) * 0.045)
-            ctx.lineCap = "round"
-            ctx.beginPath()
-            ctx.moveTo(motors[0].x, motors[0].y)
-            ctx.lineTo(motors[3].x, motors[3].y)
-            ctx.moveTo(motors[1].x, motors[1].y)
-            ctx.lineTo(motors[2].x, motors[2].y)
-            ctx.stroke()
+            Rectangle {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 13.5
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.75
+                Layout.alignment:       Qt.AlignVCenter
+                radius:                 height * 0.22
+                color:                  root._cardIdleFill
+                border.width:           1
+                border.color:           root._tableLine
 
-            var bw = r * 0.85
-            var bh = r * 1.15
-            ctx.fillStyle = diagram.frameColor
-            ctx.fillRect(cx - bw * 0.5, cy - bh * 0.5, bw, bh)
+                Row {
+                    anchors.fill: parent
 
-            for (i = 0; i < 4; i++) {
-                ctx.beginPath()
-                ctx.fillStyle = diagram.frameColor
-                ctx.arc(motors[i].x, motors[i].y, r * 0.26, 0, Math.PI * 2)
-                ctx.fill()
+                    Item {
+                        width:  parent.width / 3
+                        height: parent.height
+
+                        QGCLabel {
+                            anchors.centerIn: parent
+                            text:             "−"
+                            color:            root._titleColor
+                            font.pointSize:   root._labelPointSize
+                            font.bold:        true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape:  Qt.PointingHandCursor
+                            onClicked:    rateRow.setValue(rateRow.current - rateRow.step)
+                        }
+                    }
+
+                    Item {
+                        width:  parent.width / 3
+                        height: parent.height
+
+                        QGCLabel {
+                            anchors.centerIn:     parent
+                            text:                 rateRow.current.toFixed(3)
+                            color:                root._titleColor
+                            font.pointSize:       root._labelPointSize
+                            font.family:          ScreenTools.normalFontFamily
+                            horizontalAlignment:  Text.AlignHCenter
+                        }
+                    }
+
+                    Item {
+                        width:  parent.width / 3
+                        height: parent.height
+
+                        QGCLabel {
+                            anchors.centerIn: parent
+                            text:             "+"
+                            color:            root._titleColor
+                            font.pointSize:   root._labelPointSize
+                            font.bold:        true
+                        }
+
+                        MouseArea {
+                            anchors.fill: parent
+                            cursorShape:  Qt.PointingHandCursor
+                            onClicked:    rateRow.setValue(rateRow.current + rateRow.step)
+                        }
+                    }
+                }
             }
-
-            var aw = r * 0.40
-            ctx.fillStyle = diagram.arrowColor
-            ctx.beginPath()
-            if (diagram.arrowForward) {
-                var ay = h * 0.08
-                ctx.moveTo(cx, ay)
-                ctx.lineTo(cx - aw, ay + aw * 1.55)
-                ctx.lineTo(cx + aw, ay + aw * 1.55)
-            } else {
-                var by = h * 0.92
-                ctx.moveTo(cx, by)
-                ctx.lineTo(cx - aw, by - aw * 1.55)
-                ctx.lineTo(cx + aw, by - aw * 1.55)
-            }
-            ctx.closePath()
-            ctx.fill()
         }
     }
 
-    component DirectionRow: RowLayout {
+    component InlineSprayerParams: Rectangle {
+        id: paramsPanel
+
+        signal closed()
+
+        color:          root._cardIdleFill
+        radius:         ScreenTools.defaultFontPixelWidth * 0.7
+        border.width:   1
+        border.color:   root._tableLine
+        implicitHeight: paramsCol.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.85
+
+        Column {
+            id:              paramsCol
+            anchors.left:    parent.left
+            anchors.right:   parent.right
+            anchors.top:     parent.top
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.85
+            spacing:         ScreenTools.defaultFontPixelHeight * 0.85
+
+            RateRow {
+                title:      qsTr("Nozzle rate")
+                fact:       root._sprayNozRateFact
+                localValue: 0.330
+            }
+
+            RateRow {
+                title:      qsTr("Pump rate")
+                fact:       root._sprayPumpRateFact
+                localValue: 0.340
+            }
+
+            QGCLabel {
+                anchors.horizontalCenter: parent.horizontalCenter
+                text:                     qsTr("Ok")
+                color:                    root._accentGreen
+                font.bold:                true
+                font.pointSize:           root._labelPointSize
+                font.family:              ScreenTools.normalFontFamily
+
+                MouseArea {
+                    anchors.fill:    parent
+                    anchors.margins: -ScreenTools.defaultFontPixelHeight * 0.4
+                    cursorShape:     Qt.PointingHandCursor
+                    onClicked:       paramsPanel.closed()
+                }
+            }
+        }
+    }
+
+    component DirectionRow: Item {
         id: dirRow
 
         property string description
-        property bool highlightFront: false
-        property bool highlightRear:  false
-        property bool arrowForward:   true
+        property bool   editingParams: false
 
-        spacing: ScreenTools.defaultFontPixelWidth * 0.6
+        readonly property real _droneSize: ScreenTools.defaultFontPixelHeight * 4.2
+        readonly property real _gap:       ScreenTools.defaultFontPixelWidth * 0.8
 
-        QGCLabel {
-            Layout.fillWidth:   true
-            Layout.alignment:   Qt.AlignVCenter
-            text:               dirRow.description
-            color:              root._bodyColor
-            wrapMode:           Text.WordWrap
-            font.pointSize:     ScreenTools.smallFontPointSize
+        implicitHeight: Math.max(_droneSize, editingParams ? paramsEditor.implicitHeight : descLabel.implicitHeight)
+        height:         implicitHeight
+
+        Behavior on implicitHeight {
+            NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
         }
 
-        SprinklerDiagram {
-            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 5.6
-            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 5.6
-            Layout.alignment:       Qt.AlignVCenter
-            highlightFront:         dirRow.highlightFront
-            highlightRear:          dirRow.highlightRear
-            arrowForward:           dirRow.arrowForward
+        BodyLabel {
+            id:                     descLabel
+            x:                      0
+            width:                  Math.max(0, parent.width - dirRow._droneSize - dirRow._gap)
+            anchors.verticalCenter: parent.verticalCenter
+            text:                   dirRow.description
+            opacity:                dirRow.editingParams ? 0 : 1
+            visible:                !dirRow.editingParams || opacity > 0
+            Behavior on opacity { NumberAnimation { duration: 200 } }
+        }
+
+        InlineSprayerParams {
+            id:               paramsEditor
+            x:                dirRow._droneSize + dirRow._gap
+            width:            Math.max(0, parent.width - x)
+            y:                dirRow.editingParams ? 0 : ScreenTools.defaultFontPixelHeight * 0.5
+            opacity:          dirRow.editingParams ? 1 : 0
+            scale:            dirRow.editingParams ? 1 : 0.92
+            transformOrigin:  Item.Center
+            visible:          dirRow.editingParams || opacity > 0
+            enabled:          dirRow.editingParams
+
+            Behavior on opacity {
+                NumberAnimation { duration: 340; easing.type: Easing.OutCubic }
+            }
+            Behavior on scale {
+                NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 0.55 }
+            }
+            Behavior on y {
+                NumberAnimation { duration: 420; easing.type: Easing.OutCubic }
+            }
+
+            onClosed: {
+                leftSprayCorner.stopRipple()
+                dirRow.editingParams = false
+            }
+        }
+
+        Item {
+            id: droneIcon
+            width:  dirRow._droneSize
+            height: dirRow._droneSize
+            y:      (parent.height - height) / 2
+            x:      dirRow.editingParams ? 0 : Math.max(0, parent.width - width)
+            z:      2
+            clip:   false
+
+            Behavior on x {
+                NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+            }
+
+            QGCColoredImage {
+                anchors.fill: parent
+                source:       "/res/drone.png"
+                fillMode:     Image.PreserveAspectFit
+                mipmap:       true
+                color:        root._titleColor
+            }
+
+            Item {
+                id: rightSprayCorner
+                width:  droneIcon.width * 0.20
+                height: width
+                x:      droneIcon.width * 0.82 - width / 2
+                y:      droneIcon.height * 0.82 - height / 2
+                z:      2
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius:       width / 2
+                    color:        root._accentGreen
+                }
+
+                MouseArea {
+                    anchors.fill:    parent
+                    anchors.margins: -parent.width * 0.35
+                    cursorShape:     Qt.PointingHandCursor
+                    onClicked:       dirRow.editingParams = true
+                }
+            }
+
+            Item {
+                id: leftSprayCorner
+                width:  droneIcon.width * 0.20
+                height: width
+                x:      droneIcon.width * 0.18 - width / 2
+                y:      droneIcon.height * 0.82 - height / 2
+                z:      2
+                clip:   false
+
+                property bool pulsing: false
+
+                function _resetRings() {
+                    ring0.opacity = 0; ring0.scale = 1
+                    ring1.opacity = 0; ring1.scale = 1
+                    ring2.opacity = 0; ring2.scale = 1
+                }
+
+                function stopRipple() {
+                    if (!pulsing)
+                        return
+                    pulsing = false
+                    leftRippleAnim.stop()
+                    _resetRings()
+                }
+
+                function toggleRipple() {
+                    pulsing = !pulsing
+                    if (pulsing) {
+                        leftRippleAnim.restart()
+                    } else {
+                        leftRippleAnim.stop()
+                        _resetRings()
+                    }
+                }
+
+                Rectangle {
+                    id: ring0
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: Math.max(1.5, parent.width * 0.08)
+                    border.color: root._accentGreen
+                    opacity: 0
+                    scale: 1
+                    z: -1
+                }
+
+                Rectangle {
+                    id: ring1
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: Math.max(1.5, parent.width * 0.08)
+                    border.color: root._accentGreen
+                    opacity: 0
+                    scale: 1
+                    z: -1
+                }
+
+                Rectangle {
+                    id: ring2
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: width
+                    radius: width / 2
+                    color: "transparent"
+                    border.width: Math.max(1.5, parent.width * 0.07)
+                    border.color: root._accentGreen
+                    opacity: 0
+                    scale: 1
+                    z: -1
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius:       width / 2
+                    color:        root._accentGreen
+                    z:            1
+                }
+
+                ParallelAnimation {
+                    id: leftRippleAnim
+                    loops: Animation.Infinite
+                    SequentialAnimation {
+                        ParallelAnimation {
+                            NumberAnimation { target: ring0; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: ring0; property: "opacity"; from: 0.95; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                        }
+                    }
+                    SequentialAnimation {
+                        PauseAnimation { duration: 150 }
+                        ParallelAnimation {
+                            NumberAnimation { target: ring1; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: ring1; property: "opacity"; from: 0.8; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                        }
+                    }
+                    SequentialAnimation {
+                        PauseAnimation { duration: 300 }
+                        ParallelAnimation {
+                            NumberAnimation { target: ring2; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                            NumberAnimation { target: ring2; property: "opacity"; from: 0.65; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                        }
+                    }
+                }
+
+                MouseArea {
+                    anchors.fill:    parent
+                    anchors.margins: -parent.width * 0.35
+                    cursorShape:     Qt.PointingHandCursor
+                    z:               2
+                    onClicked: {
+                        leftSprayCorner.toggleRipple()
+                        dirRow.editingParams = true
+                    }
+                }
+            }
         }
     }
 
@@ -241,25 +585,25 @@ Rectangle {
 
         property bool selected: true
 
-        radius:       root._cardRadius
-        color:        selected ? root._cardSelectedFill : root._cardIdleFill
-        border.width: 1.5
-        border.color: selected ? root._accentGreen : root._cardIdleBorder
-        implicitHeight: cardColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 1.15
+        radius:         ScreenTools.defaultFontPixelWidth * 0.75
+        color:          root._cardIdleFill
+        border.width:   1
+        border.color:   root._cardIdleBorder
+        implicitHeight: cardColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 1.2
 
         Column {
             id:              cardColumn
             anchors.left:    parent.left
             anchors.right:   parent.right
             anchors.top:     parent.top
-            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.95
-            spacing:         ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.margins: ScreenTools.defaultFontPixelWidth * 1.05
+            spacing:         ScreenTools.defaultFontPixelHeight * 0.45
 
             Row {
                 spacing: ScreenTools.defaultFontPixelWidth * 0.55
 
                 Item {
-                    width:  ScreenTools.defaultFontPixelHeight * 1.15
+                    width:  ScreenTools.defaultFontPixelHeight * 1.05
                     height: width
                     anchors.verticalCenter: parent.verticalCenter
 
@@ -267,57 +611,52 @@ Rectangle {
                         anchors.fill: parent
                         radius:       width / 2
                         color:        "transparent"
-                        border.width: card.selected ? 2 : 1.5
+                        border.width: 1.5
                         border.color: card.selected ? root._accentGreen : root._radioIdle
                     }
 
                     Rectangle {
                         visible:          card.selected
                         anchors.centerIn: parent
-                        width:            parent.width * 0.48
+                        width:            parent.width * 0.46
                         height:           width
                         radius:           width / 2
                         color:            root._accentGreen
                     }
                 }
 
-                QGCLabel {
+                SettingLabel {
                     anchors.verticalCenter: parent.verticalCenter
                     text:                   qsTr("Alternate Mode")
-                    color:                  card.selected ? root._accentGreen : root._titleColor
-                    font.bold:              true
-                    font.pointSize:         ScreenTools.defaultFontPointSize
                 }
             }
 
             Rectangle {
                 width:  parent.width
+                height: 1
+                color:  root._tableLine
+            }
+
+            Rectangle {
+                width:  parent.width
                 height: innerColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.9
-                radius: root._cardRadius * 0.75
-                color:  card.selected ? root._innerSelectedFill : root._innerIdleFill
+                radius: ScreenTools.defaultFontPixelWidth * 0.75
+                color:  root._darkTheme ? qgcPal.windowShade : "#E8E8E8"
+                border.width: 1
+                border.color: root._tableLine
+                clip:   false
 
                 Column {
                     id:              innerColumn
                     anchors.left:    parent.left
                     anchors.right:   parent.right
                     anchors.top:     parent.top
-                    anchors.margins: ScreenTools.defaultFontPixelWidth * 0.75
-                    spacing:         ScreenTools.defaultFontPixelHeight * 0.55
+                    anchors.margins: ScreenTools.defaultFontPixelWidth * 0.85
+                    spacing:         ScreenTools.defaultFontPixelHeight * 0.45
 
                     DirectionRow {
-                        width:          parent.width
-                        description:    qsTr("When flying forward, 2 sprinklers on rear of aircraft spray")
-                        highlightFront: false
-                        highlightRear:  true
-                        arrowForward:   true
-                    }
-
-                    DirectionRow {
-                        width:          parent.width
-                        description:    qsTr("When flying backward, 2 sprinklers on front of aircraft spray")
-                        highlightFront: true
-                        highlightRear:  false
-                        arrowForward:   false
+                        width:       parent.width
+                        description: qsTr("When flying forward, 2 sprinklers on rear of aircraft spray")
                     }
                 }
             }
@@ -346,11 +685,9 @@ Rectangle {
             Row {
                 spacing: ScreenTools.defaultFontPixelWidth * 0.35
 
-                QGCLabel {
-                    text:           cell.valueText
-                    color:          cell.valueColor
-                    font.bold:      true
-                    font.pointSize: ScreenTools.mediumFontPointSize
+                SettingLabel {
+                    text:  cell.valueText
+                    color: cell.valueColor
                 }
 
                 QGCColoredImage {
@@ -364,12 +701,9 @@ Rectangle {
                 }
             }
 
-            QGCLabel {
-                width:          parent.width
-                text:           cell.labelText
-                color:          root._bodyColor
-                wrapMode:       Text.WordWrap
-                font.pointSize: ScreenTools.smallFontPointSize
+            BodyLabel {
+                width: parent.width
+                text:  cell.labelText
             }
         }
 
@@ -402,12 +736,9 @@ Rectangle {
             fillMode:               Image.PreserveAspectFit
         }
 
-        QGCLabel {
+        BodyLabel {
             Layout.fillWidth: true
             text:             note
-            color:            root._bodyColor
-            wrapMode:         Text.WordWrap
-            font.pointSize:   ScreenTools.smallFontPointSize
         }
     }
 
@@ -416,6 +747,8 @@ Rectangle {
 
         property var headers: []   // [{ title, unit, flex }]
         property var rows: []      // [["1","0","0.0"], ...]
+
+        signal clicked()
 
         readonly property real _rowH: ScreenTools.defaultFontPixelHeight * 2.15
         readonly property real _headH: ScreenTools.defaultFontPixelHeight * 2.55
@@ -458,20 +791,15 @@ Rectangle {
                             anchors.centerIn: parent
                             spacing:          1
 
-                            QGCLabel {
+                            SettingLabel {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 text:                     modelData.title
-                                color:                    root._titleColor
-                                font.bold:                true
-                                font.pointSize:           ScreenTools.smallFontPointSize
                             }
 
-                            QGCLabel {
+                            BodyLabel {
                                 anchors.horizontalCenter: parent.horizontalCenter
                                 visible:                  modelData.unit && modelData.unit !== ""
                                 text:                     modelData.unit ? modelData.unit : ""
-                                color:                    root._bodyColor
-                                font.pointSize:           ScreenTools.smallFontPointSize * 0.9
                             }
                         }
                     }
@@ -498,17 +826,28 @@ Rectangle {
                             border.width: 1
                             border.color: root._tableLine
 
-                            QGCLabel {
+                            SettingLabel {
                                 anchors.centerIn: parent
                                 text:             dataRow.rowValues[index]
-                                color:            root._titleColor
-                                font.pointSize:   ScreenTools.defaultFontPointSize
                             }
                         }
+                    }
+
+                    MouseArea {
+                        anchors.fill: parent
+                        cursorShape:  Qt.PointingHandCursor
+                        onClicked:    tableRoot.clicked()
                     }
                 }
             }
         }
+    }
+
+    Timer {
+        id:       sprayFactRefreshTimer
+        interval: 800
+        repeat:   false
+        onTriggered: root._refreshSprayFacts()
     }
 
     Timer {
@@ -544,6 +883,68 @@ Rectangle {
         }
     }
 
+    Component {
+        id: sprayParamsDialogComponent
+
+        QGCPopupDialog {
+            title:   qsTr("Sprayer Parameters")
+            buttons: Dialog.Ok
+            compact: true
+
+            ColumnLayout {
+                spacing: ScreenTools.defaultFontPixelHeight * 0.7
+                width:   ScreenTools.defaultFontPixelWidth * 42
+
+                BodyLabel {
+                    Layout.fillWidth: true
+                    visible:          !root._sprayParamsAvailable
+                    text:             qsTr("Connect a vehicle with spray parameters to edit these values.")
+                }
+
+                Repeater {
+                    model: [
+                        { fact: root._sprayNozRateFact,  name: "SPRAY_NOZ_RATE",  desc: qsTr("Spray nozzle output rate") },
+                        { fact: root._sprayPumpRateFact, name: "SPRAY_PUMP_RATE", desc: qsTr("Spray pump output rate") },
+                        { fact: root._sprayRcNozFact,    name: "SPRAY_RC_NOZ",    desc: qsTr("RC AUX channel for nozzle") },
+                        { fact: root._sprayRcPumpFact,   name: "SPRAY_RC_PUMP",   desc: qsTr("RC AUX channel for pump") }
+                    ]
+
+                    ColumnLayout {
+                        Layout.fillWidth: true
+                        spacing:          ScreenTools.defaultFontPixelHeight * 0.15
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing:          ScreenTools.defaultFontPixelWidth
+
+                            SettingLabel {
+                                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 16
+                                text:                  modelData.name
+                            }
+
+                            FactTextField {
+                                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 10
+                                fact:                  modelData.fact
+                                visible:               modelData.fact !== null
+                                enabled:               modelData.fact !== null
+                            }
+
+                            BodyLabel {
+                                visible: modelData.fact === null
+                                text:    "—"
+                            }
+                        }
+
+                        BodyLabel {
+                            Layout.fillWidth: true
+                            text:             modelData.desc
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     QGCFlickable {
         anchors.fill:       parent
         contentWidth:       width
@@ -559,10 +960,8 @@ Rectangle {
             bottomPadding: ScreenTools.defaultFontPixelHeight * 1.2
             spacing:       root._sectionGap
 
-            QGCLabel {
-                text:           qsTr("Task Settings")
-                color:          root._bodyColor
-                font.pointSize: ScreenTools.smallFontPointSize
+            HeadingLabel {
+                text: qsTr("Task Settings")
             }
 
             Column {
@@ -573,12 +972,9 @@ Rectangle {
                     width:   parent.width
                     spacing: ScreenTools.defaultFontPixelWidth
 
-                    QGCLabel {
+                    SettingLabel {
                         Layout.fillWidth: true
                         text:             qsTr("Spraying and Spreading Systems")
-                        color:            root._titleColor
-                        font.bold:        true
-                        font.pointSize:   ScreenTools.defaultFontPointSize
                         wrapMode:         Text.WordWrap
                     }
 
@@ -589,12 +985,9 @@ Rectangle {
                     }
                 }
 
-                QGCLabel {
-                    width:          parent.width - ScreenTools.defaultFontPixelWidth * 8
-                    text:           qsTr("Once Spraying and Spreading Systems are turned off, aircraft is unable to spray or spread. Flight route tasks can still be performed.")
-                    color:          root._bodyColor
-                    wrapMode:       Text.WordWrap
-                    font.pointSize: ScreenTools.smallFontPointSize
+                BodyLabel {
+                    width: parent.width - ScreenTools.defaultFontPixelWidth * 8
+                    text:  qsTr("Once Spraying and Spreading Systems are turned off, aircraft is unable to spray or spread. Flight route tasks can still be performed.")
                 }
             }
 
@@ -608,12 +1001,9 @@ Rectangle {
                     width:   parent.width
                     spacing: ScreenTools.defaultFontPixelWidth
 
-                    QGCLabel {
+                    SettingLabel {
                         Layout.fillWidth: true
                         text:             qsTr("Atomized Spray")
-                        color:            root._titleColor
-                        font.bold:        true
-                        font.pointSize:   ScreenTools.defaultFontPointSize
                     }
 
                     QGCCheckBoxSlider {
@@ -623,28 +1013,21 @@ Rectangle {
                     }
                 }
 
-                QGCLabel {
-                    width:          parent.width - ScreenTools.defaultFontPixelWidth * 8
-                    text:           qsTr("When disabled, centrifugal motors will stop working when spraying. Sprinkler will spray liquid jets without atomization.")
-                    color:          root._bodyColor
-                    wrapMode:       Text.WordWrap
-                    font.pointSize: ScreenTools.smallFontPointSize
+                BodyLabel {
+                    width: parent.width - ScreenTools.defaultFontPixelWidth * 8
+                    text:  qsTr("When disabled, centrifugal motors will stop working when spraying. Sprinkler will spray liquid jets without atomization.")
                 }
             }
 
             SectionDivider { }
 
-            QGCLabel {
-                width:               parent.width
-                text:                qsTr("Sprinkler Operating Mode")
-                color:               root._titleColor
-                font.bold:           true
-                font.pointSize:      ScreenTools.defaultFontPointSize
-                horizontalAlignment: Text.AlignHCenter
+            HeadingLabel {
+                width: parent.width
+                text:  qsTr("Sprinkler Operating Mode")
             }
 
             AlternateModeCard {
-                width:    Math.min(parent.width, Math.max(ScreenTools.defaultFontPixelWidth * 36, parent.width * 0.55))
+                width:    parent.width
                 selected: true
             }
 
@@ -654,17 +1037,12 @@ Rectangle {
                 width:   parent.width
                 spacing: ScreenTools.defaultFontPixelHeight * 0.35
 
-                QGCLabel {
-                    text:           qsTr("Management and Calibration")
-                    color:          root._bodyColor
-                    font.pointSize: ScreenTools.smallFontPointSize
+                HeadingLabel {
+                    text: qsTr("Management and Calibration")
                 }
 
-                QGCLabel {
-                    text:           qsTr("Spraying System Real-time Data")
-                    color:          root._titleColor
-                    font.bold:      true
-                    font.pointSize: ScreenTools.defaultFontPointSize
+                SettingLabel {
+                    text: qsTr("Spraying System Real-time Data")
                 }
 
                 Rectangle {
@@ -672,6 +1050,8 @@ Rectangle {
                     height: dataGrid.implicitHeight + ScreenTools.defaultFontPixelHeight * 1.8
                     radius: root._cardRadius
                     color:  root._dataCardFill
+                    border.width: 1
+                    border.color: root._tableLine
 
                     GridLayout {
                         id:              dataGrid
@@ -720,27 +1100,27 @@ Rectangle {
                 width:   parent.width
                 spacing: ScreenTools.defaultFontPixelHeight * 0.45
 
-                QGCLabel {
-                    text:           qsTr("Pump")
-                    color:          root._titleColor
-                    font.bold:      true
-                    font.pointSize: ScreenTools.largeFontPointSize
+                HeadingLabel {
+                    text: qsTr("Pump")
                 }
 
                 InfoNote {
-                    note: qsTr("Pump numbers are located on both sides in bottom of tank")
+                    note: qsTr("Pump numbers are located on both sides in bottom of tank. Tap a row to edit spray parameters.")
                 }
 
                 HardwareTable {
                     headers: [
-                        { title: qsTr("No."), unit: "", flex: 0.18 },
-                        { title: qsTr("Rotational Speed"), unit: qsTr("(rev/min)"), flex: 0.50 },
-                        { title: qsTr("Flow"), unit: qsTr("(L/min)"), flex: 0.32 }
+                        { title: qsTr("No."), unit: "", flex: 0.16 },
+                        { title: qsTr("RC Channel"), unit: "", flex: 0.34 },
+                        { title: qsTr("Output Rate"), unit: "", flex: 0.50 }
                     ]
                     rows: [
-                        [ "1", "0", "0.0" ],
-                        [ "2", "0", "0.0" ]
+                        [ "1", root._sprayRcPumpFact ? String(Math.round(Number(root._sprayRcPumpFact.value))) : "—",
+                          root._sprayPumpRateFact ? Number(root._sprayPumpRateFact.value).toFixed(2) : "—" ],
+                        [ "2", root._sprayRcPumpFact ? String(Math.round(Number(root._sprayRcPumpFact.value))) : "—",
+                          root._sprayPumpRateFact ? Number(root._sprayPumpRateFact.value).toFixed(2) : "—" ]
                     ]
+                    onClicked: root._openSprayParamsDialog()
                 }
             }
 
@@ -750,26 +1130,27 @@ Rectangle {
                 width:   parent.width
                 spacing: ScreenTools.defaultFontPixelHeight * 0.45
 
-                QGCLabel {
-                    text:           qsTr("Centrifugal Sprinkler")
-                    color:          root._titleColor
-                    font.bold:      true
-                    font.pointSize: ScreenTools.largeFontPointSize
+                HeadingLabel {
+                    text: qsTr("Centrifugal Sprinkler")
                 }
 
                 InfoNote {
-                    note: qsTr("Sprinklers are numbered the same as aircraft arms they are installed on")
+                    note: qsTr("Sprinklers are numbered the same as aircraft arms they are installed on. Tap a sprinkler to edit spray parameters.")
                 }
 
                 HardwareTable {
                     headers: [
-                        { title: qsTr("No."), unit: "", flex: 0.22 },
-                        { title: qsTr("Rotational Speed"), unit: qsTr("(rev/min)"), flex: 0.78 }
+                        { title: qsTr("No."), unit: "", flex: 0.16 },
+                        { title: qsTr("RC Channel"), unit: "", flex: 0.34 },
+                        { title: qsTr("Output Rate"), unit: "", flex: 0.50 }
                     ]
                     rows: [
-                        [ "1", "0" ],
-                        [ "2", "0" ]
+                        [ "1", root._sprayRcNozFact ? String(Math.round(Number(root._sprayRcNozFact.value))) : "—",
+                          root._sprayNozRateFact ? Number(root._sprayNozRateFact.value).toFixed(2) : "—" ],
+                        [ "2", root._sprayRcNozFact ? String(Math.round(Number(root._sprayRcNozFact.value))) : "—",
+                          root._sprayNozRateFact ? Number(root._sprayNozRateFact.value).toFixed(2) : "—" ]
                     ]
+                    onClicked: root._openSprayParamsDialog()
                 }
             }
         }
