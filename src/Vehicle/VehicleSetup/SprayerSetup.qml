@@ -342,19 +342,171 @@ Rectangle {
                 localValue: 0.340
             }
 
-            QGCLabel {
-                anchors.horizontalCenter: parent.horizontalCenter
-                text:                     qsTr("Ok")
-                color:                    root._accentGreen
-                font.bold:                true
-                font.pointSize:           root._labelPointSize
-                font.family:              ScreenTools.normalFontFamily
+            Item {
+                width:  parent.width
+                height: okButton.height
 
-                MouseArea {
-                    anchors.fill:    parent
-                    anchors.margins: -ScreenTools.defaultFontPixelHeight * 0.4
-                    cursorShape:     Qt.PointingHandCursor
-                    onClicked:       paramsPanel.closed()
+                Rectangle {
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.verticalCenter:   parent.verticalCenter
+                    anchors.verticalCenterOffset: 2
+                    width:   okButton.width
+                    height:  okButton.height
+                    radius:  okButton.radius
+                    color:   "#D1D1D6"
+                    opacity: 0.45
+                    z:       -1
+                }
+
+                Rectangle {
+                    id: okButton
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    height: ScreenTools.defaultFontPixelHeight * 2
+                    width:  okLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
+                    radius: ScreenTools.defaultFontPixelWidth * 0.45
+                    color:  okMouse.pressed ? "#f1f1f1" : "#FFFFFF"
+                    border.width: 0
+                    scale:  okMouse.pressed ? 0.96 : 1.0
+
+                    Behavior on scale { NumberAnimation { duration: 50 } }
+
+                    QGCLabel {
+                        id:                       okLabel
+                        anchors.centerIn:         parent
+                        text:                     qsTr("Ok")
+                        color:                    root._accentGreen
+                        font.weight:              Font.DemiBold
+                        font.pointSize:           root._labelPointSize
+                        font.family:              ScreenTools.normalFontFamily
+                        verticalAlignment:        Text.AlignVCenter
+                    }
+
+                    MouseArea {
+                        id:           okMouse
+                        anchors.fill: parent
+                        cursorShape:  Qt.PointingHandCursor
+                        onClicked:    paramsPanel.closed()
+                    }
+                }
+            }
+        }
+    }
+
+    component SprayCorner: Item {
+        id: corner
+
+        clip: false
+        z:    2
+
+        property bool pulsing: false
+
+        signal activated()
+
+        function _resetRings() {
+            ring0.opacity = 0; ring0.scale = 1
+            ring1.opacity = 0; ring1.scale = 1
+            ring2.opacity = 0; ring2.scale = 1
+        }
+
+        function stopRipple() {
+            pulsing = false
+            rippleAnim.stop()
+            rippleAnim.running = false
+            _resetRings()
+        }
+
+        function startRipple() {
+            if (pulsing)
+                return
+            pulsing = true
+            rippleAnim.restart()
+        }
+
+        Rectangle {
+            id: ring0
+            anchors.centerIn: parent
+            width: parent.width
+            height: width
+            radius: width / 2
+            color: "transparent"
+            border.width: Math.max(1.5, parent.width * 0.08)
+            border.color: root._accentGreen
+            opacity: 0
+            scale: 1
+            z: -1
+        }
+
+        Rectangle {
+            id: ring1
+            anchors.centerIn: parent
+            width: parent.width
+            height: width
+            radius: width / 2
+            color: "transparent"
+            border.width: Math.max(1.5, parent.width * 0.08)
+            border.color: root._accentGreen
+            opacity: 0
+            scale: 1
+            z: -1
+        }
+
+        Rectangle {
+            id: ring2
+            anchors.centerIn: parent
+            width: parent.width
+            height: width
+            radius: width / 2
+            color: "transparent"
+            border.width: Math.max(1.5, parent.width * 0.07)
+            border.color: root._accentGreen
+            opacity: 0
+            scale: 1
+            z: -1
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius:       width / 2
+            color:        root._accentGreen
+            z:            1
+        }
+
+        ParallelAnimation {
+            id: rippleAnim
+            loops: Animation.Infinite
+            SequentialAnimation {
+                ParallelAnimation {
+                    NumberAnimation { target: ring0; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: ring0; property: "opacity"; from: 0.95; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                }
+            }
+            SequentialAnimation {
+                PauseAnimation { duration: 150 }
+                ParallelAnimation {
+                    NumberAnimation { target: ring1; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: ring1; property: "opacity"; from: 0.8; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                }
+            }
+            SequentialAnimation {
+                PauseAnimation { duration: 300 }
+                ParallelAnimation {
+                    NumberAnimation { target: ring2; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
+                    NumberAnimation { target: ring2; property: "opacity"; from: 0.65; to: 0; duration: 900; easing.type: Easing.OutQuad }
+                }
+            }
+        }
+
+        MouseArea {
+            anchors.fill:    parent
+            anchors.margins: -parent.width * 0.35
+            cursorShape:     Qt.PointingHandCursor
+            z:               2
+            onClicked: {
+                if (dirRow.editingParams)
+                    dirRow.closeParams()
+                else {
+                    corner.startRipple()
+                    dirRow.editingParams = true
                 }
             }
         }
@@ -369,11 +521,24 @@ Rectangle {
         readonly property real _droneSize: ScreenTools.defaultFontPixelHeight * 4.2
         readonly property real _gap:       ScreenTools.defaultFontPixelWidth * 0.8
 
+        function closeParams() {
+            editingParams = false
+            leftSprayCorner.stopRipple()
+            rightSprayCorner.stopRipple()
+        }
+
+        onEditingParamsChanged: {
+            if (!editingParams) {
+                leftSprayCorner.stopRipple()
+                rightSprayCorner.stopRipple()
+            }
+        }
+
         implicitHeight: Math.max(_droneSize, editingParams ? paramsEditor.implicitHeight : descLabel.implicitHeight)
         height:         implicitHeight
 
         Behavior on implicitHeight {
-            NumberAnimation { duration: 280; easing.type: Easing.OutCubic }
+            NumberAnimation { duration: 480; easing.type: Easing.OutCubic }
         }
 
         BodyLabel {
@@ -384,34 +549,38 @@ Rectangle {
             text:                   dirRow.description
             opacity:                dirRow.editingParams ? 0 : 1
             visible:                !dirRow.editingParams || opacity > 0
-            Behavior on opacity { NumberAnimation { duration: 200 } }
+            Behavior on opacity {
+                NumberAnimation { duration: 360; easing.type: Easing.OutCubic }
+            }
         }
 
         InlineSprayerParams {
             id:               paramsEditor
-            x:                dirRow._droneSize + dirRow._gap
-            width:            Math.max(0, parent.width - x)
-            y:                dirRow.editingParams ? 0 : ScreenTools.defaultFontPixelHeight * 0.5
+            x:                dirRow.editingParams
+                              ? dirRow._droneSize + dirRow._gap
+                              : dirRow._droneSize + dirRow._gap + ScreenTools.defaultFontPixelWidth * 2.2
+            width:            Math.max(0, parent.width - (dirRow._droneSize + dirRow._gap))
+            y:                dirRow.editingParams ? 0 : ScreenTools.defaultFontPixelHeight * 0.35
             opacity:          dirRow.editingParams ? 1 : 0
-            scale:            dirRow.editingParams ? 1 : 0.92
-            transformOrigin:  Item.Center
+            scale:            dirRow.editingParams ? 1 : 0.96
+            transformOrigin:  Item.Right
             visible:          dirRow.editingParams || opacity > 0
             enabled:          dirRow.editingParams
 
             Behavior on opacity {
-                NumberAnimation { duration: 340; easing.type: Easing.OutCubic }
-            }
-            Behavior on scale {
-                NumberAnimation { duration: 420; easing.type: Easing.OutBack; easing.overshoot: 0.55 }
-            }
-            Behavior on y {
                 NumberAnimation { duration: 420; easing.type: Easing.OutCubic }
             }
-
-            onClosed: {
-                leftSprayCorner.stopRipple()
-                dirRow.editingParams = false
+            Behavior on scale {
+                NumberAnimation { duration: 480; easing.type: Easing.OutCubic }
             }
+            Behavior on y {
+                NumberAnimation { duration: 480; easing.type: Easing.OutCubic }
+            }
+            Behavior on x {
+                NumberAnimation { duration: 480; easing.type: Easing.OutCubic }
+            }
+
+            onClosed: dirRow.closeParams()
         }
 
         Item {
@@ -424,7 +593,7 @@ Rectangle {
             clip:   false
 
             Behavior on x {
-                NumberAnimation { duration: 320; easing.type: Easing.OutCubic }
+                NumberAnimation { duration: 480; easing.type: Easing.OutCubic }
             }
 
             QGCColoredImage {
@@ -435,147 +604,22 @@ Rectangle {
                 color:        root._titleColor
             }
 
-            Item {
-                id: rightSprayCorner
+            SprayCorner {
+                id:     rightSprayCorner
                 width:  droneIcon.width * 0.20
                 height: width
                 x:      droneIcon.width * 0.82 - width / 2
                 y:      droneIcon.height * 0.82 - height / 2
-                z:      2
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius:       width / 2
-                    color:        root._accentGreen
-                }
-
-                MouseArea {
-                    anchors.fill:    parent
-                    anchors.margins: -parent.width * 0.35
-                    cursorShape:     Qt.PointingHandCursor
-                    onClicked:       dirRow.editingParams = true
-                }
+                onActivated: dirRow.closeParams()
             }
 
-            Item {
-                id: leftSprayCorner
+            SprayCorner {
+                id:     leftSprayCorner
                 width:  droneIcon.width * 0.20
                 height: width
                 x:      droneIcon.width * 0.18 - width / 2
                 y:      droneIcon.height * 0.82 - height / 2
-                z:      2
-                clip:   false
-
-                property bool pulsing: false
-
-                function _resetRings() {
-                    ring0.opacity = 0; ring0.scale = 1
-                    ring1.opacity = 0; ring1.scale = 1
-                    ring2.opacity = 0; ring2.scale = 1
-                }
-
-                function stopRipple() {
-                    if (!pulsing)
-                        return
-                    pulsing = false
-                    leftRippleAnim.stop()
-                    _resetRings()
-                }
-
-                function toggleRipple() {
-                    pulsing = !pulsing
-                    if (pulsing) {
-                        leftRippleAnim.restart()
-                    } else {
-                        leftRippleAnim.stop()
-                        _resetRings()
-                    }
-                }
-
-                Rectangle {
-                    id: ring0
-                    anchors.centerIn: parent
-                    width: parent.width
-                    height: width
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: Math.max(1.5, parent.width * 0.08)
-                    border.color: root._accentGreen
-                    opacity: 0
-                    scale: 1
-                    z: -1
-                }
-
-                Rectangle {
-                    id: ring1
-                    anchors.centerIn: parent
-                    width: parent.width
-                    height: width
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: Math.max(1.5, parent.width * 0.08)
-                    border.color: root._accentGreen
-                    opacity: 0
-                    scale: 1
-                    z: -1
-                }
-
-                Rectangle {
-                    id: ring2
-                    anchors.centerIn: parent
-                    width: parent.width
-                    height: width
-                    radius: width / 2
-                    color: "transparent"
-                    border.width: Math.max(1.5, parent.width * 0.07)
-                    border.color: root._accentGreen
-                    opacity: 0
-                    scale: 1
-                    z: -1
-                }
-
-                Rectangle {
-                    anchors.fill: parent
-                    radius:       width / 2
-                    color:        root._accentGreen
-                    z:            1
-                }
-
-                ParallelAnimation {
-                    id: leftRippleAnim
-                    loops: Animation.Infinite
-                    SequentialAnimation {
-                        ParallelAnimation {
-                            NumberAnimation { target: ring0; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: ring0; property: "opacity"; from: 0.95; to: 0; duration: 900; easing.type: Easing.OutQuad }
-                        }
-                    }
-                    SequentialAnimation {
-                        PauseAnimation { duration: 150 }
-                        ParallelAnimation {
-                            NumberAnimation { target: ring1; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: ring1; property: "opacity"; from: 0.8; to: 0; duration: 900; easing.type: Easing.OutQuad }
-                        }
-                    }
-                    SequentialAnimation {
-                        PauseAnimation { duration: 300 }
-                        ParallelAnimation {
-                            NumberAnimation { target: ring2; property: "scale"; from: 1; to: 3.4; duration: 900; easing.type: Easing.OutCubic }
-                            NumberAnimation { target: ring2; property: "opacity"; from: 0.65; to: 0; duration: 900; easing.type: Easing.OutQuad }
-                        }
-                    }
-                }
-
-                MouseArea {
-                    anchors.fill:    parent
-                    anchors.margins: -parent.width * 0.35
-                    cursorShape:     Qt.PointingHandCursor
-                    z:               2
-                    onClicked: {
-                        leftSprayCorner.toggleRipple()
-                        dirRow.editingParams = true
-                    }
-                }
+                onActivated: dirRow.closeParams()
             }
         }
     }
@@ -809,26 +853,31 @@ Rectangle {
             Repeater {
                 model: tableRoot.rows
 
-                Row {
-                    id:     dataRow
+                Item {
+                    id:     tableRowItem
                     width:  tableCol.width
                     height: tableRoot._rowH
 
                     property var rowValues: modelData
 
-                    Repeater {
-                        model: tableRoot.headers.length
+                    Row {
+                        id:     dataRow
+                        anchors.fill: parent
 
-                        Rectangle {
-                            width:  tableRoot._colWidth(tableRoot.headers[index].flex)
-                            height: parent.height
-                            color:  root._cardIdleFill
-                            border.width: 1
-                            border.color: root._tableLine
+                        Repeater {
+                            model: tableRoot.headers.length
 
-                            SettingLabel {
-                                anchors.centerIn: parent
-                                text:             dataRow.rowValues[index]
+                            Rectangle {
+                                width:  tableRoot._colWidth(tableRoot.headers[index].flex)
+                                height: parent.height
+                                color:  root._cardIdleFill
+                                border.width: 1
+                                border.color: root._tableLine
+
+                                SettingLabel {
+                                    anchors.centerIn: parent
+                                    text:             tableRowItem.rowValues[index]
+                                }
                             }
                         }
                     }

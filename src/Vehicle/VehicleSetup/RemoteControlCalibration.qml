@@ -57,6 +57,56 @@ RowLayout {
 
     QGCPalette { id: qgcPal; colorGroupEnabled: root.enabled }
 
+    readonly property bool _darkTheme: qgcPal.globalTheme === QGCPalette.Dark
+    readonly property color _titleColor: _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:  _darkTheme ? "#8E8E93" : "#3A3A3C"
+    readonly property color _accentGreen: qgcPal.colorGreen
+
+    function _pwmAxis(value, reversed) {
+        var n = (value - 1500) / 500
+        if (n > 1)
+            n = 1
+        else if (n < -1)
+            n = -1
+        if (Math.abs(n) < 0.08)
+            n = 0
+        return reversed ? -n : n
+    }
+
+    function _diagramOrLive(diagram, live) {
+        return Math.abs(diagram) > 0 ? diagram : live
+    }
+
+    function _stickPos(index) {
+        return (controller.stickDisplayPositions && controller.stickDisplayPositions.length > index)
+               ? controller.stickDisplayPositions[index] : 0
+    }
+
+    readonly property real _leftStickX: {
+        var live = (controller.transmitterMode === 3 || controller.transmitterMode === 4)
+                   ? _pwmAxis(controller.rollChannelValue, controller.rollChannelReversed)
+                   : _pwmAxis(controller.yawChannelValue, controller.yawChannelReversed)
+        return _diagramOrLive(_stickPos(0), live)
+    }
+    readonly property real _leftStickY: {
+        var live = (controller.transmitterMode === 1 || controller.transmitterMode === 3)
+                   ? _pwmAxis(controller.pitchChannelValue, controller.pitchChannelReversed)
+                   : _pwmAxis(controller.throttleChannelValue, controller.throttleChannelReversed)
+        return _diagramOrLive(_stickPos(1), live)
+    }
+    readonly property real _rightStickX: {
+        var live = (controller.transmitterMode === 3 || controller.transmitterMode === 4)
+                   ? _pwmAxis(controller.yawChannelValue, controller.yawChannelReversed)
+                   : _pwmAxis(controller.rollChannelValue, controller.rollChannelReversed)
+        return _diagramOrLive(_stickPos(2), live)
+    }
+    readonly property real _rightStickY: {
+        var live = (controller.transmitterMode === 1 || controller.transmitterMode === 3)
+                   ? _pwmAxis(controller.throttleChannelValue, controller.throttleChannelReversed)
+                   : _pwmAxis(controller.pitchChannelValue, controller.pitchChannelReversed)
+        return _diagramOrLive(_stickPos(3), live)
+    }
+
     RadioComponentController {
         id: controller
         statusText: statusText
@@ -72,11 +122,120 @@ RowLayout {
         spacing: 10
 
         ColumnLayout {
+            Layout.fillWidth: true
+            spacing: ScreenTools.defaultFontPixelHeight * 0.9
+
+            QGCLabel {
+                text:           qsTr("Mode Selection")
+                color:          root._titleColor
+                font.bold:      true
+                font.pointSize: ScreenTools.defaultFontPointSize + 1
+                font.family:    ScreenTools.normalFontFamily
+            }
+
+            Rectangle {
+                id: stickDisplayContainer
+                Layout.fillWidth: true
+                implicitHeight: modeColumn.implicitHeight + _outerPad * 2
+                radius: ScreenTools.defaultFontPixelWidth * 0.75
+                color: qgcPal.window
+                border.width: 1
+                border.color: qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#E6E6E6"
+
+                readonly property bool _darkTheme: qgcPal.globalTheme === QGCPalette.Dark
+                readonly property color _innerFill: _darkTheme ? qgcPal.windowShade : "#E8E8E8"
+                readonly property color _lineColor: _darkTheme ? qgcPal.windowShade : "#E5E5E5"
+                property real _outerPad: ScreenTools.defaultFontPixelWidth * 1.05
+                property real _innerPad: ScreenTools.defaultFontPixelWidth * 1.35
+
+                Column {
+                    id: modeColumn
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    anchors.top: parent.top
+                    anchors.margins: stickDisplayContainer._outerPad
+                    spacing: ScreenTools.defaultFontPixelHeight * 0.45
+
+                    RowLayout {
+                        width: parent.width
+                        spacing: ScreenTools.defaultFontPixelWidth * 2
+
+                        QGCComboBox {
+                            id: transmitterModeComboBox
+                            model: [ qsTr("Mode 1"), qsTr("Mode 2"), qsTr("Mode 3"), qsTr("Mode 4") ]
+                            onActivated: (index) => controller.transmitterMode = index + 1
+
+                            Component.onCompleted: currentIndex = controller.transmitterMode - 1
+                        }
+
+                        Item { Layout.fillWidth: true }
+
+                        QGCCheckBox {
+                            id: centeredThrottleCheckBox
+                            text: qsTr("Centered Throttle")
+                            textColor: root._titleColor
+                            rounded: true
+                            checked: controller.centeredThrottle
+                            onClicked: controller.centeredThrottle = checked
+                        }
+
+                        Item { Layout.fillWidth: true }
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        height: 1
+                        color: stickDisplayContainer._lineColor
+                    }
+
+                    Rectangle {
+                        width: parent.width
+                        implicitHeight: sticksRow.height + stickDisplayContainer._innerPad * 2.4
+                        radius: ScreenTools.defaultFontPixelWidth * 0.75
+                        color: stickDisplayContainer._innerFill
+                        border.width: 1
+                        border.color: stickDisplayContainer._lineColor
+
+                        Row {
+                            id: sticksRow
+                            anchors.centerIn: parent
+                            spacing: ScreenTools.defaultFontPixelWidth * 1.6
+
+                            JoystickRadial {
+                                joystickTitle: qsTr("Joystick 1")
+                                stickX: root._leftStickX
+                                stickY: root._leftStickY
+                                darkTheme: root._darkTheme
+                                accentGreen: root._accentGreen
+                                titleColor: root._titleColor
+                            }
+
+                            JoystickRadial {
+                                joystickTitle: qsTr("Joystick 2")
+                                stickX: root._rightStickX
+                                stickY: root._rightStickY
+                                darkTheme: root._darkTheme
+                                accentGreen: root._accentGreen
+                                titleColor: root._titleColor
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        ColumnLayout {
             id: attitudeControlsLayout
             Layout.fillWidth: true
             spacing: ScreenTools.defaultFontPixelHeight
 
-            QGCLabel { text: qsTr("Attitude Controls") }
+            QGCLabel {
+                text:           qsTr("Attitude Controls")
+                color:          root._titleColor
+                font.bold:      true
+                font.pointSize: ScreenTools.defaultFontPointSize + 1
+                font.family:    ScreenTools.normalFontFamily
+            }
 
             Repeater {
                 model: attitudeControlsModel
@@ -86,7 +245,10 @@ RowLayout {
 
                     QGCLabel {
                         Layout.fillWidth: true
-                        text: name
+                        text:             name
+                        color:            root._titleColor
+                        font.family:      ScreenTools.normalFontFamily
+                        font.pointSize:   ScreenTools.defaultFontPointSize
                     }
 
                     Loader {
@@ -152,12 +314,14 @@ RowLayout {
             Layout.maximumWidth: parent.width
             wrapMode: Text.WordWrap
             font.pointSize: ScreenTools.smallFontPointSize
+            font.family: ScreenTools.normalFontFamily
+            color: root._bodyColor
         }
 
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: 1
-            color: qgcPal.text
+            color: qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#E5E5E5"
         }
 
         Loader {
@@ -171,91 +335,6 @@ RowLayout {
         id: rightColumnLayout
         Layout.alignment: Qt.AlignTop
         spacing: ScreenTools.defaultFontPixelHeight / 2
-
-        Rectangle {
-            id: stickDisplayContainer
-            implicitWidth: stickDisplayLayout.width + _margins * 2
-            implicitHeight: stickDisplayLayout.height + _margins * 2
-            border.color: qgcPal.text
-            border.width: 1
-            color: qgcPal.window
-            radius: ScreenTools.defaultBorderRadius
-
-            property real _margins: ScreenTools.defaultFontPixelHeight / 2
-            property real _stickAdjust: leftStickDisplay.width / 2 - _margins * 1.25
-
-            ColumnLayout {
-                id: stickDisplayLayout
-                anchors.leftMargin: stickDisplayContainer._margins
-                anchors.topMargin: stickDisplayContainer._margins
-                anchors.left: parent.left
-                anchors.top: parent.top
-                spacing: stickDisplayContainer._margins
-
-                RowLayout {
-                    spacing: ScreenTools.defaultFontPixelWidth * 2
-
-                    QGCComboBox {
-                        id: transmitterModeComboBox
-                        model: [ qsTr("Mode 1"), qsTr("Mode 2"), qsTr("Mode 3"), qsTr("Mode 4") ]
-                        onActivated: (index) => controller.transmitterMode = index + 1
-
-                        Component.onCompleted: currentIndex = controller.transmitterMode - 1
-                    }
-
-                    QGCCheckBox {
-                        id: centeredThrottleCheckBox
-                        text: qsTr("Centered Throttle")
-                        checked: controller.centeredThrottle
-                        onClicked: controller.centeredThrottle = checked
-                    }
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: stickDisplayContainer._margins * 2
-
-                    Rectangle {
-                        id: leftStickDisplay
-                        Layout.alignment: Qt.AlignLeft
-                        implicitWidth: ScreenTools.defaultFontPixelHeight * 5
-                        implicitHeight: implicitWidth
-                        radius: implicitWidth / 2
-                        border.color: qgcPal.buttonHighlight
-                        border.width: 1
-                        color: qgcPal.window
-
-                        Rectangle {
-                            x: parent.width / 2 + stickDisplayContainer._stickAdjust * -controller.stickDisplayPositions[0] - width / 2
-                            y: parent.height / 2 + stickDisplayContainer._stickAdjust * -controller.stickDisplayPositions[1] - height / 2
-                            width: ScreenTools.defaultFontPixelHeight
-                            height: width
-                            radius: width / 2
-                            color: qgcPal.buttonHighlight
-                        }
-                    }
-
-                    Rectangle {
-                        Layout.alignment: Qt.AlignRight
-                        implicitWidth: leftStickDisplay.implicitWidth
-                        implicitHeight: implicitWidth
-                        radius: implicitWidth / 2
-                        border.color: qgcPal.buttonHighlight
-                        border.width: 1
-                        color: qgcPal.window
-
-                        Rectangle {
-                            x: parent.width / 2 + stickDisplayContainer._stickAdjust * -controller.stickDisplayPositions[2] - width / 2
-                            y: parent.height / 2 + stickDisplayContainer._stickAdjust * -controller.stickDisplayPositions[3] - height / 2
-                            width: ScreenTools.defaultFontPixelHeight
-                            height: width
-                            radius: width / 2
-                            color: qgcPal.buttonHighlight
-                        }
-                    }
-                }
-            }
-        }
 
         RCChannelMonitor {
             Layout.fillWidth: true
@@ -309,6 +388,8 @@ RowLayout {
                 anchors.centerIn: parent
                 text: qsTr("Not Mapped")
                 visible: !channelMapped
+                color: root._bodyColor
+                font.family: ScreenTools.normalFontFamily
             }
 
             ColorAnimation {

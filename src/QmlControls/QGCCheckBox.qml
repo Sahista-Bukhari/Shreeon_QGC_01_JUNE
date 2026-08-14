@@ -21,6 +21,7 @@ CheckBox {
     property bool   textBold:               false
     property real   textFontPointSize:      ScreenTools.defaultFontPointSize
     property ButtonGroup buttonGroup: null
+    property bool   rounded:                false
 
     property bool _noText: text === ""
     readonly property bool _customMission: typeof mainWindow !== "undefined"
@@ -56,7 +57,7 @@ CheckBox {
         color:          control.checked ? control._accentGreen : "transparent"
         border.color:   control.checked ? control._accentGreen : control.uncheckedBorderColor
         border.width:   control.checked ? 0 : 2
-        radius:         ScreenTools.defaultBorderRadius / 2
+        radius:         control.rounded ? height / 2 : ScreenTools.defaultBorderRadius / 2
         opacity:        control.checkedState === Qt.PartiallyChecked ? 0.5 : 1
 
         QGCColoredImage {

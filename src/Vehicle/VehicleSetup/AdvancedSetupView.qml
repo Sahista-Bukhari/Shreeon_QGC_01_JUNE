@@ -52,6 +52,7 @@ Rectangle {
     property var    _selectedComponent: null
 
     readonly property var _advancedComponentMatchers: [
+        "SensorsComponent",
         "AirframeComponent",
         "ActuatorComponent",
         "MotorComponent",

@@ -56,13 +56,22 @@ Button {
                     return control._cmHoverGray
                 return "#ffffff"
             }
+            if (qgcPal.globalTheme === QGCPalette.Light) {
+                if (checked)
+                    return qgcPal.colorGreen
+                if (control.hovered)
+                    return "#F2F2F2"
+                return "#FFFFFF"
+            }
             return checked ? Qt.rgba(0.14, 0.69, 0.36, 0.48)
                            : (control.hovered ? Qt.rgba(1, 1, 1, 0.14) : Qt.rgba(1, 1, 1, 0.06))
         }
-        border.width: control._customMission ? 1 : (checked ? 1 : 0)
+        border.width: control._customMission || qgcPal.globalTheme === QGCPalette.Light ? 1 : (checked ? 1 : 0)
         border.color: {
             if (control._customMission)
                 return checked ? control._cmAccent : control._cmBorder
+            if (qgcPal.globalTheme === QGCPalette.Light)
+                return checked ? qgcPal.colorGreen : "#E6E6E6"
             return Qt.rgba(1, 1, 1, 0.35)
         }
 
@@ -112,6 +121,8 @@ Button {
             color: {
                 if (control._customMission)
                     return checked ? "#ffffff" : control._cmBody
+                if (qgcPal.globalTheme === QGCPalette.Light)
+                    return checked ? "#ffffff" : "#3A3A3C"
                 return "#ffffff"
             }
             visible: !_showIcon

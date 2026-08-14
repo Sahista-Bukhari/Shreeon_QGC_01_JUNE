@@ -87,21 +87,25 @@ SetupPage {
                             QGCLabel {
                                 wrapMode: Text.WordWrap
                                 text: qsTr("Click Ok to place your Spektrum receiver in the bind mode.")
+                                color: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
                             }
 
                             QGCLabel {
                                 wrapMode: Text.WordWrap
                                 text: qsTr("Select the specific receiver type below:")
+                                color: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
                             }
 
                             QGCRadioButton {
                                 text: qsTr("DSM2 Mode")
+                                textColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
                                 ButtonGroup.group: radioGroup
                                 property int bindMode: RadioComponentController.DSM2
                             }
 
                             QGCRadioButton {
                                 text: qsTr("DSMX (7 channels or less)")
+                                textColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
                                 ButtonGroup.group: radioGroup
                                 property int bindMode: RadioComponentController.DSMX7
                             }
@@ -109,6 +113,7 @@ SetupPage {
                             QGCRadioButton {
                                 checked: true
                                 text: qsTr("DSMX (8 channels or more)")
+                                textColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
                                 ButtonGroup.group: radioGroup
                                 property int bindMode: RadioComponentController.DSMX8
                             }

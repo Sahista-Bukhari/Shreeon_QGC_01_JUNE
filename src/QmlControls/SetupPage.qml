@@ -30,6 +30,10 @@ Item {
     property real   _margins:               ScreenTools.defaultFontPixelHeight * 0.3
     property string _pageTitle:             qsTr("%1 Config").arg(pageName)
 
+    QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
+    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+
     Component.onCompleted: {
         if(pageLoader.item && pageLoader.item.setupPageCompleted) {
             pageLoader.item.setupPageCompleted()
@@ -44,18 +48,22 @@ Item {
 
         ColumnLayout {
             id:                 headingRow
+            anchors.top:        parent.top
+            anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 0.3
             width:              availableWidth
-            spacing:            ScreenTools.defaultFontPixelHeight * 0.2
+            spacing:            ScreenTools.defaultFontPixelHeight * 1.15
             visible:            showAdvanced || (pageDescription !== "" && !ScreenTools.isShortScreen)
 
             RowLayout {
                 Layout.fillWidth:   true
                 spacing:            _margins
                 layoutDirection:    Qt.RightToLeft
+                visible:            showAdvanced
 
                 QGCCheckBox {
                     id:         advancedCheckBox
                     text:       qsTr("Advanced")
+                    textColor:  setupView._titleColor
                     visible:    showAdvanced
                 }
 
@@ -66,6 +74,8 @@ Item {
                 Layout.fillWidth:   true
                 font.pointSize:     ScreenTools.mediumFontPointSize
                 font.bold:          true
+                font.family:        ScreenTools.normalFontFamily
+                color:              setupView._titleColor
                 text:               !setupView.enabled ? _pageTitle + "<font color=\"red\">" + qsTr(" (Disabled while the vehicle is %1)").arg(_disableReason) + "</font>" : _pageTitle
                 visible:            !ScreenTools.isShortScreen
             }
@@ -74,6 +84,8 @@ Item {
                 Layout.fillWidth:   true
                 wrapMode:           Text.WordWrap
                 font.pointSize:     ScreenTools.smallFontPointSize
+                font.family:        ScreenTools.normalFontFamily
+                color:              setupView._bodyColor
                 text:               pageDescription
                 visible:            pageDescription !== "" && !ScreenTools.isShortScreen
             }
@@ -81,7 +93,7 @@ Item {
 
         Loader {
             id:                 pageLoader
-            anchors.topMargin:  _margins
+            anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 1.2
             anchors.top:        headingRow.bottom
             width:              availableWidth
         }

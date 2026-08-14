@@ -101,6 +101,7 @@ Rectangle {
     }
 
     readonly property var _advancedOnlyMatchers: [
+        "SensorsComponent",
         "AirframeComponent",
         "ActuatorComponent",
         "MotorComponent",

@@ -13,6 +13,10 @@ Item {
 
     property bool twoColumn: false
 
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
+    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+
     readonly property int _pwmMin:      800
     readonly property int _pwmMax:      2200
     readonly property int _pwmRange:    _pwmMax - _pwmMin
@@ -68,6 +72,8 @@ Item {
                 verticalAlignment:      Text.AlignVCenter
                 text:                   qsTr("Not Mapped")
                 visible:                !mapped
+                color:                  _root._bodyColor
+                font.family:            ScreenTools.normalFontFamily
             }
 
             ColorAnimation {
@@ -89,6 +95,10 @@ Item {
         QGCLabel {
             Layout.columnSpan:  parent.columns
             text:               qsTr("Channel Monitor")
+            color:              _root._titleColor
+            font.bold:          true
+            font.pointSize:     ScreenTools.defaultFontPointSize + 1
+            font.family:        ScreenTools.normalFontFamily
         }
 
         Connections {
@@ -110,8 +120,10 @@ Item {
                 property Item loader: theLoader
 
                 QGCLabel {
-                    id:     channelLabel
-                    text:   modelData + 1
+                    id:             channelLabel
+                    text:           modelData + 1
+                    color:          _root._titleColor
+                    font.family:    ScreenTools.normalFontFamily
                 }
 
                 Loader {

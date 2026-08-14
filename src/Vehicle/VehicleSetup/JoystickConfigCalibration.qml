@@ -22,60 +22,45 @@ Item {
             spacing:            ScreenTools.defaultFontPixelWidth * 4
             anchors.horizontalCenter: parent.horizontalCenter
             //-----------------------------------------------------------------
-            // Calibration
+            // Calibration stick guide (native QGC: green marker shows where to move)
             Column {
+                id:                 calSticksCol
                 spacing:            ScreenTools.defaultFontPixelHeight
                 anchors.verticalCenter: parent.verticalCenter
-                Rectangle {
-                    width:          Math.round(ScreenTools.defaultFontPixelWidth * 45)
-                    height:         Math.round(width * 0.5)
-                    radius:         ScreenTools.defaultFontPixelWidth * 2
-                    color:          qgcPal.window
-                    border.color:   qgcPal.text
-                    border.width:   ScreenTools.defaultFontPixelWidth * 0.25
+
+                QGCPalette { id: qgcPal; colorGroupEnabled: true }
+                readonly property bool  _darkTheme:   qgcPal.globalTheme === QGCPalette.Dark
+                readonly property color _titleColor:  _darkTheme ? "#AEAEB2" : "#3A3A3C"
+                readonly property color _accentGreen: qgcPal.colorGreen
+
+                function _calX(pos, center) {
+                    return Math.max(-1, Math.min(1, (pos - center) / 0.096))
+                }
+                function _calY(pos) {
+                    return Math.max(-1, Math.min(1, (0.5 - pos) / 0.192))
+                }
+
+                Row {
+                    spacing: ScreenTools.defaultFontPixelWidth * 1.6
                     anchors.horizontalCenter: parent.horizontalCenter
-                    property bool hasStickPositions: controller.stickPositions.length === 4
-                    //---------------------------------------------------------
-                    //-- Left Stick
-                    Rectangle {
-                        width:      parent.width * 0.25
-                        height:     width
-                        radius:     width * 0.5
-                        color:      qgcPal.window
-                        border.color: qgcPal.text
-                        border.width: ScreenTools.defaultFontPixelWidth * 0.125
-                        x:          (parent.width  * 0.25) - (width  * 0.5)
-                        y:          (parent.height * 0.5)  - (height * 0.5)
+                    visible: controller.stickPositions.length === 4
+
+                    JoystickRadial {
+                        joystickTitle: qsTr("Joystick 1")
+                        stickX: calSticksCol._calX(controller.stickPositions[0], 0.25)
+                        stickY: calSticksCol._calY(controller.stickPositions[1])
+                        darkTheme: calSticksCol._darkTheme
+                        accentGreen: calSticksCol._accentGreen
+                        titleColor: calSticksCol._titleColor
                     }
-                    Rectangle {
-                        color:  qgcPal.colorGreen
-                        width:  parent.width * 0.035
-                        height: width
-                        radius: width * 0.5
-                        visible: parent.hasStickPositions
-                        x:      (parent.width  * controller.stickPositions[0]) - (width  * 0.5)
-                        y:      (parent.height * controller.stickPositions[1]) - (height * 0.5)
-                    }
-                    //---------------------------------------------------------
-                    //-- Right Stick
-                    Rectangle {
-                        width:      parent.width * 0.25
-                        height:     width
-                        radius:     width * 0.5
-                        color:      qgcPal.window
-                        border.color: qgcPal.text
-                        border.width: ScreenTools.defaultFontPixelWidth * 0.125
-                        x:          (parent.width  * 0.75) - (width  * 0.5)
-                        y:          (parent.height * 0.5)  - (height * 0.5)
-                    }
-                    Rectangle {
-                        color:  qgcPal.colorGreen
-                        width:  parent.width * 0.035
-                        height: width
-                        radius: width * 0.5
-                        visible: parent.hasStickPositions
-                        x:      (parent.width  * controller.stickPositions[2]) - (width  * 0.5)
-                        y:      (parent.height * controller.stickPositions[3]) - (height * 0.5)
+
+                    JoystickRadial {
+                        joystickTitle: qsTr("Joystick 2")
+                        stickX: calSticksCol._calX(controller.stickPositions[2], 0.75)
+                        stickY: calSticksCol._calY(controller.stickPositions[3])
+                        darkTheme: calSticksCol._darkTheme
+                        accentGreen: calSticksCol._accentGreen
+                        titleColor: calSticksCol._titleColor
                     }
                 }
             }
@@ -149,7 +134,7 @@ Item {
         // Command Buttons
         Row {
             spacing:            ScreenTools.defaultFontPixelWidth * 2
-            visible:            _activeJoystick.requiresCalibration
+            visible:            _activeJoystick && _activeJoystick.requiresCalibration
             anchors.horizontalCenter: parent.horizontalCenter
             QGCButton {
                 id:         skipButton

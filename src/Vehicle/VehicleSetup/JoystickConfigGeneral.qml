@@ -13,8 +13,41 @@ Item {
 
     readonly property real axisMonitorWidth: ScreenTools.defaultFontPixelWidth * 32
 
-    property bool _buttonsOnly:         _activeJoystick.axisCount == 0
-    property bool _requiresCalibration: !_activeJoystick.calibrated && !_buttonsOnly
+    property var  _activeJoystick:      joystickManager.activeJoystick
+    property bool _buttonsOnly:         _activeJoystick ? _activeJoystick.axisCount == 0 : true
+    property bool _requiresCalibration: _activeJoystick ? (!_activeJoystick.calibrated && !_buttonsOnly) : false
+
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
+    readonly property bool  _darkTheme:   qgcPal.globalTheme === QGCPalette.Dark
+    readonly property color _titleColor:  _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _accentGreen: qgcPal.colorGreen
+
+    property real _leftStickX:  0
+    property real _leftStickY:  0
+    property real _rightStickX: 0
+    property real _rightStickY: 0
+
+    function _throttleAsY(value) {
+        return Math.max(-1, Math.min(1, (2 * value) - 1))
+    }
+
+    function _applyAxisValues(roll, pitch, yaw, throttle) {
+        var t = _throttleAsY(throttle)
+        var mode = controller ? controller.transmitterMode : 2
+        if (mode === 1) {
+            _leftStickX = yaw;   _leftStickY = pitch
+            _rightStickX = roll; _rightStickY = t
+        } else if (mode === 3) {
+            _leftStickX = roll;  _leftStickY = pitch
+            _rightStickX = yaw;  _rightStickY = t
+        } else if (mode === 4) {
+            _leftStickX = roll;  _leftStickY = t
+            _rightStickX = yaw;  _rightStickY = pitch
+        } else {
+            _leftStickX = yaw;   _leftStickY = t
+            _rightStickX = roll; _rightStickY = pitch
+        }
+    }
 
     Column {
         id:                 mainCol
@@ -35,22 +68,26 @@ Item {
                 id:             enabledSwitch
                 enabled:        !_requiresCalibration
                 onClicked:      {
+                    if (!globals.activeVehicle)
+                        return
                     globals.activeVehicle.joystickEnabled = checked
                     globals.activeVehicle.saveJoystickSettings()
                 }
                 Component.onCompleted: {
-                    checked = globals.activeVehicle.joystickEnabled
+                    if (globals.activeVehicle)
+                        checked = globals.activeVehicle.joystickEnabled
                 }
                 Connections {
-                    target: globals.activeVehicle
-                    onJoystickEnabledChanged: {
+                    target:  globals.activeVehicle
+                    enabled: globals.activeVehicle !== null
+                    function onJoystickEnabledChanged() {
                         enabledSwitch.checked = globals.activeVehicle.joystickEnabled
                     }
                 }
                 Connections {
                     target: joystickManager
-                    onActiveJoystickChanged: {
-                        if(_activeJoystick) {
+                    function onActiveJoystickChanged() {
+                        if (_activeJoystick && globals.activeVehicle) {
                             enabledSwitch.checked = Qt.binding(function() { return _activeJoystick.calibrated && globals.activeVehicle.joystickEnabled })
                         }
                     }
@@ -78,7 +115,7 @@ Item {
                 }
                 Connections {
                     target: joystickManager
-                    onAvailableJoysticksChanged: {
+                    function onAvailableJoysticksChanged() {
                         var index = joystickCombo.find(joystickManager.activeJoystickName)
                         if (index >= 0) {
                             joystickCombo.currentIndex = index
@@ -125,6 +162,61 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                 }
             }
+            QGCLabel {
+                text:               qsTr("Calibration:")
+                Layout.alignment:   Qt.AlignVCenter
+                visible:            !_buttonsOnly
+            }
+            QGCButton {
+                id:                 calibrateButton
+                primary:            true
+                visible:            !_buttonsOnly
+                text:               qsTr("Calibrate")
+                onClicked: {
+                    var item = calibrateButton.parent
+                    while (item) {
+                        if (typeof item.showCalibrationPage === "function") {
+                            item.showCalibrationPage()
+                            return
+                        }
+                        item = item.parent
+                    }
+                }
+            }
+        }
+        Rectangle {
+            visible:            !_buttonsOnly
+            width:              sticksRow.width + ScreenTools.defaultFontPixelWidth * 4
+            height:             sticksRow.height + ScreenTools.defaultFontPixelHeight * 1.6
+            radius:             ScreenTools.defaultFontPixelWidth * 0.75
+            color:              _darkTheme ? qgcPal.windowShade : "#E8E8E8"
+            border.width:       1
+            border.color:       _darkTheme ? qgcPal.windowShade : "#E5E5E5"
+            anchors.horizontalCenter: parent.horizontalCenter
+
+            Row {
+                id: sticksRow
+                anchors.centerIn: parent
+                spacing: ScreenTools.defaultFontPixelWidth * 1.6
+
+                JoystickRadial {
+                    joystickTitle: qsTr("Joystick 1")
+                    stickX:        _leftStickX
+                    stickY:        _leftStickY
+                    darkTheme:     _darkTheme
+                    accentGreen:   _accentGreen
+                    titleColor:    _titleColor
+                }
+
+                JoystickRadial {
+                    joystickTitle: qsTr("Joystick 2")
+                    stickX:        _rightStickX
+                    stickY:        _rightStickY
+                    darkTheme:     _darkTheme
+                    accentGreen:   _accentGreen
+                    titleColor:    _titleColor
+                }
+            }
         }
         Row {
             spacing:                ScreenTools.defaultFontPixelWidth
@@ -160,7 +252,7 @@ Item {
                     rowSpacing:         ScreenTools.defaultFontPixelHeight
                     anchors.centerIn:   parent
                     QGCLabel {
-                        text:               globals.activeVehicle.sub ? qsTr("Lateral") : qsTr("Roll")
+                        text:               globals.activeVehicle && globals.activeVehicle.sub ? qsTr("Lateral") : qsTr("Roll")
                         Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 12
                     }
                     AxisMonitor {
@@ -174,7 +266,7 @@ Item {
                     QGCLabel {
                         id:                 pitchLabel
                         width:              _attitudeLabelWidth
-                        text:               globals.activeVehicle.sub ? qsTr("Forward") : qsTr("Pitch")
+                        text:               globals.activeVehicle && globals.activeVehicle.sub ? qsTr("Forward") : qsTr("Pitch")
                     }
                     AxisMonitor {
                         id:                 pitchAxis
@@ -211,8 +303,10 @@ Item {
                     }
 
                     Connections {
-                        target: _activeJoystick
-                        onAxisValues: (roll, pitch, yaw, throttle) => {
+                        target:  _activeJoystick
+                        enabled: _activeJoystick !== null
+                        function onAxisValues(roll, pitch, yaw, throttle) {
+                            _applyAxisValues(roll, pitch, yaw, throttle)
                             rollAxis.axisValue     = axisRect.joyToAxis(roll,  controller.rollAxisReversed)
                             pitchAxis.axisValue    = axisRect.joyToAxis(pitch, controller.pitchAxisReversed)
                             yawAxis.axisValue      = axisRect.joyToAxis(yaw,   controller.yawAxisReversed)
@@ -233,8 +327,9 @@ Item {
                     spacing:            -1
                     anchors.centerIn:   parent
                     Connections {
-                        target:     _activeJoystick
-                        onRawButtonPressedChanged: (index, pressed) => {
+                        target:  _activeJoystick
+                        enabled: _activeJoystick !== null
+                        function onRawButtonPressedChanged(index, pressed) {
                             if (buttonMonitorRepeater.itemAt(index)) {
                                 buttonMonitorRepeater.itemAt(index).pressed = pressed
                             }

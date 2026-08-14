@@ -12,6 +12,8 @@ RadioButton {
     property color  textColor:  qgcPal.text
     property bool   _noText:    text === ""
 
+    spacing: ScreenTools.defaultFontPixelWidth * 0.25
+
     QGCPalette { id:qgcPal; colorGroupEnabled: enabled }
 
     background: Item { implicitWidth: 0; implicitHeight: 0 }
@@ -44,7 +46,7 @@ RadioButton {
         font.bold:          control.font.bold
         color:              control.textColor
         verticalAlignment:  Text.AlignVCenter
-        leftPadding:        control.indicator.width + (_noText ? 0 : ScreenTools.defaultFontPixelWidth * 0.25)
+        leftPadding:        control.indicator.width + (_noText ? 0 : control.spacing)
     }
 
 }

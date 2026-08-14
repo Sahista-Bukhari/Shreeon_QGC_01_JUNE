@@ -19,10 +19,16 @@ SetupPage {
 
     Connections {
         target: joystickManager
-        onAvailableJoysticksChanged: {
-            if(joystickManager.joysticks.length === 0) {
-                summaryButton.checked = true
-                setupView.showSummaryPanel()
+        function onAvailableJoysticksChanged() {
+            if (joystickManager.joysticks.length === 0) {
+                var item = joystickPage.parent
+                while (item) {
+                    if (item.showSummaryPanel) {
+                        item.showSummaryPanel()
+                        break
+                    }
+                    item = item.parent
+                }
             }
         }
     }
@@ -35,11 +41,15 @@ SetupPage {
 
             readonly property real  labelToMonitorMargin:   ScreenTools.defaultFontPixelWidth * 3
 
-            property Joystick _activeJoystick: joystickManager.activeJoystick
+            property var  _activeJoystick: joystickManager.activeJoystick
             property bool _allowJoystickSelection:  QGroundControl.corePlugin.options.allowJoystickSelection
 
             function setupPageCompleted() {
                 controller.start()
+            }
+
+            function showCalibrationPage() {
+                bar.currentIndex = 2
             }
 
             JoystickConfigController {
@@ -70,11 +80,11 @@ SetupPage {
                 }
                 QGCTabButton {
                     text:       qsTr("Calibration")
-                    visible:    _activeJoystick.axisCount != 0
+                    visible:    _activeJoystick && _activeJoystick.axisCount != 0
                 }
                 QGCTabButton {
                     text:       qsTr("Advanced")
-                    visible:    _activeJoystick.axisCount != 0
+                    visible:    _activeJoystick && _activeJoystick.axisCount != 0
                 }
             }
 

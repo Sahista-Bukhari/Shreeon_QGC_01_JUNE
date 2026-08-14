@@ -19,6 +19,8 @@ RowLayout {
     QGCLabel {
         id:                 label
         Layout.fillWidth:   true
+        color:              qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+        font.family:        ScreenTools.normalFontFamily
     }
 
     FactComboBox {
