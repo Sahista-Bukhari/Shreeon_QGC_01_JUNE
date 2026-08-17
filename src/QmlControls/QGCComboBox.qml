@@ -117,18 +117,40 @@ T.ComboBox {
         }
     }
 
-    background: Rectangle {
-        color: {
-            if (control._hoverGrayLook)
-                return control._hoverGray
-            if (control._showHighlight || control._selectedLook)
-                return control._accentGreen
-            return qgcPal.button
-        }
-        border.width:   0
-        radius:         ScreenTools.defaultBorderRadius * 2
+    background: Item {
+        implicitWidth:  ScreenTools.implicitComboBoxWidth
+        implicitHeight: ScreenTools.implicitComboBoxHeight
 
-        Behavior on color { ColorAnimation { duration: 120 } }
+        Rectangle {
+            anchors.fill:   parent
+            color: {
+                if (control._hoverGrayLook)
+                    return control._hoverGray
+                if (control._showHighlight || control._selectedLook)
+                    return control._accentGreen
+                return qgcPal.button
+            }
+            border.width:   0
+            radius:         ScreenTools.defaultBorderRadius * 2
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+        }
+
+        RippleEffect {
+            id: comboRipple
+            rippleColor: control._hoverGrayLook
+                         ? Qt.rgba(0, 0, 0, 0.14)
+                         : Qt.rgba(1, 1, 1, 0.38)
+            clipRadius: ScreenTools.defaultBorderRadius * 2
+        }
+
+        Connections {
+            target: control
+            function onPressedChanged() {
+                if (control.pressed)
+                    comboRipple.tap(control.pressX, control.pressY)
+            }
+        }
     }
 
     indicator: QGCColoredImage {

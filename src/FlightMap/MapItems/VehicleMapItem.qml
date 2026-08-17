@@ -34,16 +34,17 @@ MapQuickItem {
         opacity:    _adsbVehicle || vehicle === _activeVehicle ? 1.0 : 0.5
 
         MultiEffect {
-            source: vehicleIcon
-            shadowEnabled: vehicleIcon.visible && _adsbVehicle
-            shadowColor: Qt.rgba(0.94,0.91,0,1.0)
+            source:             vehicleIcon
+            visible:            _adsbVehicle
+            shadowEnabled:      _adsbVehicle
+            shadowColor:        Qt.rgba(0.94, 0.91, 0, 1.0)
             shadowVerticalOffset: 4
             shadowHorizontalOffset: 4
-            shadowBlur: 1.0
-            shadowOpacity: 0.5
-            shadowScale: 1.3
-            blurMax: 32
-            blurMultiplier: .1
+            shadowBlur:         1.0
+            shadowOpacity:      0.5
+            shadowScale:        1.3
+            blurMax:            32
+            blurMultiplier:     .1
         }
 
         Repeater {

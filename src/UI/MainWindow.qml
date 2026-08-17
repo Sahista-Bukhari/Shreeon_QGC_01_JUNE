@@ -699,6 +699,7 @@ ApplicationWindow {
         toolDrawer.returnToFlyView  = fromFlyViewBackNav === true && flyView.visible
         toolDrawer.hideToolbar      = hideToolbar === true
         toolDrawer.halfWidth        = halfWidth === true
+        toolDrawer.opacity          = 0
         toolDrawer.visible          = true
         applyUiTheme()
     }
@@ -957,8 +958,15 @@ ApplicationWindow {
         property bool halfWidth:        false
         property real halfWidthRatio:   0.72
 
+        property real _panelSlide:  0
+
         onVisibleChanged: {
-            if (!toolDrawer.visible) {
+            if (toolDrawer.visible) {
+                if (toolDrawer.opacity >= 0.99)
+                    toolDrawer.opacity = 0
+                toolDrawer._panelSlide = Math.round((toolDrawer.halfWidth ? toolDrawerPanel.width : width) * 0.10)
+                drawerOpenAnim.restart()
+            } else {
                 toolDrawerLoader.source = ""
                 showBackButton = false
                 centeredTitle = false
@@ -966,7 +974,27 @@ ApplicationWindow {
                 hideToolbar = false
                 halfWidth = false
                 halfWidthRatio = 0.72
+                toolDrawer._panelSlide = 0
+                toolDrawer.opacity = 0
                 mainWindow.applyUiTheme()
+            }
+        }
+
+        ParallelAnimation {
+            id: drawerOpenAnim
+            NumberAnimation {
+                target:         toolDrawer
+                property:       "opacity"
+                to:             1
+                duration:       280
+                easing.type:    Easing.OutCubic
+            }
+            NumberAnimation {
+                target:         toolDrawer
+                property:       "_panelSlide"
+                to:             0
+                duration:       320
+                easing.type:    Easing.OutCubic
             }
         }
 
@@ -995,6 +1023,7 @@ ApplicationWindow {
                                 ? (mainWindow.uiThemeMode === mainWindow.themeBlack ? qgcPal.window : "white")
                                 : qgcPal.window
             z:                  1
+            transform: Translate { x: toolDrawer._panelSlide }
 
             // Block clicks from reaching the map under the panel
             DeadMouseArea {

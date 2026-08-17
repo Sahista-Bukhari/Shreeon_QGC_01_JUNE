@@ -28,6 +28,7 @@ Item {
     property bool   _disableDueToFlying:    vehicleComponent ? (!_vehicleIsRover && !vehicleComponent.allowSetupWhileFlying && _vehicleFlying) : false
     property string _disableReason:         _disableDueToArmed ? qsTr("armed") : qsTr("flying")
     property real   _margins:               ScreenTools.defaultFontPixelHeight * 0.3
+    property real   _pageHPad:              ScreenTools.defaultFontPixelWidth * 1.8
     property string _pageTitle:             qsTr("%1 Config").arg(pageName)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
@@ -49,8 +50,12 @@ Item {
         ColumnLayout {
             id:                 headingRow
             anchors.top:        parent.top
-            anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 0.3
-            width:              availableWidth
+            anchors.topMargin:  visible ? ScreenTools.defaultFontPixelHeight * 0.3 : 0
+            anchors.left:       parent.left
+            anchors.right:      parent.right
+            anchors.leftMargin: _pageHPad
+            anchors.rightMargin: _pageHPad
+            height:             visible ? implicitHeight : 0
             spacing:            ScreenTools.defaultFontPixelHeight * 1.15
             visible:            showAdvanced || (pageDescription !== "" && !ScreenTools.isShortScreen)
 
@@ -93,7 +98,7 @@ Item {
 
         Loader {
             id:                 pageLoader
-            anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 1.2
+            anchors.topMargin:  headingRow.visible ? ScreenTools.defaultFontPixelHeight * 1.2 : ScreenTools.defaultFontPixelHeight * 0.2
             anchors.top:        headingRow.bottom
             width:              availableWidth
         }

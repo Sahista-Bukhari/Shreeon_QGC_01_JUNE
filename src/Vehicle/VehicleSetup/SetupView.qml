@@ -122,6 +122,27 @@ Rectangle {
         return false
     }
 
+    function _isSafetyComponent(component) {
+        if (!component)
+            return false
+        var source = component.setupSource ? component.setupSource.toString() : ""
+        if (source.indexOf("SafetyComponent") >= 0)
+            return true
+        var name = component.name ? component.name.toString().toLowerCase() : ""
+        return name === "safety"
+    }
+
+    function _safetyComponent() {
+        if (!_fullParameterVehicleAvailable || !_activeVehicle || !_activeVehicle.autopilotPlugin)
+            return null
+        var components = _activeVehicle.autopilotPlugin.vehicleComponents
+        for (var i = 0; i < components.length; i++) {
+            if (_isSafetyComponent(components[i]))
+                return components[i]
+        }
+        return null
+    }
+
     function _closeSetup() {
         setupView.popout()
         if (typeof mainWindow !== "undefined" && mainWindow)
@@ -135,7 +156,11 @@ Rectangle {
         _selectedIsSummary = isSummary === true
         _selectedIsMessage = isMessage === true
         _selectedComponent = vehicleComponent ? vehicleComponent : null
-        _reloadContent()
+        if (panelLoader.item && panelLoader.opacity > 0.05) {
+            pageOutAnim.restart()
+        } else {
+            _reloadContent()
+        }
     }
 
     function _reloadContent() {
@@ -148,6 +173,9 @@ Rectangle {
         } else if (_selectedSource !== "") {
             panelLoader.source = _selectedSource
         }
+        panelLoader.opacity = 0
+        panelLoader.x = ScreenTools.defaultFontPixelWidth * 2.4
+        pageInAnim.restart()
     }
 
     Component.onCompleted: {
@@ -195,6 +223,7 @@ Rectangle {
                     return Qt.rgba(0, 160 / 255, 76 / 255, 0.10)
                 return "transparent"
             }
+            Behavior on color { ColorAnimation { duration: 140 } }
         }
 
         Rectangle {
@@ -230,7 +259,7 @@ Rectangle {
                     width:              parent.width * 0.52
                     height:             width
                     source:             sideBtn.iconSource
-                    color:              sideBtn.setupComplete ? setupView._accentGreen : "#E53935"
+                    color:              !sideBtn.setupComplete ? "#E53935" : setupView._titleColor
                     fillMode:           Image.PreserveAspectFit
                 }
             }
@@ -259,11 +288,20 @@ Rectangle {
             }
         }
 
+        RippleEffect {
+            id:          sideRipple
+            rippleColor: setupView._darkTheme ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 160 / 255, 76 / 255, 0.22)
+            clipRadius:  0
+        }
+
         MouseArea {
             id:             sideMouse
             anchors.fill:   parent
             cursorShape:    Qt.PointingHandCursor
-            onClicked:      sideBtn.clicked()
+            onClicked: function(mouse) {
+                sideRipple.tap(mouse.x, mouse.y)
+                sideBtn.clicked()
+            }
         }
     }
 
@@ -302,6 +340,17 @@ Rectangle {
                         iconSource: "/qmlimages/VehicleSummaryIcon.png"
                         pageKey:    "summary"
                         onClicked:  setupView.showSummaryPanel()
+                    }
+
+                    SetupSideButton {
+                        property var _safetyComp: setupView._safetyComponent()
+                        label:          _safetyComp ? _safetyComp.name : qsTr("Safety")
+                        iconSource:     _safetyComp ? _safetyComp.iconResource : "/qmlimages/SafetyComponentIcon.png"
+                        pageKey:        _safetyComp ? ("component:" + _safetyComp.name) : "safety"
+                        setupComplete:  _safetyComp ? _safetyComp.setupComplete : true
+                        buttonVisible:  _safetyComp !== null &&
+                                        _safetyComp.setupSource.toString() !== ""
+                        onClicked:      setupView.showVehicleComponentPanel(_safetyComp)
                     }
 
                     SetupSideButton {
@@ -354,7 +403,8 @@ Rectangle {
                             pageKey:        "component:" + modelData.name
                             setupComplete:  modelData.setupComplete
                             buttonVisible:  modelData.setupSource.toString() !== "" &&
-                                            !setupView._isAdvancedOnlyComponent(modelData)
+                                            !setupView._isAdvancedOnlyComponent(modelData) &&
+                                            !setupView._isSafetyComponent(modelData)
                             onClicked:      setupView.showVehicleComponentPanel(modelData)
                         }
                     }
@@ -410,12 +460,28 @@ Rectangle {
                         opacity:            closeMouse.containsMouse ? 1.0 : 0.85
                     }
 
+                    RippleEffect {
+                        id:          closeRipple
+                        rippleColor: setupView._darkTheme ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.16)
+                        clipRadius:  parent.width / 2
+                    }
+
                     MouseArea {
                         id:             closeMouse
                         anchors.fill:   parent
                         hoverEnabled:   true
                         cursorShape:    Qt.PointingHandCursor
-                        onClicked:      setupView._closeSetup()
+                        onClicked: function(mouse) {
+                            closeRipple.tap(mouse.x, mouse.y)
+                            closePageTimer.restart()
+                        }
+                    }
+
+                    Timer {
+                        id:         closePageTimer
+                        interval:   140
+                        repeat:     false
+                        onTriggered: setupView._closeSetup()
                     }
                 }
 
@@ -428,8 +494,8 @@ Rectangle {
                 }
             }
 
-            Loader {
-                id:                     panelLoader
+            Item {
+                id:                     contentHost
                 anchors.left:           parent.left
                 anchors.right:          parent.right
                 anchors.top:            contentHeader.bottom
@@ -438,13 +504,54 @@ Rectangle {
                 anchors.rightMargin:    setupView._contentPad
                 anchors.topMargin:      ScreenTools.defaultFontPixelHeight * 0.2
                 anchors.bottomMargin:   ScreenTools.defaultFontPixelHeight * 0.2
+                clip:                   true
                 z:                      1
 
-                property var vehicleComponent: setupView._selectedComponent
+                Loader {
+                    id:                     panelLoader
+                    width:                  parent.width
+                    height:                 parent.height
+                    x:                      0
+                    y:                      0
+                    opacity:                0
+                    z:                      1
 
-                onWidthChanged: {
-                    if (item && typeof item.computeSummaryBoxSize === "function")
-                        item.computeSummaryBoxSize()
+                    property var vehicleComponent: setupView._selectedComponent
+
+                    onWidthChanged: {
+                        if (item && typeof item.computeSummaryBoxSize === "function")
+                            item.computeSummaryBoxSize()
+                    }
+                }
+
+                SequentialAnimation {
+                    id: pageOutAnim
+                    NumberAnimation {
+                        target:     panelLoader
+                        property:   "opacity"
+                        to:         0
+                        duration:   120
+                        easing.type: Easing.InQuad
+                    }
+                    ScriptAction { script: setupView._reloadContent() }
+                }
+
+                ParallelAnimation {
+                    id: pageInAnim
+                    NumberAnimation {
+                        target:         panelLoader
+                        property:       "opacity"
+                        to:             1
+                        duration:       260
+                        easing.type:    Easing.OutCubic
+                    }
+                    NumberAnimation {
+                        target:         panelLoader
+                        property:       "x"
+                        to:             0
+                        duration:       280
+                        easing.type:    Easing.OutCubic
+                    }
                 }
             }
         }

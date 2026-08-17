@@ -131,7 +131,11 @@ Rectangle {
         _selectedSource = pageSource ? pageSource.toString() : ""
         _selectedIsMessage = isMessage === true
         _selectedComponent = vehicleComponent ? vehicleComponent : null
-        _reloadContent()
+        if (panelLoader.item && panelLoader.opacity > 0.05) {
+            pageOutAnim.restart()
+        } else {
+            _reloadContent()
+        }
     }
 
     function _reloadContent() {
@@ -144,6 +148,9 @@ Rectangle {
         } else if (_selectedSource !== "") {
             panelLoader.source = _selectedSource
         }
+        panelLoader.opacity = 0
+        panelLoader.x = ScreenTools.defaultFontPixelWidth * 2.4
+        pageInAnim.restart()
     }
 
     function _selectInitialPage() {
@@ -211,6 +218,7 @@ Rectangle {
                     return Qt.rgba(0, 160 / 255, 76 / 255, 0.10)
                 return "transparent"
             }
+            Behavior on color { ColorAnimation { duration: 140 } }
         }
 
         Rectangle {
@@ -246,7 +254,7 @@ Rectangle {
                     width:              parent.width * 0.52
                     height:             width
                     source:             sideBtn.iconSource
-                    color:              sideBtn.setupComplete ? advancedView._accentGreen : "#E53935"
+                    color:              !sideBtn.setupComplete ? "#E53935" : advancedView._titleColor
                     fillMode:           Image.PreserveAspectFit
                 }
             }
@@ -274,11 +282,20 @@ Rectangle {
             }
         }
 
+        RippleEffect {
+            id:          sideRipple
+            rippleColor: advancedView._darkTheme ? Qt.rgba(1, 1, 1, 0.20) : Qt.rgba(0, 160 / 255, 76 / 255, 0.22)
+            clipRadius:  0
+        }
+
         MouseArea {
             id:             sideMouse
             anchors.fill:   parent
             cursorShape:    Qt.PointingHandCursor
-            onClicked:      sideBtn.clicked()
+            onClicked: function(mouse) {
+                sideRipple.tap(mouse.x, mouse.y)
+                sideBtn.clicked()
+            }
         }
     }
 
@@ -393,12 +410,28 @@ Rectangle {
                         opacity:            closeMouse.containsMouse ? 1.0 : 0.85
                     }
 
+                    RippleEffect {
+                        id:          closeRipple
+                        rippleColor: advancedView._darkTheme ? Qt.rgba(1, 1, 1, 0.22) : Qt.rgba(0, 0, 0, 0.16)
+                        clipRadius:  parent.width / 2
+                    }
+
                     MouseArea {
                         id:             closeMouse
                         anchors.fill:   parent
                         hoverEnabled:   true
                         cursorShape:    Qt.PointingHandCursor
-                        onClicked:      advancedView._closeView()
+                        onClicked: function(mouse) {
+                            closeRipple.tap(mouse.x, mouse.y)
+                            closePageTimer.restart()
+                        }
+                    }
+
+                    Timer {
+                        id:         closePageTimer
+                        interval:   140
+                        repeat:     false
+                        onTriggered: advancedView._closeView()
                     }
                 }
 
@@ -411,8 +444,8 @@ Rectangle {
                 }
             }
 
-            Loader {
-                id:                     panelLoader
+            Item {
+                id:                     contentHost
                 anchors.left:           parent.left
                 anchors.right:          parent.right
                 anchors.top:            contentHeader.bottom
@@ -421,9 +454,50 @@ Rectangle {
                 anchors.rightMargin:    advancedView._contentPad
                 anchors.topMargin:      ScreenTools.defaultFontPixelHeight * 0.2
                 anchors.bottomMargin:   ScreenTools.defaultFontPixelHeight * 0.2
+                clip:                   true
                 z:                      1
 
-                property var vehicleComponent: advancedView._selectedComponent
+                Loader {
+                    id:                     panelLoader
+                    width:                  parent.width
+                    height:                 parent.height
+                    x:                      0
+                    y:                      0
+                    opacity:                0
+                    z:                      1
+
+                    property var vehicleComponent: advancedView._selectedComponent
+                }
+
+                SequentialAnimation {
+                    id: pageOutAnim
+                    NumberAnimation {
+                        target:      panelLoader
+                        property:    "opacity"
+                        to:          0
+                        duration:    120
+                        easing.type: Easing.InQuad
+                    }
+                    ScriptAction { script: advancedView._reloadContent() }
+                }
+
+                ParallelAnimation {
+                    id: pageInAnim
+                    NumberAnimation {
+                        target:         panelLoader
+                        property:       "opacity"
+                        to:             1
+                        duration:       260
+                        easing.type:    Easing.OutCubic
+                    }
+                    NumberAnimation {
+                        target:         panelLoader
+                        property:       "x"
+                        to:             0
+                        duration:       280
+                        easing.type:    Easing.OutCubic
+                    }
+                }
             }
         }
     }

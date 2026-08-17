@@ -61,6 +61,7 @@ RowLayout {
     readonly property color _titleColor: _darkTheme ? "#AEAEB2" : "#3A3A3C"
     readonly property color _bodyColor:  _darkTheme ? "#8E8E93" : "#3A3A3C"
     readonly property color _accentGreen: qgcPal.colorGreen
+    readonly property real  _sectionHPad: ScreenTools.defaultFontPixelWidth * 1.8
 
     function _pwmAxis(value, reversed) {
         var n = (value - 1500) / 500
@@ -122,7 +123,9 @@ RowLayout {
         spacing: 10
 
         ColumnLayout {
-            Layout.fillWidth: true
+            Layout.fillWidth:   true
+            Layout.leftMargin:  root._sectionHPad
+            Layout.rightMargin: root._sectionHPad
             spacing: ScreenTools.defaultFontPixelHeight * 0.9
 
             QGCLabel {
@@ -227,6 +230,8 @@ RowLayout {
         ColumnLayout {
             id: attitudeControlsLayout
             Layout.fillWidth: true
+            Layout.leftMargin:  root._sectionHPad
+            Layout.rightMargin: root._sectionHPad
             spacing: ScreenTools.defaultFontPixelHeight
 
             QGCLabel {
@@ -242,6 +247,7 @@ RowLayout {
 
                 RowLayout {
                     Layout.fillWidth: true
+                    spacing:          ScreenTools.defaultFontPixelWidth * 1.2
 
                     QGCLabel {
                         Layout.fillWidth: true
@@ -253,9 +259,9 @@ RowLayout {
 
                     Loader {
                         id: channelMonitorLoader
-                        width: ScreenTools.defaultFontPixelWidth * 20
+                        width: ScreenTools.defaultFontPixelWidth * 28
+                        height: ScreenTools.defaultFontPixelHeight * 1.6
                         sourceComponent: attitudeChannelDisplayComponent
-
                         property var channelMapped: mapped
                         property var channelReversed: reversed
                         property var channelValue: value
@@ -266,6 +272,9 @@ RowLayout {
 
         // Command Buttons
         RowLayout {
+            Layout.fillWidth:   true
+            Layout.leftMargin:  root._sectionHPad
+            Layout.rightMargin: root._sectionHPad
             spacing: ScreenTools.defaultFontPixelWidth
 
             QGCButton {
@@ -312,6 +321,8 @@ RowLayout {
             id: statusText
             Layout.fillWidth: true
             Layout.maximumWidth: parent.width
+            Layout.leftMargin:  root._sectionHPad
+            Layout.rightMargin: root._sectionHPad
             wrapMode: Text.WordWrap
             font.pointSize: ScreenTools.smallFontPointSize
             font.family: ScreenTools.normalFontFamily
@@ -321,12 +332,16 @@ RowLayout {
         Rectangle {
             Layout.fillWidth: true
             implicitHeight: 1
+            // hide the some calibration parts which no londer needed
+            visible: additionalSetupComponent !== null
             color: qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#E5E5E5"
         }
 
         Loader {
             id: additionalSetupLoader
             Layout.fillWidth: true
+            visible: additionalSetupComponent !== null
+            active: additionalSetupComponent !== null
             sourceComponent: additionalSetupComponent
         }
     }
@@ -346,7 +361,8 @@ RowLayout {
         id: attitudeChannelDisplayComponent
 
         Item {
-            implicitHeight: ScreenTools.defaultFontPixelHeight
+            implicitHeight: ScreenTools.defaultFontPixelHeight * 1.6
+            implicitWidth: ScreenTools.defaultFontPixelWidth * 28
 
             readonly property int _channelMin: 800
             readonly property int _channelMax: 2200
@@ -360,7 +376,8 @@ RowLayout {
                 id: bar
                 anchors.verticalCenter: parent.verticalCenter
                 width: parent.width
-                height: ScreenTools.defaultFontPixelHeight / 2
+                height: ScreenTools.defaultFontPixelHeight * 1.15
+                radius: ScreenTools.defaultFontPixelWidth * 0.35
                 color: _barColor
             }
 
@@ -385,11 +402,17 @@ RowLayout {
 
             QGCLabel {
                 id: notMappedLabel
-                anchors.centerIn: parent
-                text: qsTr("Not Mapped")
-                visible: !channelMapped
-                color: root._bodyColor
-                font.family: ScreenTools.normalFontFamily
+                anchors.left:           parent.left
+                anchors.right:          parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                anchors.leftMargin:     ScreenTools.defaultFontPixelWidth * 1.1
+                anchors.rightMargin:    ScreenTools.defaultFontPixelWidth * 1.1
+                horizontalAlignment:    Text.AlignHCenter
+                elide:                  Text.ElideRight
+                text:                   qsTr("Not Mapped")
+                visible:                !channelMapped
+                color:                  root._bodyColor
+                font.family:            ScreenTools.normalFontFamily
             }
 
             ColorAnimation {

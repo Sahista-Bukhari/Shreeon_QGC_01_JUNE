@@ -8,6 +8,7 @@ import QGroundControl.Controls
 SetupPage {
     id:             safetyPage
     pageComponent:  safetyPageComponent
+    pageDescription: ""
 
     Component {
         id: safetyPageComponent
@@ -29,7 +30,7 @@ SetupPage {
 
             property Fact _armingCheck: controller.getParameterFact(-1, "ARMING_CHECK")
 
-            property real _margins:     ScreenTools.defaultFontPixelHeight
+            property real _margins:     ScreenTools.defaultFontPixelHeight * 0.4
             property bool _showIcon:    !ScreenTools.isTinyScreen
 
             Column {

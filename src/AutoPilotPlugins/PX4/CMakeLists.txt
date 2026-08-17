@@ -65,6 +65,7 @@ qt_add_qml_module(AutoPilotPluginsPX4Module
         AirframeComponent.qml
         AirframeComponentSummary.qml
         BatteryParams.qml
+        BatteryFailsafeRangeSlider.qml
         FlightModesComponentSummary.qml
         PowerComponent.qml
         PowerComponentSummary.qml

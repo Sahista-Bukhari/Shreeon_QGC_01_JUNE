@@ -101,6 +101,10 @@
         <file alias="Gears.svg">src/UI/toolbar/Images/Gears.svg</file>
         <file alias="GeoFence.svg">src/AutoPilotPlugins/PX4/Images/GeoFence.svg</file>
         <file alias="GeoFenceLight.svg">src/AutoPilotPlugins/PX4/Images/GeoFenceLight.svg</file>
+        <file alias="GeoFenceMapPin.svg">src/AutoPilotPlugins/PX4/Images/GeoFenceMapPin.svg</file>
+        <file alias="LinkFailsafeTower.svg">src/AutoPilotPlugins/PX4/Images/LinkFailsafeTower.svg</file>
+        <file alias="RCLossGamepad.svg">src/AutoPilotPlugins/PX4/Images/RCLossGamepad.svg</file>
+        <file alias="DataLinkCloudTower.svg">src/AutoPilotPlugins/PX4/Images/DataLinkCloudTower.svg</file>
         <file alias="GeoTagIcon.svg">src/AnalyzeView/GeoTagIcon.svg</file>
         <file alias="Gps.svg">src/UI/toolbar/Images/Gps.svg</file>
         <file alias="Hamburger.svg">src/UI/toolbar/Images/Hamburger.svg</file>

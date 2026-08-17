@@ -8,6 +8,7 @@ import QGroundControl.Controls
 SetupPage {
     id:             safetyPage
     pageComponent:  safetyPageComponent
+    pageDescription: ""
 
     Component {
         id: safetyPageComponent
@@ -28,7 +29,7 @@ SetupPage {
             property Fact _failsafeGCSEnable:   controller.getParameterFact(-1, "FS_GCS_ENABL")
             property Fact _rtlAltFact:          controller.getParameterFact(-1, "r.RTL_ALTITUDE")
 
-            property real _margins: ScreenTools.defaultFontPixelHeight
+            property real _margins: ScreenTools.defaultFontPixelHeight * 0.4
 
             ExclusiveGroup { id: returnAltRadioGroup }
 

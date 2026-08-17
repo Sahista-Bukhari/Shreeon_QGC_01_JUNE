@@ -62,16 +62,23 @@ AbstractButton   {
             RippleEffect {
                 id: sliderRipple
                 rippleColor: control.checked
-                             ? Qt.rgba(1, 1, 1, 0.40)
-                             : Qt.rgba(0, 0, 0, 0.16)
+                             ? Qt.rgba(1, 1, 1, 0.45)
+                             : Qt.rgba(0, 0, 0, 0.20)
                 clipRadius: indicator.radius
+                duration:   420
             }
 
             Connections {
                 target: control
                 function onPressedChanged() {
-                    if (control.pressed)
-                        sliderRipple.tapCenter()
+                    if (control.pressed) {
+                        var px = control.pressX - indicator.x
+                        var py = control.pressY - indicator.y
+                        if (px < 0 || py < 0 || px > indicator.width || py > indicator.height)
+                            sliderRipple.tapCenter()
+                        else
+                            sliderRipple.tap(px, py)
+                    }
                 }
             }
         }
