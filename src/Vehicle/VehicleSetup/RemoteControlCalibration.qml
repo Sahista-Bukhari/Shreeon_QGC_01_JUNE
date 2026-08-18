@@ -61,7 +61,7 @@ RowLayout {
     readonly property color _titleColor: _darkTheme ? "#AEAEB2" : "#3A3A3C"
     readonly property color _bodyColor:  _darkTheme ? "#8E8E93" : "#3A3A3C"
     readonly property color _accentGreen: qgcPal.colorGreen
-    readonly property real  _sectionHPad: ScreenTools.defaultFontPixelWidth * 1.8
+    readonly property real  _sectionHPad: ScreenTools.defaultFontPixelWidth * 2.2
 
     function _pwmAxis(value, reversed) {
         var n = (value - 1500) / 500
@@ -334,7 +334,7 @@ RowLayout {
             implicitHeight: 1
             // hide the some calibration parts which no londer needed
             visible: additionalSetupComponent !== null
-            color: qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#E5E5E5"
+            color: qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#EFEFEF"
         }
 
         Loader {

@@ -8,25 +8,36 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 Item {
-    width:                  grid.width  + (ScreenTools.defaultFontPixelWidth  * 2)
+    width:                  parent ? parent.width : implicitWidth
     height:                 grid.height + (ScreenTools.defaultFontPixelHeight * 2)
     //---------------------------------------------------------------------
+    readonly property real  _pageHPad:          ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real  _labelPointSize:    ScreenTools.defaultFontPointSize
+    readonly property real  _bodyPointSize:     ScreenTools.smallFontPointSize
+    readonly property color _titleColor:        qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:         qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
+
     GridLayout {
         id:                 grid
         columns:            2
         columnSpacing:      ScreenTools.defaultFontPixelWidth
-        rowSpacing:         ScreenTools.defaultFontPixelHeight
-        anchors.centerIn:   parent
+        rowSpacing:         ScreenTools.defaultFontPixelHeight * 0.55
+        x:                  _pageHPad
+        width:              parent.width - _pageHPad * 2
         //-------------------------------------------------------------
         //-------------------------------------------------------------
         QGCRadioButton {
             text:               qsTr("Full down stick is zero throttle")
+            textColor:          _titleColor
             checked:            _activeJoystick ? _activeJoystick.throttleMode === 1 : false
             onClicked:          _activeJoystick.throttleMode = 1
             Layout.columnSpan:  2
         }
         QGCRadioButton {
             text:               qsTr("Center stick is zero throttle")
+            textColor:          _titleColor
             checked:            _activeJoystick ? _activeJoystick.throttleMode === 0 : false
             onClicked:          _activeJoystick.throttleMode = 0
             Layout.columnSpan:  2
@@ -34,6 +45,8 @@ Item {
         //-------------------------------------------------------------
         QGCLabel {
             text:               qsTr("Spring loaded throttle smoothing")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             visible:            _activeJoystick ? _activeJoystick.throttleMode === 0 : false
             Layout.alignment:   Qt.AlignVCenter
             Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 36
@@ -46,6 +59,8 @@ Item {
         //-------------------------------------------------------------
         QGCLabel {
             text:               qsTr("Allow negative Thrust")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             visible:            globals.activeVehicle.supportsNegativeThrust
             Layout.alignment:   Qt.AlignVCenter
         }
@@ -58,6 +73,8 @@ Item {
         //---------------------------------------------------------------------
         QGCLabel {
             text:               qsTr("Exponential:")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
         }
         Row {
             spacing:            ScreenTools.defaultFontPixelWidth
@@ -72,12 +89,15 @@ Item {
             QGCLabel {
                 id:     expoSliderIndicator
                 text:   expoSlider.value.toFixed(2)
+                color:  _titleColor
+                font.pointSize: _labelPointSize
             }
         }
 
         QGCCheckBox {
             Layout.columnSpan:  2
             text: qsTr("Allow additional axes to be used for manual control extensions")
+            textColor: _titleColor
             checked: _activeJoystick ? _activeJoystick.enableManualControlExtensions : false
             onClicked: _activeJoystick.enableManualControlExtensions = checked
         }
@@ -86,6 +106,8 @@ Item {
         //-- Enable Advanced Mode
         QGCLabel {
             text:               qsTr("Enable further advanced settings (careful!)")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             Layout.alignment:   Qt.AlignVCenter
             Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 36
         }
@@ -102,6 +124,8 @@ Item {
         //-- Axis Message Frequency
         QGCLabel {
             text:               qsTr("Axis frequency (Hz):")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             Layout.alignment:   Qt.AlignVCenter
             visible:            advancedSettings.checked
         }
@@ -120,6 +144,8 @@ Item {
         //-- Button Repeat Frequency
         QGCLabel {
             text:               qsTr("Button repeat frequency (Hz):")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             Layout.alignment:   Qt.AlignVCenter
             visible:            advancedSettings.checked
         }
@@ -138,6 +164,8 @@ Item {
         //-- Enable circle correction
         QGCLabel {
             text:               qsTr("Enable circle correction")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             Layout.alignment:   Qt.AlignVCenter
             visible:            advancedSettings.checked
         }
@@ -156,6 +184,8 @@ Item {
         //-- Deadband
         QGCLabel {
             text:               qsTr("Deadbands")
+            color:              _titleColor
+            font.pointSize:     _labelPointSize
             Layout.alignment:   Qt.AlignVCenter
             visible:            advancedSettings.checked
         }
@@ -169,7 +199,9 @@ Item {
         QGCLabel{
             Layout.fillWidth:   true
             Layout.columnSpan:  2
-            font.pointSize:     ScreenTools.smallFontPointSize
+            font.pointSize:     _bodyPointSize
+            font.family:        ScreenTools.normalFontFamily
+            color:              _bodyColor
             wrapMode:           Text.WordWrap
             visible:            advancedSettings.checked
             text:   qsTr("Deadband can be set during the first ") +

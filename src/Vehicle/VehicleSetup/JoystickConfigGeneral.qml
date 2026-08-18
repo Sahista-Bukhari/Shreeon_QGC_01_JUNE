@@ -8,10 +8,14 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 Item {
-    width:  mainCol.width  + (ScreenTools.defaultFontPixelWidth  * 2)
-    height: mainCol.height + (ScreenTools.defaultFontPixelHeight * 2)
+    width:  parent ? parent.width : implicitWidth
+    height: mainCol.height + ScreenTools.defaultFontPixelHeight * 1.2
 
     readonly property real axisMonitorWidth: ScreenTools.defaultFontPixelWidth * 32
+    readonly property real _pageHPad:        ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real _titlePointSize:  ScreenTools.defaultFontPointSize + 1
+    readonly property real _labelPointSize:  ScreenTools.defaultFontPointSize
+    readonly property real _bodyPointSize:   ScreenTools.smallFontPointSize
 
     property var  _activeJoystick:      joystickManager.activeJoystick
     property bool _buttonsOnly:         _activeJoystick ? _activeJoystick.axisCount == 0 : true
@@ -20,7 +24,10 @@ Item {
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
     readonly property bool  _darkTheme:   qgcPal.globalTheme === QGCPalette.Dark
     readonly property color _titleColor:  _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:   _darkTheme ? "#8E8E93" : "#3A3A3C"
     readonly property color _accentGreen: qgcPal.colorGreen
+    readonly property color _cardBorder:  _darkTheme ? qgcPal.windowShade : "#E6E6E6"
+    readonly property color _innerFill:   _darkTheme ? qgcPal.windowShade : "#E8E8E8"
 
     property real _leftStickX:  0
     property real _leftStickY:  0
@@ -51,18 +58,33 @@ Item {
 
     Column {
         id:                 mainCol
-        anchors.centerIn:   parent
-        spacing:            ScreenTools.defaultFontPixelHeight
+        x:                  _pageHPad
+        width:              parent.width - _pageHPad * 2
+        spacing:            ScreenTools.defaultFontPixelHeight * 1.15
+
+        QGCLabel {
+            text:           qsTr("Joystick Settings")
+            color:          _titleColor
+            font.bold:      true
+            font.pointSize: _titlePointSize
+            font.family:    ScreenTools.normalFontFamily
+        }
+
         GridLayout {
+            width:              parent.width
             columns:            2
             columnSpacing:      ScreenTools.defaultFontPixelWidth
-            rowSpacing:         ScreenTools.defaultFontPixelHeight
+            rowSpacing:         ScreenTools.defaultFontPixelHeight * 0.55
             //---------------------------------------------------------------------
             //-- Enable Joystick
             QGCLabel {
                 text:               _requiresCalibration ? qsTr("Enable not allowed (Calibrate First)") : qsTr("Enable joystick input")
+                color:              _titleColor
+                font.pointSize:     _labelPointSize
+                font.family:        ScreenTools.normalFontFamily
                 Layout.alignment:   Qt.AlignVCenter
-                Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 36
+                Layout.fillWidth:   true
+                Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 20
             }
             QGCCheckBox {
                 id:             enabledSwitch
@@ -97,6 +119,9 @@ Item {
             //-- Joystick Selector
             QGCLabel {
                 text:               qsTr("Active joystick:")
+                color:              _titleColor
+                font.pointSize:     _labelPointSize
+                font.family:        ScreenTools.normalFontFamily
                 Layout.alignment:   Qt.AlignVCenter
             }
             QGCComboBox {
@@ -127,6 +152,9 @@ Item {
             //-- RC Mode
             QGCLabel {
                 text:               qsTr("RC Mode:")
+                color:              _titleColor
+                font.pointSize:     _labelPointSize
+                font.family:        ScreenTools.normalFontFamily
                 Layout.alignment:   Qt.AlignVCenter
                 visible:            !_buttonsOnly
             }
@@ -164,6 +192,9 @@ Item {
             }
             QGCLabel {
                 text:               qsTr("Calibration:")
+                color:              _titleColor
+                font.pointSize:     _labelPointSize
+                font.family:        ScreenTools.normalFontFamily
                 Layout.alignment:   Qt.AlignVCenter
                 visible:            !_buttonsOnly
             }
@@ -186,13 +217,12 @@ Item {
         }
         Rectangle {
             visible:            !_buttonsOnly
-            width:              sticksRow.width + ScreenTools.defaultFontPixelWidth * 4
+            width:              parent.width
             height:             sticksRow.height + ScreenTools.defaultFontPixelHeight * 1.6
             radius:             ScreenTools.defaultFontPixelWidth * 0.75
-            color:              _darkTheme ? qgcPal.windowShade : "#E8E8E8"
+            color:              _innerFill
             border.width:       1
-            border.color:       _darkTheme ? qgcPal.windowShade : "#E5E5E5"
-            anchors.horizontalCenter: parent.horizontalCenter
+            border.color:       _cardBorder
 
             Row {
                 id: sticksRow
@@ -224,10 +254,10 @@ Item {
             //-- Axis Monitors
             Rectangle {
                 id:                 axisRect
-                color:              Qt.rgba(0,0,0,0)
-                border.color:       qgcPal.text
+                color:              "transparent"
+                border.color:       _cardBorder
                 border.width:       1
-                radius:             ScreenTools.defaultFontPixelWidth * 0.5
+                radius:             ScreenTools.defaultFontPixelWidth * 0.75
                 width:              axisGrid.width  + (ScreenTools.defaultFontPixelWidth  * 2)
                 height:             axisGrid.height + (ScreenTools.defaultFontPixelHeight * 2)
                 visible:            !_buttonsOnly
@@ -253,6 +283,9 @@ Item {
                     anchors.centerIn:   parent
                     QGCLabel {
                         text:               globals.activeVehicle && globals.activeVehicle.sub ? qsTr("Lateral") : qsTr("Roll")
+                        color:              _titleColor
+                        font.pointSize:     _labelPointSize
+                        font.family:        ScreenTools.normalFontFamily
                         Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 12
                     }
                     AxisMonitor {
@@ -267,6 +300,9 @@ Item {
                         id:                 pitchLabel
                         width:              _attitudeLabelWidth
                         text:               globals.activeVehicle && globals.activeVehicle.sub ? qsTr("Forward") : qsTr("Pitch")
+                        color:              _titleColor
+                        font.pointSize:     _labelPointSize
+                        font.family:        ScreenTools.normalFontFamily
                     }
                     AxisMonitor {
                         id:                 pitchAxis
@@ -280,6 +316,9 @@ Item {
                         id:                 yawLabel
                         width:              _attitudeLabelWidth
                         text:               qsTr("Yaw")
+                        color:              _titleColor
+                        font.pointSize:     _labelPointSize
+                        font.family:        ScreenTools.normalFontFamily
                     }
                     AxisMonitor {
                         id:                 yawAxis
@@ -293,6 +332,9 @@ Item {
                         id:                 throttleLabel
                         width:              _attitudeLabelWidth
                         text:               qsTr("Throttle")
+                        color:              _titleColor
+                        font.pointSize:     _labelPointSize
+                        font.family:        ScreenTools.normalFontFamily
                     }
                     AxisMonitor {
                         id:                 throttleAxis
@@ -316,10 +358,10 @@ Item {
                 }
             }
             Rectangle {
-                color:              Qt.rgba(0,0,0,0)
-                border.color:       qgcPal.text
+                color:              "transparent"
+                border.color:       _cardBorder
                 border.width:       1
-                radius:             ScreenTools.defaultFontPixelWidth * 0.5
+                radius:             ScreenTools.defaultFontPixelWidth * 0.75
                 width:              axisRect.width
                 height:             axisRect.height
                 Flow {

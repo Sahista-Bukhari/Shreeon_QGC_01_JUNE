@@ -9,14 +9,24 @@ import QGroundControl.Controls
 Item {
     id: root
     width:  parent ? parent.width : implicitWidth
-    height: flickable.contentHeight
+    height: parent ? parent.height : implicitHeight
 
-    property real _margins:         ScreenTools.defaultFontPixelHeight * 0.3
     property var  _switchNameList:  [ "RC_MAP_ARM_SW", "RC_MAP_GEAR_SW", "RC_MAP_KILL_SW", "RC_MAP_LOITER_SW", "RC_MAP_OFFB_SW", "RC_MAP_RETURN_SW" ]
     property var  _switchTHList:    [ "RC_ARMSWITCH_TH", "RC_GEAR_TH", "RC_KILLSWITCH_TH", "RC_LOITER_TH", "RC_OFFB_TH", "RC_RETURN_TH" ]
 
-    readonly property real _comboWidth: Math.min(ScreenTools.defaultFontPixelWidth * 12,
-                                                 Math.max(ScreenTools.defaultFontPixelWidth * 9, root.width * 0.38))
+    readonly property real  _pageHPad:          ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real  _sectionGap:        ScreenTools.defaultFontPixelHeight * 1.15
+    readonly property real  _titlePointSize:    ScreenTools.defaultFontPointSize + 1
+    readonly property real  _labelPointSize:    ScreenTools.defaultFontPointSize
+    readonly property color _titleColor:        qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _grayCard:          qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#F2F2F2"
+    readonly property real  _cardPad:           ScreenTools.defaultFontPixelHeight * 0.7
+    readonly property real  _cardRadius:        ScreenTools.defaultFontPixelWidth * 0.75
+    readonly property color _dividerColor:      qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#EFEFEF"
+    readonly property real  _comboWidth:        Math.min(ScreenTools.defaultFontPixelWidth * 15,
+                                                         Math.max(ScreenTools.defaultFontPixelWidth * 11, root.width * 0.42))
+
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
     Component.onCompleted: {
         if (controller.vehicle.vtol) {
@@ -34,57 +44,71 @@ Item {
         id: controller
     }
 
+    component HeadingLabel: QGCLabel {
+        color:          root._titleColor
+        font.bold:      true
+        font.pointSize: root._titlePointSize
+        font.family:    ScreenTools.normalFontFamily
+    }
+
+    component SettingLabel: QGCLabel {
+        color:          root._titleColor
+        font.bold:      false
+        font.pointSize: root._labelPointSize
+        font.family:    ScreenTools.normalFontFamily
+        elide:          Text.ElideRight
+    }
+
+    component SectionDivider: Rectangle {
+        Layout.fillWidth:   true
+        implicitHeight:     1
+        color:              root._dividerColor
+    }
+
     QGCFlickable {
-        id:                 flickable
         anchors.fill:       parent
         clip:               true
         contentWidth:       width
-        contentHeight:      mainColumn.height
+        contentHeight:      mainColumn.height + ScreenTools.defaultFontPixelHeight
         flickableDirection: Flickable.VerticalFlick
 
         ColumnLayout {
             id:         mainColumn
-            width:      flickable.width
-            spacing:    _margins
-
-            QGCLabel {
-                text:       qsTr("Flight Mode Settings")
-                font.bold:  true
-                font.pointSize: ScreenTools.smallFontPointSize
-            }
+            width:      parent.width
+            spacing:    root._sectionGap
 
             Rectangle {
-                Layout.fillWidth:           true
-                Layout.preferredHeight:     flightModeColumn.height + _margins * 2
-                color:                      qgcPal.windowShade
-                radius:                     2
+                Layout.fillWidth:       true
+                Layout.leftMargin:      root._pageHPad
+                Layout.rightMargin:     root._pageHPad
+                Layout.topMargin:       ScreenTools.defaultFontPixelHeight * 0.15
+                implicitHeight:         modeColumn.height + root._cardPad * 2
+                radius:                 root._cardRadius
+                color:                  root._grayCard
 
                 ColumnLayout {
-                    id:                 flightModeColumn
-                    anchors.margins:    _margins
+                    id:                 modeColumn
                     anchors.left:       parent.left
                     anchors.right:      parent.right
                     anchors.top:        parent.top
-                    spacing:            ScreenTools.defaultFontPixelHeight * 0.2
+                    anchors.margins:    root._cardPad
+                    spacing:            ScreenTools.defaultFontPixelHeight * 0.55
 
                     RowLayout {
                         Layout.fillWidth:   true
-                        spacing:            ScreenTools.defaultFontPixelWidth * 0.6
+                        spacing:            ScreenTools.defaultFontPixelWidth * 0.9
 
-                        QGCLabel {
+                        SettingLabel {
                             Layout.fillWidth:   true
                             text:               qsTr("Mode Channel")
-                            elide:              Text.ElideRight
-                            font.pointSize:     ScreenTools.smallFontPointSize
                         }
 
                         FactComboBox {
-                            Layout.preferredWidth:  _comboWidth
-                            Layout.maximumWidth:    _comboWidth
+                            Layout.preferredWidth:  root._comboWidth
+                            Layout.maximumWidth:    root._comboWidth
                             fact:                   controller.getParameterFact(-1, "RC_MAP_FLTMODE")
                             indexModel:             false
                             sizeToContents:         false
-                            compact:                true
                         }
                     }
 
@@ -93,56 +117,55 @@ Item {
 
                         RowLayout {
                             Layout.fillWidth:   true
-                            spacing:            ScreenTools.defaultFontPixelWidth * 0.6
+                            spacing:            ScreenTools.defaultFontPixelWidth * 0.9
 
-                            QGCLabel {
+                            SettingLabel {
                                 Layout.fillWidth:   true
                                 text:               qsTr("Flight Mode %1").arg(index + 1)
-                                color:              (controller.activeFlightMode - 1) == index ? "yellow" : qgcPal.text
-                                elide:              Text.ElideRight
-                                font.pointSize:     ScreenTools.smallFontPointSize
+                                color:              (controller.activeFlightMode - 1) == index ? qgcPal.colorGreen : root._titleColor
                             }
 
                             FactComboBox {
-                                Layout.preferredWidth:  _comboWidth
-                                Layout.maximumWidth:    _comboWidth
+                                Layout.preferredWidth:  root._comboWidth
+                                Layout.maximumWidth:    root._comboWidth
                                 fact:                   controller.getParameterFact(-1, "COM_FLTMODE" + (index + 1))
                                 indexModel:             false
                                 sizeToContents:         false
-                                compact:                true
                             }
                         }
                     }
                 }
             }
 
-            QGCLabel {
-                Layout.topMargin:   _margins * 0.4
+            SectionDivider { }
+
+            HeadingLabel {
+                Layout.leftMargin:  root._pageHPad
                 text:               qsTr("Switch Settings")
-                font.bold:          true
-                font.pointSize:     ScreenTools.smallFontPointSize
             }
 
             Rectangle {
-                Layout.fillWidth:           true
-                Layout.preferredHeight:     switchColumn.height + _margins * 2
-                color:                      qgcPal.windowShade
-                radius:                     2
+                Layout.fillWidth:       true
+                Layout.leftMargin:      root._pageHPad
+                Layout.rightMargin:     root._pageHPad
+                implicitHeight:         switchColumn.height + root._cardPad * 2
+                radius:                 root._cardRadius
+                color:                  root._grayCard
 
                 ColumnLayout {
                     id:                 switchColumn
-                    anchors.margins:    _margins
                     anchors.left:       parent.left
                     anchors.right:      parent.right
                     anchors.top:        parent.top
-                    spacing:            ScreenTools.defaultFontPixelHeight * 0.2
+                    anchors.margins:    root._cardPad
+                    spacing:            ScreenTools.defaultFontPixelHeight * 0.55
 
                     Repeater {
                         id: switchRepeater
 
                         RowLayout {
                             Layout.fillWidth:   true
-                            spacing:            ScreenTools.defaultFontPixelWidth * 0.6
+                            spacing:            ScreenTools.defaultFontPixelWidth * 0.9
 
                             property string thFactName:     _switchTHList[index]
                             property bool   thFactExists:   thFactName !== ""
@@ -157,30 +180,31 @@ Item {
                                                                      (controller.rcChannelValues[swChannel] > thPWM) :
                                                                      (controller.rcChannelValues[swChannel] <= thPWM))
 
-                            QGCLabel {
+                            SettingLabel {
                                 Layout.fillWidth:   true
                                 text:               swFact.shortDescription
-                                color:              swActive ? "yellow" : qgcPal.text
-                                elide:              Text.ElideRight
-                                font.pointSize:     ScreenTools.smallFontPointSize
+                                color:              swActive ? qgcPal.colorGreen : root._titleColor
                             }
 
                             FactComboBox {
-                                Layout.preferredWidth:  _comboWidth
-                                Layout.maximumWidth:    _comboWidth
+                                Layout.preferredWidth:  root._comboWidth
+                                Layout.maximumWidth:    root._comboWidth
                                 fact:                   swFact
                                 indexModel:             false
                                 sizeToContents:         false
-                                compact:                true
                             }
                         }
                     }
                 }
             }
 
+            SectionDivider { }
+
             RCChannelMonitor {
-                Layout.fillWidth:   true
-                twoColumn:          true
+                Layout.fillWidth:    true
+                Layout.leftMargin:   root._pageHPad
+                Layout.rightMargin:  root._pageHPad
+                twoColumn:           true
             }
         }
     }

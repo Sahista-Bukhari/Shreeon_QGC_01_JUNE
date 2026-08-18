@@ -10,12 +10,13 @@ Rectangle {
     anchors.fill:   parent
     color:          qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.window : "white"
 
-    readonly property real  _pageHPad:      ScreenTools.defaultFontPixelWidth * 1.8
+    readonly property real  _pageHPad:      ScreenTools.defaultFontPixelWidth * 2.2
     readonly property real  _cardGap:       ScreenTools.defaultFontPixelHeight * 0.7
     readonly property real  _cardRadius:    ScreenTools.defaultFontPixelWidth * 0.7
     readonly property real  _textPad:       ScreenTools.defaultFontPixelWidth * 1.6
     readonly property real  _cardW:         Math.max(0, width - _pageHPad * 2)
     readonly property color _titleColor:    qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:     qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
     readonly property color _cardColor:     qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "white"
     readonly property color _innerGray:     qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.window : "#F2F2F2"
     readonly property color _cardBorder:    qgcPal.globalTheme === QGCPalette.Dark
@@ -65,7 +66,7 @@ Rectangle {
                 x:                  _summaryRoot._pageHPad
                 width:              parent.width - _summaryRoot._pageHPad * 2
                 wrapMode:           Text.WordWrap
-                color:              setupComplete ? "#8E8E93" : qgcPal.warningText
+                color:              setupComplete ? _summaryRoot._bodyColor : qgcPal.warningText
                 font.family:        ScreenTools.normalFontFamily
                 font.pointSize:     ScreenTools.smallFontPointSize
                 text:               setupComplete ?
@@ -149,7 +150,7 @@ Rectangle {
                                     color:              _summaryRoot._titleColor
                                     font.bold:          true
                                     font.family:        ScreenTools.normalFontFamily
-                                    font.pointSize:     ScreenTools.defaultFontPointSize
+                                    font.pointSize:     ScreenTools.defaultFontPointSize + 1
                                     elide:              Text.ElideRight
                                 }
 

@@ -8,9 +8,19 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 ColumnLayout {
+    id:                     root
     width:                  availableWidth
     height:                 (globals.activeVehicle.supportsJSButton ? buttonCol.height : flowColumn.height) + (ScreenTools.defaultFontPixelHeight * 2)
-    spacing:                ScreenTools.defaultFontPixelHeight
+    spacing:                ScreenTools.defaultFontPixelHeight * 1.15
+
+    readonly property real  _pageHPad:          ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real  _titlePointSize:    ScreenTools.defaultFontPointSize + 1
+    readonly property real  _labelPointSize:    ScreenTools.defaultFontPointSize
+    readonly property real  _bodyPointSize:     ScreenTools.smallFontPointSize
+    readonly property color _titleColor:        qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:         qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
     Connections {
         target: _activeJoystick
@@ -26,19 +36,24 @@ ColumnLayout {
 
     ColumnLayout {
         id:         flowColumn
-        width:      parent.width
-        spacing:    ScreenTools.defaultFontPixelHeight
+        Layout.fillWidth:   true
+        Layout.leftMargin:  root._pageHPad
+        Layout.rightMargin: root._pageHPad
+        spacing:            ScreenTools.defaultFontPixelHeight * 1.15
 
         // Note for reminding the use of multiple buttons for the same action
         QGCLabel {
-            Layout.preferredWidth:  parent.width
+            Layout.fillWidth:       true
             wrapMode:               Text.WordWrap
-            text:                   qsTr(" Multiple buttons that have the same action must be pressed simultaneously to invoke the action.")
+            color:                  root._bodyColor
+            font.pointSize:         root._bodyPointSize
+            font.family:            ScreenTools.normalFontFamily
+            text:                   qsTr("Multiple buttons that have the same action must be pressed simultaneously to invoke the action.")
         }
 
         Flow {
             id:                     buttonFlow
-            Layout.preferredWidth:  parent.width
+            Layout.fillWidth:       true
             spacing:                ScreenTools.defaultFontPixelWidth
             visible:                !globals.activeVehicle.supportsJSButton
             Repeater {
@@ -108,21 +123,29 @@ ColumnLayout {
         width:      parent.width
         visible:    globals.activeVehicle.supportsJSButton
         spacing:    ScreenTools.defaultFontPixelHeight / 3
+        leftPadding: root._pageHPad
+        rightPadding: root._pageHPad
         Row {
             spacing: ScreenTools.defaultFontPixelWidth
             QGCLabel {
                 horizontalAlignment:    Text.AlignHCenter
                 width:                  ScreenTools.defaultFontPixelHeight * 1.5
                 text:                   qsTr("#")
+                color:                  root._titleColor
+                font.pointSize:         root._labelPointSize
             }
             QGCLabel {
                 width:                  ScreenTools.defaultFontPixelWidth * 26
                 text:                   qsTr("Function: ")
+                color:                  root._titleColor
+                font.pointSize:         root._labelPointSize
             }
             QGCLabel {
                 width:                  ScreenTools.defaultFontPixelWidth * 26
                 visible:                globals.activeVehicle.supportsJSButton
                 text:                   qsTr("Shift Function: ")
+                color:                  root._titleColor
+                font.pointSize:         root._labelPointSize
             }
         }
         Repeater {

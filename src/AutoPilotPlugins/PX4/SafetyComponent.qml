@@ -24,7 +24,7 @@ SetupPage {
             readonly property string hitlParam: "SYS_HITL"
 
             property real _margins:         ScreenTools.defaultFontPixelHeight * 0.8
-            property real _pagePad:         ScreenTools.defaultFontPixelHeight * 0.45
+            property real _pagePad:         ScreenTools.defaultFontPixelWidth * 2.2
             property real _labelWidth:      ScreenTools.defaultFontPixelWidth  * 30
             property real _editFieldWidth:  ScreenTools.defaultFontPixelWidth  * 20
             property real _imageHeight:     ScreenTools.defaultFontPixelHeight * 3
@@ -332,15 +332,15 @@ SetupPage {
                             spacing:            ScreenTools.defaultFontPixelWidth
 
                             SettingLabel {
+                                Layout.fillWidth:   true
                                 text:               qsTr("Failsafe Action")
                             }
-
-                            Item { Layout.fillWidth: true }
 
                             GreenFactCombo {
                                 fact:                   _lowBattAction
                                 Layout.fillWidth:       false
-                                Layout.maximumWidth:    parent.width * 0.62
+                                Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 20
+                                Layout.maximumWidth:   ScreenTools.defaultFontPixelWidth * 24
                             }
                         }
                     }

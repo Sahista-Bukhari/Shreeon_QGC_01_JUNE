@@ -28,12 +28,14 @@ Item {
     property bool   _disableDueToFlying:    vehicleComponent ? (!_vehicleIsRover && !vehicleComponent.allowSetupWhileFlying && _vehicleFlying) : false
     property string _disableReason:         _disableDueToArmed ? qsTr("armed") : qsTr("flying")
     property real   _margins:               ScreenTools.defaultFontPixelHeight * 0.3
-    property real   _pageHPad:              ScreenTools.defaultFontPixelWidth * 1.8
+    property real   _pageHPad:              ScreenTools.defaultFontPixelWidth * 2.2
     property string _pageTitle:             qsTr("%1 Config").arg(pageName)
 
     QGCPalette { id: qgcPal; colorGroupEnabled: enabled }
-    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
-    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+    readonly property color _titleColor:        qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:         qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+    readonly property real  _titlePointSize:    ScreenTools.defaultFontPointSize + 1
+    readonly property real  _bodyPointSize:     ScreenTools.smallFontPointSize
 
     Component.onCompleted: {
         if(pageLoader.item && pageLoader.item.setupPageCompleted) {
@@ -77,7 +79,7 @@ Item {
 
             QGCLabel {
                 Layout.fillWidth:   true
-                font.pointSize:     ScreenTools.mediumFontPointSize
+                font.pointSize:     setupView._titlePointSize
                 font.bold:          true
                 font.family:        ScreenTools.normalFontFamily
                 color:              setupView._titleColor
@@ -88,7 +90,7 @@ Item {
             QGCLabel {
                 Layout.fillWidth:   true
                 wrapMode:           Text.WordWrap
-                font.pointSize:     ScreenTools.smallFontPointSize
+                font.pointSize:     setupView._bodyPointSize
                 font.family:        ScreenTools.normalFontFamily
                 color:              setupView._bodyColor
                 text:               pageDescription

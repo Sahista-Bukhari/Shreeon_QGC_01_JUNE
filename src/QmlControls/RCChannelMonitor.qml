@@ -14,8 +14,10 @@ Item {
     property bool twoColumn: false
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
-    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
-    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+    readonly property color _titleColor:     qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:      qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+    readonly property real  _titlePointSize: ScreenTools.defaultFontPointSize + 1
+    readonly property real  _labelPointSize: ScreenTools.defaultFontPointSize
 
     readonly property int _pwmMin:      800
     readonly property int _pwmMax:      2200
@@ -74,6 +76,7 @@ Item {
                 visible:                !mapped
                 color:                  _root._bodyColor
                 font.family:            ScreenTools.normalFontFamily
+                font.pointSize:         ScreenTools.smallFontPointSize
             }
 
             ColorAnimation {
@@ -97,7 +100,7 @@ Item {
             text:               qsTr("Channel Monitor")
             color:              _root._titleColor
             font.bold:          true
-            font.pointSize:     ScreenTools.defaultFontPointSize + 1
+            font.pointSize:     _root._titlePointSize
             font.family:        ScreenTools.normalFontFamily
         }
 
@@ -124,6 +127,7 @@ Item {
                     text:           modelData + 1
                     color:          _root._titleColor
                     font.family:    ScreenTools.normalFontFamily
+                    font.pointSize: _root._labelPointSize
                 }
 
                 Loader {

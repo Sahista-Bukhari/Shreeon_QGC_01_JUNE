@@ -25,6 +25,11 @@ ColumnLayout {
     property bool   showDividers:       true
     property bool   showBorder:         false
 
+    QGCPalette { id: qgcPal; colorGroupEnabled: true }
+
+    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+
     // Shared inset so headings ("General", "Units") line up with option labels
     property real _contentPad:  ScreenTools.defaultFontPixelWidth * 1.25
     property real _rowGap:      ScreenTools.defaultFontPixelHeight * 0.35
@@ -40,9 +45,10 @@ ColumnLayout {
 
         QGCLabel {
             text:           heading
-            color:          "#3A3A3C"
+            color:          control._titleColor
             font.pointSize: headingPointSize
             font.bold:      true
+            font.family:    ScreenTools.normalFontFamily
         }
 
         QGCLabel {
@@ -50,6 +56,8 @@ ColumnLayout {
             text:               headingDescription
             wrapMode:           Text.WordWrap
             font.pointSize:     ScreenTools.smallFontPointSize
+            font.family:        ScreenTools.normalFontFamily
+            color:              control._bodyColor
             visible:            headingDescription !== ""
         }
     }
@@ -72,7 +80,7 @@ ColumnLayout {
                 y:                  _contentItem.y + _contentItem.height + _margins + (showBorder ? _margins : 0)
                 width:              parent.width - _contentPad * 2 - (showBorder ? _margins * 2 : 0)
                 height:             1
-                color:              "#f6f6f6"
+                color:              qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#EFEFEF"
 
                 property var _contentItem: _contentLayout.visibleChildren[index]
             }
