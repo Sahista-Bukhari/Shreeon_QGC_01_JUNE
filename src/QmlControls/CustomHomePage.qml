@@ -179,7 +179,6 @@ Item {
                         ctx.fill()
                     }
                 }
-
                 MouseArea {
                     id: topIconMouse
                     anchors.fill: parent
@@ -189,7 +188,6 @@ Item {
                         root.showConnectionNotification()
                     }
                 }
-
                 RippleEffect {
                     id: bellRipple
                     rippleColor: Qt.rgba(1, 1, 1, 0.40)
@@ -442,7 +440,6 @@ Item {
                                 }
                             }
                         }
-
                         Text {
                             anchors.horizontalCenter: parent.horizontalCenter
                             text: {

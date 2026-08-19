@@ -78,12 +78,13 @@ const QVariantList& PX4AutoPilotPlugin::vehicleComponents(void)
                     _actuatorComponent = new ActuatorComponent(_vehicle, this, this);
                     _actuatorComponent->setupTriggerSignals();
                     _components.append(QVariant::fromValue(static_cast<VehicleComponent*>(_actuatorComponent)));
-                } else {
-                    // show previous motor UI instead
-                    _motorComponent = new MotorComponent(_vehicle, this, this);
-                    _motorComponent->setupTriggerSignals();
-                    _components.append(QVariant::fromValue(static_cast<VehicleComponent*>(_motorComponent)));
                 }
+
+                // Keep the manual motor-test page available alongside the
+                // newer actuator setup page.
+                _motorComponent = new MotorComponent(_vehicle, this, this);
+                _motorComponent->setupTriggerSignals();
+                _components.append(QVariant::fromValue(static_cast<VehicleComponent*>(_motorComponent)));
 
                 _safetyComponent = new SafetyComponent(_vehicle, this, this);
                 _safetyComponent->setupTriggerSignals();

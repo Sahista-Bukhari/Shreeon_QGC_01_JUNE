@@ -14,6 +14,7 @@ Control {
     property real   to:                 100
     property string unitsString
     property string label
+    property color  rulerColor:         qgcPal.text
 
     required property int   decimalPlaces
     required property real  majorTickStepSize
@@ -195,7 +196,7 @@ Control {
                         id:     majorTickMark
                         width:  1
                         height: _majorTickSize
-                        color:  qgcPal.text
+                        color:  control.rulerColor
                     }
 
                     QGCLabel {
@@ -215,7 +216,7 @@ Control {
                     x:          _majorTickSpacing / 2 * index +  + _firstTickPixelOffset
                     width:      1
                     height:     _minorTickSize
-                    color:      qgcPal.text
+                    color:      control.rulerColor
                     opacity:    tickValue < from || tickValue > to ? 0.5 : 1
                     visible:    index % 2 === 1
 
@@ -256,9 +257,14 @@ Control {
             property real indicatorHeight:          valueLabel.contentHeight
             property real pointerSize:              ScreenTools.defaultFontPixelWidth
 
+            Connections {
+                target: control
+                function onRulerColorChanged() { valueIndicator.requestPaint() }
+            }
+
             onPaint: {
                 var ctx = getContext("2d")
-                ctx.strokeStyle = qgcPal.text
+                ctx.strokeStyle = control.rulerColor
                 ctx.fillStyle = qgcPal.window
                 ctx.lineWidth = 1
                 ctx.beginPath()
