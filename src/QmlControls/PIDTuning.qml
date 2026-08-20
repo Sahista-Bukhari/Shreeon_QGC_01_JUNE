@@ -8,6 +8,8 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 ColumnLayout {
+    id: root
+
     spacing: _margins
 
     property real   availableHeight
@@ -19,6 +21,10 @@ ColumnLayout {
     property double chartDisplaySec:    8 // number of seconds to display
     property bool   showAutoModeChange: false
     property bool   showAutoTuning:     false
+    property bool   cleanManualTuning:  false
+    property bool   multiAxisPlot:      false
+    property var    multiAxisIndices:   []
+    property string multiAxisTitle:     qsTr("Multi-Axis PID Response")
 
     property real   _margins:           ScreenTools.defaultFontPixelHeight / 2
     property int    _currentAxis:       0
@@ -26,6 +32,8 @@ ColumnLayout {
     property var    _yAxis:             yAxis
     property int    _msecs:             0
     property double _last_t:            0
+    property bool   _componentComplete: false
+    property var    _activePlots:       []
     property var    _savedTuningParamValues:    [ ]
 
     readonly property int _tickSeparation:      5
@@ -33,6 +41,21 @@ ColumnLayout {
     readonly property color _dividerColor:      qgcPal.globalTheme === QGCPalette.Dark
                                                 ? qgcPal.windowShade
                                                 : "#E5E5E5"
+    readonly property color _chartBackgroundColor: qgcPal.globalTheme === QGCPalette.Dark
+                                                    ? qgcPal.windowShade
+                                                    : "#E8EAEA"
+    readonly property color _chartPlotAreaColor:   qgcPal.globalTheme === QGCPalette.Dark
+                                                    ? qgcPal.windowShadeDark
+                                                    : "#F2F3F3"
+    readonly property color _accentGreen:           "#00A651"
+    readonly property var _plotColors: [
+        "#08783f", // Roll response
+        "#61d83e", // Roll setpoint
+        "#71892e", // Pitch response
+        "#75da8d", // Pitch setpoint
+        "#d1a62c", // Additional response/setpoint pairs
+        "#59b9ad"
+    ]
 
     QGCPalette {
         id:                 qgcPal
@@ -89,34 +112,78 @@ ColumnLayout {
 
     function axisIndexChanged() {
         chart.removeAllSeries()
-        axis[_currentAxis].plot.forEach(function(e) {
-            chart.createSeries(ChartView.SeriesTypeLine, e.name, xAxis, yAxis);
-        })
-        var chartTitle = axis[_currentAxis].plotTitle
-        if (chartTitle == null)
-            chartTitle = axis[_currentAxis].name
-        chart.title = chartTitle + " " + title
+
+        var plotReferences = []
+        var selectedAxes = multiAxisPlot ? multiAxisIndices : [_currentAxis]
+        if (selectedAxes.length === 0) {
+            selectedAxes = [_currentAxis]
+        }
+
+        for (var selectedIndex = 0; selectedIndex < selectedAxes.length; selectedIndex++) {
+            var axisIndex = selectedAxes[selectedIndex]
+            if (axisIndex < 0 || axisIndex >= axis.length) {
+                continue
+            }
+
+            var axisData = axis[axisIndex]
+            for (var plotIndex = 0; plotIndex < axisData.plot.length; plotIndex++) {
+                var plotData = axisData.plot[plotIndex]
+                var seriesName = multiAxisPlot
+                        ? axisData.name + " " + plotData.name
+                        : plotData.name
+                var series = chart.createSeries(ChartView.SeriesTypeLine, seriesName, xAxis, yAxis)
+                series.color = _plotColors[plotReferences.length % _plotColors.length]
+                series.width = 2
+                plotReferences.push({ axisIndex: axisIndex, plotIndex: plotIndex })
+            }
+        }
+
+        _activePlots = plotReferences
+
+        if (multiAxisPlot) {
+            chart.title = multiAxisTitle
+        } else {
+            var chartTitle = axis[_currentAxis].plotTitle
+            if (chartTitle == null)
+                chartTitle = axis[_currentAxis].name
+            chart.title = chartTitle + " " + title
+        }
+
         saveTuningParamValues()
         resetGraphs()
     }
 
     Component.onCompleted: {
+        _componentComplete = true
         axisIndexChanged()
         globals.activeVehicle.setPIDTuningTelemetryMode(tuningMode)
         saveTuningParamValues()
     }
 
     Component.onDestruction: globals.activeVehicle.setPIDTuningTelemetryMode(Vehicle.ModeDisabled)
-    on_CurrentAxisChanged: axisIndexChanged()
+    on_CurrentAxisChanged: {
+        if (_componentComplete) {
+            axisIndexChanged()
+        }
+    }
+    onMultiAxisPlotChanged: {
+        if (_componentComplete) {
+            axisIndexChanged()
+        }
+    }
 
     ValueAxis {
         id:                     xAxis
         min:                    0
         max:                    0
         labelFormat:            "%.1f"
-        titleText:              ScreenTools.isShortScreen ? "" : qsTr("sec") // Save space on small screens
-        tickCount:              Math.min(Math.max(Math.floor(chart.width / (ScreenTools.defaultFontPixelWidth * 7)), 4), 11)
-        labelsFont.pointSize:   ScreenTools.defaultFontPointSize
+        titleText:              qsTr("sec")
+        tickCount:              Math.min(Math.max(Math.floor((chart.plotArea.width > 0 ? chart.plotArea.width : chart.width * 0.6)
+                                                             / (ScreenTools.defaultFontPixelWidth * 8)), 3), 11)
+        truncateLabels:         false
+        labelsFont.pointSize:   chart.width < ScreenTools.defaultFontPixelWidth * 50
+                                ? ScreenTools.smallFontPointSize
+                                : ScreenTools.defaultFontPointSize
         labelsFont.family:      ScreenTools.normalFontFamily
         titleFont.pointSize:    ScreenTools.defaultFontPointSize
         titleFont.family:       ScreenTools.normalFontFamily
@@ -146,9 +213,10 @@ ColumnLayout {
 
             var firstPoint = _msecs == 0
 
-            var len = axis[_currentAxis].plot.length
+            var len = _activePlots.length
             for (var i = 0; i < len; ++i) {
-                var value = axis[_currentAxis].plot[i].value
+                var plotReference = _activePlots[i]
+                var value = axis[plotReference.axisIndex].plot[plotReference.plotIndex].value
                 if (!isNaN(value)) {
                     chart.series(i).append(_msecs/1000, value)
                     if (firstPoint) {
@@ -187,11 +255,14 @@ ColumnLayout {
             width:                  Math.max(_minChartWidth, availableWidth - (_margins * 2))
             height:                 Math.max(_minChartHeight, availableHeight - leftPanelBottomColumn.height - parent.spacing - _margins)
             antialiasing:           true
-            legend.alignment:       Qt.AlignBottom
-            legend.font.pointSize:  ScreenTools.defaultFontPointSize
-            legend.font.family:     ScreenTools.normalFontFamily
+            legend.visible:         false
+            margins.top:            _margins * 2
+            margins.bottom:         chartLegendColumn.implicitHeight + (_margins * 4)
             titleFont.pointSize:    ScreenTools.defaultFontPointSize
             titleFont.family:       ScreenTools.normalFontFamily
+            backgroundColor:        _chartBackgroundColor
+            plotAreaColor:          _chartPlotAreaColor
+            backgroundRoundness:    ScreenTools.defaultFontPixelHeight / 2
 
             property real _chartMargin: 0
             property real _minChartWidth:   ScreenTools.defaultFontPixelWidth * 40
@@ -209,11 +280,9 @@ ColumnLayout {
                     _scaling = next.x - start.x
                 }
                 onWheel: (wheel) => {
-                    if (wheel.angleDelta.y > 0)
-                        chartDisplaySec /= 1.2
-                    else
-                        chartDisplaySec *= 1.2
-                    _xAxis.min = _xAxis.max - chartDisplaySec
+                    // The PID chart must not consume page scrolling or alter its
+                    // time scale when the pointer is over the chart.
+                    wheel.accepted = false
                 }
                 onPositionChanged: (mouse) => {
                     if(_startPoint != undefined) {
@@ -228,6 +297,44 @@ ColumnLayout {
 
                 onReleased: {
                     _startPoint = undefined
+                }
+            }
+
+            ColumnLayout {
+                id:                       chartLegendColumn
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom:           parent.bottom
+                anchors.bottomMargin:     _margins * 2
+                spacing:                  ScreenTools.defaultFontPixelHeight / 4
+                z:                        2
+
+                Repeater {
+                    model: _activePlots
+
+                    RowLayout {
+                        spacing: ScreenTools.defaultFontPixelWidth / 2
+
+                        Rectangle {
+                            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.55
+                            Layout.preferredHeight: Layout.preferredWidth
+                            Layout.alignment:       Qt.AlignVCenter
+                            color:                  _plotColors[index % _plotColors.length]
+                            border.width:           1
+                            border.color:           Qt.darker(color, 1.35)
+                        }
+
+                        QGCLabel {
+                            Layout.alignment: Qt.AlignVCenter
+                            text: {
+                                var plotReference = modelData
+                                var axisData = axis[plotReference.axisIndex]
+                                var plotData = axisData.plot[plotReference.plotIndex]
+                                return multiAxisPlot
+                                        ? axisData.name + " " + plotData.name
+                                        : plotData.name
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -272,8 +379,15 @@ ColumnLayout {
                 }
 
                 ColumnLayout {
-                    spacing: _margins
-                    visible: !showAutoTuning || useManualTuningRadio.checked
+                    Layout.fillWidth:   cleanManualTuning
+                    Layout.maximumWidth: cleanManualTuning
+                                         ? ScreenTools.defaultFontPixelWidth * 48
+                                         : Number.POSITIVE_INFINITY
+                    Layout.alignment:   Qt.AlignLeft
+                    Layout.leftMargin:  cleanManualTuning ? _margins : 0
+                    Layout.rightMargin: cleanManualTuning ? _margins : 0
+                    spacing:            cleanManualTuning ? ScreenTools.defaultFontPixelHeight * 0.7 : _margins
+                    visible:            !showAutoTuning || useManualTuningRadio.checked
 
                     RowLayout {
                         spacing: _margins
@@ -304,17 +418,33 @@ ColumnLayout {
                                 heading:                title
                                 headingDescription:     description
                                 visible:                _currentAxis === index
-                                Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 40
+                                Layout.fillWidth:       cleanManualTuning
+                                Layout.preferredWidth:  cleanManualTuning
+                                                        ? Math.min(Math.max(0, tuningDetails.width - (_margins * 2)),
+                                                                   ScreenTools.defaultFontPixelWidth * 48)
+                                                        : ScreenTools.defaultFontPixelWidth * 40
+                                Layout.bottomMargin:    cleanManualTuning ? ScreenTools.defaultFontPixelHeight * 0.35 : 0
+                                showDividers:           false
 
                                 FactSlider {
                                     fact:                   controller.getParameterFact(-1, param)
                                     from:                   min
                                     to:                     max
                                     majorTickStepSize:      step
+                                    rulerColor:             cleanManualTuning ? _accentGreen : qgcPal.text
                                     Layout.fillWidth:       true
                                 }
                             }
                         }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth:       true
+                        Layout.preferredHeight: 1
+                        Layout.topMargin:       ScreenTools.defaultFontPixelHeight * 0.25
+                        Layout.bottomMargin:    ScreenTools.defaultFontPixelHeight * 0.25
+                        color:                  _dividerColor
+                        visible:                cleanManualTuning
                     }
 
                     Column {
@@ -352,6 +482,15 @@ ColumnLayout {
                             text:       qsTr("Restore From Clipboard")
                             onClicked:  resetToSavedTuningParamValues()
                         }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth:       true
+                        Layout.preferredHeight: 1
+                        Layout.topMargin:       ScreenTools.defaultFontPixelHeight * 0.25
+                        Layout.bottomMargin:    ScreenTools.defaultFontPixelHeight * 0.25
+                        color:                  _dividerColor
+                        visible:                cleanManualTuning
                     }
                 }
             }

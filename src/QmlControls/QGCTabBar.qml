@@ -16,23 +16,35 @@ RowLayout {
 
     property bool _preventCurrentIndexBindingLoop: false
 
+    function _tabButtonChildren() {
+        const tabButtons = []
+        for (var i = 0; i < control.children.length; i++) {
+            const child = control.children[i]
+            if (child && child.checkable === true && typeof child.checked === "boolean") {
+                tabButtons.push(child)
+            }
+        }
+        return tabButtons
+    }
+
     function _selectCurrentIndexButton() {
-        if (control.children.length > 0) {
+        const tabButtons = _tabButtonChildren()
+        if (tabButtons.length > 0) {
             _preventCurrentIndexBindingLoop = true
             if (control.currentIndex == -1) {
                 // No tab selected, select none
-                for (var i = 0; i < control.children.length; i++) {
-                    control.children[i].checked = false
+                for (var i = 0; i < tabButtons.length; i++) {
+                    tabButtons[i].checked = false
                 }
             } else {
-                let filteredCurrentIndex = Math.min(Math.max(control.currentIndex, 0), control.children.length - 1)
-                if (control.children[filteredCurrentIndex].visible) {
-                    control.children[filteredCurrentIndex].checked = true
+                const filteredCurrentIndex = Math.min(Math.max(control.currentIndex, 0), tabButtons.length - 1)
+                if (tabButtons[filteredCurrentIndex].visible) {
+                    tabButtons[filteredCurrentIndex].checked = true
                 } else {
                     // We select the first visible tab if the current index is not visible
-                    for (var j = 0; j < control.children.length; j++) {
-                        if (control.children[j].visible) {
-                            control.children[j].checked = true
+                    for (var j = 0; j < tabButtons.length; j++) {
+                        if (tabButtons[j].visible) {
+                            tabButtons[j].checked = true
                             break
                         }
                     }
@@ -44,14 +56,16 @@ RowLayout {
 
     Component.onCompleted: _selectCurrentIndexButton()
     onCurrentIndexChanged: _selectCurrentIndexButton()
+    onChildrenChanged: Qt.callLater(_selectCurrentIndexButton)
     onVisibleChildrenChanged: _selectCurrentIndexButton()
 
     ButtonGroup {
-        buttons: control.children
+        buttons: control._tabButtonChildren()
 
         onCheckedButtonChanged: {
-            for (var i = 0; i < control.children.length; i++) {
-                if (control.children[i] === checkedButton) {
+            const tabButtons = control._tabButtonChildren()
+            for (var i = 0; i < tabButtons.length; i++) {
+                if (tabButtons[i] === checkedButton) {
                     control.currentIndex = i
                     break
                 }

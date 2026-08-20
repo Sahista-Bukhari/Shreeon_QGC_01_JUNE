@@ -7,54 +7,70 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 ColumnLayout {
+    id: root
+
     property real _availableHeight:     availableHeight
     property real _availableWidth:      availableWidth
     property Fact _airmode:             controller.getParameterFact(-1, "MC_AIRMODE", false)
     property Fact _thrustModelFactor:   controller.getParameterFact(-1, "THR_MDL_FAC", false)
 
-    RowLayout {
-        spacing: ScreenTools.defaultFontPixelWidth
+    readonly property real _contentInset: ScreenTools.defaultFontPixelWidth * 2.2
 
-        QGCLabel {
-            textFormat:         Text.RichText
-            text:               qsTr("Airmode (disable during tuning) <b><a href=\"https://docs.px4.io/main/en/config_mc/pid_tuning_guide_multicopter.html#airmode-mixer-saturation\">?</a></b>")
-            onLinkActivated:    (link) => Qt.openUrlExternally(link)
-            visible:            _airmode
-        }
-        FactComboBox {
-            fact:               _airmode
-            indexModel:         false
-            visible:            _airmode
+    ColumnLayout {
+        Layout.fillWidth:    true
+        Layout.leftMargin:   root._contentInset
+        Layout.rightMargin:  root._contentInset
+        Layout.topMargin:    ScreenTools.defaultFontPixelHeight * 0.4
+        Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.4
+        spacing:             ScreenTools.defaultFontPixelHeight / 2
+
+        RowLayout {
+            spacing: ScreenTools.defaultFontPixelWidth / 2
+
+            QGCLabel {
+                text:    qsTr("Airmode (disable during tuning)")
+                visible: _airmode
+            }
+            FactComboBox {
+                fact:       _airmode
+                indexModel: false
+                visible:    _airmode
+            }
         }
 
-        Item {
-            width: 1
-            height: 1
-        }
+        RowLayout {
+            spacing: ScreenTools.defaultFontPixelWidth / 2
 
-        QGCLabel {
-            textFormat:         Text.RichText
-            text:               qsTr("Thrust curve <b><a href=\"https://docs.px4.io/main/en/config_mc/pid_tuning_guide_multicopter.html#thrust-curve\">?</a></b>")
-            onLinkActivated:    (link) => Qt.openUrlExternally(link)
-            visible:            _thrustModelFactor
-        }
-        FactTextField {
-            fact:               _thrustModelFactor
-            visible:            _thrustModelFactor
+            QGCLabel {
+                text:    qsTr("Thrust curve")
+                visible: _thrustModelFactor
+            }
+            FactTextField {
+                fact:                   _thrustModelFactor
+                visible:                _thrustModelFactor
+                activeFocusBorderColor: "#00a04c"
+            }
         }
     }
 
     PIDTuning {
-        id:                 pidTuning
-        availableWidth:     _availableWidth
-        availableHeight:    _availableHeight - pidTuning.y
-        title:              qsTr("Rate")
-        tuningMode:         Vehicle.ModeRateAndAttitude
-        unit:               qsTr("deg/s")
-        axis:               [ roll, pitch, yaw ]
-        chartDisplaySec:    3
-        showAutoModeChange: true
-        showAutoTuning:     true
+        id:                   pidTuning
+        Layout.fillWidth:     true
+        Layout.leftMargin:    root._contentInset
+        Layout.rightMargin:   root._contentInset
+        Layout.bottomMargin:  ScreenTools.defaultFontPixelHeight * 0.4
+        availableWidth:       Math.max(0, _availableWidth - (root._contentInset * 2))
+        availableHeight:      _availableHeight - pidTuning.y
+        title:                qsTr("Rate")
+        tuningMode:           Vehicle.ModeRateAndAttitude
+        unit:                 qsTr("deg/s")
+        axis:                 [ roll, pitch, yaw ]
+        chartDisplaySec:      3
+        showAutoModeChange:   true
+        showAutoTuning:       true
+        multiAxisPlot:        useAutoTuning
+        multiAxisIndices:     [0, 1]
+        multiAxisTitle:       qsTr("Multi-Axis PID Response")
 
         property var roll: QtObject {
             property string name: qsTr("Roll")

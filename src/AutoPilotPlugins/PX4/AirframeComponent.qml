@@ -13,7 +13,6 @@ SetupPage {
     AirframeComponentController {
         id:         controller
     }
-
     Component {
         id: customFrame
         Column {
@@ -53,7 +52,6 @@ SetupPage {
             id:     mainColumn
             x:      _pagePadding
             width:  Math.max(0, airframePage.availableWidth - _pagePadding - _rightPadding)
-
             // Use two fluid cards per row with a narrow-screen fallback.
             property real _minW:        ScreenTools.defaultFontPixelWidth * 13.5
             property real _boxWidth:    _minW
@@ -171,6 +169,7 @@ SetupPage {
                 height:         parent.spacerHeight * 0.8
                 width:          10
             }
+
 
             Flow {
                 id:         flowView

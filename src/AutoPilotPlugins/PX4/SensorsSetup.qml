@@ -9,8 +9,10 @@ import QGroundControl.Controls
 
 /// Page for sensor calibration. This control is used within the SensorsComponent control and can also be used
 /// standalone for custom uis. When using standadalone you can use the various show* bools to show/hide what you want.
-Item {
+Rectangle {
     id: _root
+
+    color: _pageBackground
 
     property bool   showSensorCalibrationCompass:   true    ///< true: Show this calibration button
     property bool   showSensorCalibrationGyro:      true    ///< true: Show this calibration button
@@ -68,6 +70,21 @@ Item {
     property bool   _boardOrientationChangeAllowed:     !_sensorsHaveFixedOrientation && setOrientationsDialogShowBoardOrientation
     property bool   _compassOrientationChangeAllowed:   !_sensorsHaveFixedOrientation
     property int    _arbitrarilyLargeMaxMagIndex:       50
+
+    readonly property bool  _darkTheme:          qgcPal.window.toString().toLowerCase() !== "#ffffff"
+    readonly property color _pageBackground:     _darkTheme ? qgcPal.window : "#ffffff"
+    readonly property color _cardBackground:     _darkTheme ? qgcPal.windowShade : "#ffffff"
+    readonly property color _workspaceBackground:_darkTheme ? qgcPal.windowShade : "#f5f5f5"
+    readonly property color _cardBorder:         _darkTheme ? qgcPal.groupBorder : "#e5e5e5"
+    readonly property color _accentGreen:        "#00a04c"
+    readonly property color _successBackground:  _darkTheme ? Qt.rgba(0, 0.63, 0.30, 0.18) : "#eef9f3"
+    readonly property color _titleColor:         _darkTheme ? qgcPal.text : "#303033"
+    readonly property color _bodyColor:          _darkTheme ? qgcPal.text : "#4b4b4d"
+    readonly property color _mutedColor:         _darkTheme ? qgcPal.colorGrey : "#a6a6a6"
+    readonly property real  _pagePadding:        ScreenTools.defaultFontPixelWidth * 2
+    readonly property real  _cardPadding:        ScreenTools.defaultFontPixelWidth * 1.25
+    readonly property real  _sectionSpacing:     ScreenTools.defaultFontPixelWidth * 1.5
+    readonly property real  _cardRadius:         ScreenTools.defaultFontPixelWidth
 
     function currentMagParamCount() {
         if (_allMagsDisabled) {
@@ -310,175 +327,275 @@ Item {
         } // QGCPopupDialog
     } // Component - setOrientationsDialogComponent
 
-    QGCFlickable {
-        id:             buttonFlickable
-        anchors.top:    parent.top
-        anchors.bottom: parent.bottom
-        width:          _buttonWidth
-        contentHeight:  buttonColumn.height + buttonColumn.spacing
+    Rectangle {
+        id: navigationCard
 
-        Column {
-            id:         buttonColumn
-            spacing:    ScreenTools.defaultFontPixelHeight / 2
+        anchors.left:       parent.left
+        anchors.top:        parent.top
+        anchors.bottom:     parent.bottom
+        anchors.margins:    _pagePadding
+        width:              _buttonWidth + (_cardPadding * 2)
+        radius:             _cardRadius
+        color:              _cardBackground
+        border.width:       1
+        border.color:       _cardBorder
 
-            IndicatorButton {
-                id:             compassButton
-                width:          _buttonWidth
-                text:           qsTr("Compass")
-                indicatorGreen: cal_mag0_id.value !== 0
-                visible:        !_allMagsDisabled && QGroundControl.corePlugin.options.showSensorCalibrationCompass && showSensorCalibrationCompass
+        QGCFlickable {
+            id: buttonFlickable
 
-                onClicked: {
-                    preCalibrationDialogType = "compass"
-                    preCalibrationDialogHelp = compassHelp
-                    preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Compass") }).open()
+            anchors.left:           parent.left
+            anchors.right:          parent.right
+            anchors.top:            parent.top
+            anchors.bottom:         factoryResetButton.top
+            anchors.margins:        _cardPadding
+            anchors.bottomMargin:   _sectionSpacing
+            contentWidth:           width
+            contentHeight:          buttonColumn.height
+            flickableDirection:     Flickable.VerticalFlick
+
+            Column {
+                id: buttonColumn
+
+                width:      buttonFlickable.width
+                spacing:    ScreenTools.defaultFontPixelHeight * 0.55
+
+                IndicatorButton {
+                    id:                         compassButton
+                    width:                      buttonColumn.width
+                    text:                       qsTr("Compass")
+                    indicatorGreen:             cal_mag0_id.value !== 0
+                    showBorder:                 true
+                    backgroundColor:            indicatorGreen ? _successBackground : _cardBackground
+                    textColor:                  pressed || checked ? "#ffffff" : (enabled ? (indicatorGreen ? _accentGreen : _titleColor) : _mutedColor)
+                    fontWeight:                 Font.Medium
+                    visible:                    !_allMagsDisabled && QGroundControl.corePlugin.options.showSensorCalibrationCompass && showSensorCalibrationCompass
+
+                    onClicked: {
+                        preCalibrationDialogType = "compass"
+                        preCalibrationDialogHelp = compassHelp
+                        preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Compass") }).open()
+                    }
+                }
+
+                IndicatorButton {
+                    id:                         gyroButton
+                    width:                      buttonColumn.width
+                    text:                       qsTr("Gyroscope")
+                    indicatorGreen:             cal_gyro0_id.value !== 0
+                    showBorder:                 true
+                    backgroundColor:            indicatorGreen ? _successBackground : _cardBackground
+                    textColor:                  pressed || checked ? "#ffffff" : (enabled ? (indicatorGreen ? _accentGreen : _titleColor) : _mutedColor)
+                    fontWeight:                 Font.Medium
+                    visible:                    QGroundControl.corePlugin.options.showSensorCalibrationGyro && showSensorCalibrationGyro
+
+                    onClicked: {
+                        preCalibrationDialogType = "gyro"
+                        preCalibrationDialogHelp = gyroHelp
+                        preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Gyro") }).open()
+                    }
+                }
+
+                IndicatorButton {
+                    id:                         accelButton
+                    width:                      buttonColumn.width
+                    text:                       qsTr("Accelerometer")
+                    indicatorGreen:             cal_acc0_id.value !== 0
+                    showBorder:                 true
+                    backgroundColor:            indicatorGreen ? _successBackground : _cardBackground
+                    textColor:                  pressed || checked ? "#ffffff" : (enabled ? (indicatorGreen ? _accentGreen : _titleColor) : _mutedColor)
+                    fontWeight:                 Font.Medium
+                    visible:                    QGroundControl.corePlugin.options.showSensorCalibrationAccel && showSensorCalibrationAccel
+
+                    onClicked: {
+                        preCalibrationDialogType = "accel"
+                        preCalibrationDialogHelp = accelHelp
+                        preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Accelerometer") }).open()
+                    }
+                }
+
+                IndicatorButton {
+                    id:                         levelButton
+                    width:                      buttonColumn.width
+                    text:                       qsTr("Level Horizon")
+                    indicatorGreen:             true
+                    showBorder:                 true
+                    backgroundColor:            enabled ? _successBackground : _workspaceBackground
+                    textColor:                  pressed || checked ? "#ffffff" : (enabled ? _accentGreen : _mutedColor)
+                    fontWeight:                 Font.Medium
+                    enabled:                    cal_acc0_id.value !== 0 && cal_gyro0_id.value !== 0
+                    visible:                    QGroundControl.corePlugin.options.showSensorCalibrationLevel && showSensorCalibrationLevel
+
+                    onClicked: {
+                        preCalibrationDialogType = "level"
+                        preCalibrationDialogHelp = levelHelp
+                        preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Level Horizon") }).open()
+                    }
+                }
+
+                IndicatorButton {
+                    id:                         airspeedButton
+                    width:                      buttonColumn.width
+                    text:                       qsTr("Airspeed")
+                    visible:                    vehicleComponent.airspeedCalSupported &&
+                                                    QGroundControl.corePlugin.options.showSensorCalibrationAirspeed &&
+                                                    showSensorCalibrationAirspeed
+                    indicatorGreen:             sens_dpres_off.value !== 0
+                    showBorder:                 true
+                    backgroundColor:            indicatorGreen ? _successBackground : _cardBackground
+                    textColor:                  pressed || checked ? "#ffffff" : (enabled ? (indicatorGreen ? _accentGreen : _titleColor) : _mutedColor)
+                    fontWeight:                 Font.Medium
+
+                    onClicked: {
+                        preCalibrationDialogType = "airspeed"
+                        preCalibrationDialogHelp = airspeedHelp
+                        preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Airspeed") }).open()
+                    }
+                }
+
+                QGCButton {
+                    id:                 cancelButton
+                    width:              buttonColumn.width
+                    text:               qsTr("Cancel")
+                    enabled:            false
+                    showBorder:         true
+                    backgroundColor:    _workspaceBackground
+                    textColor:          _mutedColor
+                    fontWeight:         Font.Medium
+                    onClicked:          controller.cancelCalibration()
+                }
+
+                QGCButton {
+                    id:                 nextButton
+                    width:              buttonColumn.width
+                    text:               qsTr("Next")
+                    visible:            showNextButton
+                    primary:            true
+                    fontWeight:         Font.Medium
+                    onClicked:          _root.nextButtonClicked()
+                }
+
+                QGCButton {
+                    id:                 setOrientationsButton
+                    width:              buttonColumn.width
+                    text:               qsTr("Orientations")
+                    visible:            orientationsButtonVisible()
+                    showBorder:         true
+                    backgroundColor:    _cardBackground
+                    textColor:          pressed || checked ? "#ffffff" : _titleColor
+                    fontWeight:         Font.Medium
+
+                    onClicked:  {
+                        setOrientationsDialogShowBoardOrientation = true
+                        setOrientationsDialogComponent.createObject(mainWindow, { title: qsTr("Set Orientations"), showRebootVehicleButton: false }).open()
+                    }
                 }
             }
+        }
 
-            IndicatorButton {
-                id:             gyroButton
-                width:          _buttonWidth
-                text:           qsTr("Gyroscope")
-                indicatorGreen: cal_gyro0_id.value !== 0
-                visible:        QGroundControl.corePlugin.options.showSensorCalibrationGyro && showSensorCalibrationGyro
+        QGCButton {
+            id: factoryResetButton
 
-                onClicked: {
-                    preCalibrationDialogType = "gyro"
-                    preCalibrationDialogHelp = gyroHelp
-                    preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Gyro") }).open()
-                }
-            }
+            anchors.left:       parent.left
+            anchors.right:      parent.right
+            anchors.bottom:     parent.bottom
+            anchors.margins:    _cardPadding
+            text:               qsTr("Factory reset")
+            showBorder:         true
+            backgroundColor:    _workspaceBackground
+            textColor:          pressed || checked ? "#ffffff" : _bodyColor
+            fontWeight:         Font.Medium
 
-            IndicatorButton {
-                id:             accelButton
-                width:          _buttonWidth
-                text:           qsTr("Accelerometer")
-                indicatorGreen: cal_acc0_id.value !== 0
-                visible:        QGroundControl.corePlugin.options.showSensorCalibrationAccel && showSensorCalibrationAccel
-
-                onClicked: {
-                    preCalibrationDialogType = "accel"
-                    preCalibrationDialogHelp = accelHelp
-                    preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Accelerometer") }).open()
-                }
-            }
-
-            IndicatorButton {
-                id:             levelButton
-                width:          _buttonWidth
-                text:           qsTr("Level Horizon")
-                indicatorGreen: true
-                enabled:        cal_acc0_id.value !== 0 && cal_gyro0_id.value !== 0
-                visible:        QGroundControl.corePlugin.options.showSensorCalibrationLevel && showSensorCalibrationLevel
-
-                onClicked: {
-                    preCalibrationDialogType = "level"
-                    preCalibrationDialogHelp = levelHelp
-                    preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Level Horizon") }).open()
-                }
-            }
-
-            IndicatorButton {
-                id:             airspeedButton
-                width:          _buttonWidth
-                text:           qsTr("Airspeed")
-                visible:        vehicleComponent.airspeedCalSupported &&
-                                    QGroundControl.corePlugin.options.showSensorCalibrationAirspeed &&
-                                    showSensorCalibrationAirspeed
-                indicatorGreen: sens_dpres_off.value !== 0
-
-                onClicked: {
-                    preCalibrationDialogType = "airspeed"
-                    preCalibrationDialogHelp = airspeedHelp
-                    preCalibrationDialogComponent.createObject(mainWindow, { title: qsTr("Calibrate Airspeed") }).open()
-                }
-            }
-
-            QGCButton {
-                id:         cancelButton
-                width:      _buttonWidth
-                text:       qsTr("Cancel")
-                enabled:    false
-                onClicked:  controller.cancelCalibration()
-            }
-
-
-            QGCButton {
-                id:         nextButton
-                width:      _buttonWidth
-                text:       qsTr("Next")
-                visible:    showNextButton
-                onClicked:  _root.nextButtonClicked()
-            }
-
-            QGCButton {
-                id:         setOrientationsButton
-                width:      _buttonWidth
-                text:       qsTr("Orientations")
-                visible:    orientationsButtonVisible()
-
-                onClicked:  {
-                    setOrientationsDialogShowBoardOrientation = true
-                    setOrientationsDialogComponent.createObject(mainWindow, { title: qsTr("Set Orientations"), showRebootVehicleButton: false }).open()
-                }
-            }
-        } // Column - Buttons
-    } // QGCFLickable - Buttons
+            onClicked: controller.resetFactoryParameters()
+        }
+    }
 
     Column {
-        anchors.leftMargin: ScreenTools.defaultFontPixelWidth / 2
-        anchors.left:       buttonFlickable.right
+        id: calibrationColumn
+
+        anchors.left:       navigationCard.right
         anchors.right:      parent.right
         anchors.top:        parent.top
         anchors.bottom:     parent.bottom
+        anchors.leftMargin: _sectionSpacing
+        anchors.rightMargin:_pagePadding
+        anchors.topMargin:  _pagePadding
+        anchors.bottomMargin:_pagePadding
+        spacing:            _sectionSpacing
 
         ProgressBar {
-            id:             progressBar
-            anchors.left:   parent.left
-            anchors.right:  parent.right
+            id: progressBar
+
+            width:      parent.width
+            height:     Math.max(ScreenTools.defaultFontPixelHeight * 0.45, 6)
+
+            background: Rectangle {
+                radius: progressBar.height / 2
+                color:  _cardBorder
+            }
+
+            contentItem: Item {
+                implicitWidth:  200
+                implicitHeight: progressBar.height
+
+                Rectangle {
+                    width:      progressBar.visualPosition * parent.width
+                    height:     parent.height
+                    radius:     height / 2
+                    color:      _accentGreen
+                }
+            }
         }
 
-        Item { height: ScreenTools.defaultFontPixelHeight; width: 10 } // spacer
+        Rectangle {
+            id: calibrationCard
 
-        Item {
-            property int calDisplayAreaWidth: parent.width
-
-            width:  parent.width
-            height: parent.height - y
+            width:          parent.width
+            height:         parent.height - y
+            radius:         _cardRadius
+            color:          _workspaceBackground
+            border.width:   1
+            border.color:   _cardBorder
+            clip:           true
 
             TextArea {
-                id:             statusTextArea
-                width:          parent.calDisplayAreaWidth
-                height:         parent.height
-                readOnly:       true
-                text:           statusTextAreaDefaultText
-                color:          qgcPal.text
-                background: Rectangle { color: qgcPal.windowShade }
+                id: statusTextArea
+
+                anchors.fill:       parent
+                anchors.margins:    _cardPadding
+                readOnly:           true
+                text:               statusTextAreaDefaultText
+                color:              _bodyColor
+                font.family:        ScreenTools.normalFontFamily
+                wrapMode:           TextEdit.WordWrap
+                background: Rectangle { color: "transparent" }
             }
 
             Rectangle {
-                id:         orientationCalArea
-                width:      parent.calDisplayAreaWidth
-                height:     parent.height
-                visible:    controller.showOrientationCalArea
-                color:      qgcPal.windowShade
+                id: orientationCalArea
+
+                anchors.fill:   parent
+                visible:        controller.showOrientationCalArea
+                color:          _workspaceBackground
 
                 QGCLabel {
-                    id:                 orientationCalAreaHelpText
-                    anchors.margins:    ScreenTools.defaultFontPixelWidth
-                    anchors.top:        orientationCalArea.top
-                    anchors.left:       orientationCalArea.left
-                    width:              parent.width
+                    id: orientationCalAreaHelpText
+
+                    anchors.left:       parent.left
+                    anchors.right:      parent.right
+                    anchors.top:        parent.top
+                    anchors.margins:    _cardPadding
                     wrapMode:           Text.WordWrap
                     font.pointSize:     ScreenTools.mediumFontPointSize
+                    color:              _titleColor
                 }
 
                 Flow {
-                    anchors.topMargin:  ScreenTools.defaultFontPixelWidth
                     anchors.top:        orientationCalAreaHelpText.bottom
                     anchors.bottom:     parent.bottom
                     anchors.left:       parent.left
                     anchors.right:      parent.right
+                    anchors.margins:    _cardPadding
+                    anchors.topMargin:  _sectionSpacing
                     spacing:            ScreenTools.defaultFontPixelWidth / 2
 
                     property real indicatorWidth:   (width / 3) - (spacing * 2)
@@ -538,21 +655,6 @@ Item {
                         calInProgressText:  controller.orientationCalRightSideRotate ? qsTr("Rotate") : qsTr("Hold Still")
                         imageSource:        controller.orientationCalRightSideRotate ? "qrc:///qmlimages/VehicleRightRotate.png" : "qrc:///qmlimages/VehicleRight.png"
                     }
-                }
-            }
-
-            QGCButton {
-                text:  qsTr("Factory reset")
-                width: _buttonWidth
-
-                anchors {
-                    right:       orientationCalArea.left
-                    rightMargin: ScreenTools.defaultFontPixelWidth/2
-                    bottom:      orientationCalArea.bottom
-                }
-
-                onClicked: {
-                    controller.resetFactoryParameters()
                 }
             }
         }

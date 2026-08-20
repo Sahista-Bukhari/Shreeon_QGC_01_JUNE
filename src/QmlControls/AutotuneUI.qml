@@ -7,17 +7,26 @@ import QGroundControl.FactControls
 import QGroundControl.Controls
 
 ColumnLayout {
-    spacing: ScreenTools.defaultFontPixelHeight
+    id: root
+
+    Layout.fillWidth: true
+    spacing:          ScreenTools.defaultFontPixelHeight / 3
 
     property var  _activeVehicle:   globals.activeVehicle
     property var  _autotuneManager: _activeVehicle.autotune
     property real _margins:         ScreenTools.defaultFontPixelHeight
 
+    QGCPalette {
+        id: qgcPal
+        colorGroupEnabled: root.enabled
+    }
+
     QGCButton {
-        id:        autotuneButton
-        primary:   true
-        text:      qsTr("Start AutoTune")
-        enabled:   _activeVehicle.flying && !_activeVehicle.landing && !_autotuneManager.autotuneInProgress
+        id:               autotuneButton
+        Layout.fillWidth: true
+        primary:          true
+        text:             qsTr("Start AutoTune")
+        enabled:          _activeVehicle.flying && !_activeVehicle.landing && !_autotuneManager.autotuneInProgress
 
         onClicked: mainWindow.showMessageDialog(autotuneButton.text,
                                                 qsTr("WARNING!\
@@ -31,9 +40,44 @@ ColumnLayout {
                                                 function() { _autotuneManager.autotuneRequest() })
     }
 
-    QGCLabel { text: _autotuneManager.autotuneStatus }
+    QGCLabel {
+        Layout.fillWidth: true
+        text:             _autotuneManager.autotuneStatus
+    }
 
     ProgressBar {
-        value: _autotuneManager.autotuneProgress
+        id:                     autotuneProgress
+        Layout.fillWidth:       true
+        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight
+        value:                  _autotuneManager.autotuneProgress
+
+        background: Rectangle {
+            implicitHeight: ScreenTools.defaultFontPixelHeight
+            radius:         height / 2
+            color:          qgcPal.globalTheme === QGCPalette.Dark ? "#555555" : "#626464"
+        }
+
+        contentItem: Item {
+            implicitHeight: ScreenTools.defaultFontPixelHeight
+
+            Rectangle {
+                width:  autotuneProgress.visualPosition * parent.width
+                height: parent.height
+                radius: height / 2
+                color:  qgcPal.primaryButton
+            }
+
+            QGCLabel {
+                anchors.fill:             parent
+                horizontalAlignment:      Text.AlignHCenter
+                verticalAlignment:        Text.AlignVCenter
+                elide:                    Text.ElideRight
+                leftPadding:              ScreenTools.defaultFontPixelWidth
+                rightPadding:             ScreenTools.defaultFontPixelWidth
+                font.pointSize:           ScreenTools.smallFontPointSize
+                color:                    qgcPal.primaryButtonText
+                text:                     _autotuneManager.autotuneStatus
+            }
+        }
     }
 }

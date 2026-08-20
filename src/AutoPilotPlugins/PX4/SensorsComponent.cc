@@ -40,6 +40,16 @@ bool SensorsComponent::requiresSetup(void) const
 
 bool SensorsComponent::setupComplete(void) const
 {
+    // Simulated sensors do not require a physical calibration and may report
+    // zero device/calibration IDs even though the simulator is ready to fly.
+    // Keep the normal calibration checks unchanged for real vehicles.
+    for (const char* simulationParam : {"SYS_HITL", "SIM_GZ_EN"}) {
+        if (_vehicle->parameterManager()->parameterExists(ParameterManager::defaultComponentId, simulationParam) &&
+            _vehicle->parameterManager()->getParameter(ParameterManager::defaultComponentId, simulationParam)->rawValue().toBool()) {
+            return true;
+        }
+    }
+
     for (const QString &triggerParam : std::as_const(_deviceIds)) {
         if (_vehicle->parameterManager()->getParameter(ParameterManager::defaultComponentId, triggerParam)->rawValue().toFloat() == 0.0f) {
             return false;
@@ -76,7 +86,7 @@ QStringList SensorsComponent::setupCompleteChangedTriggerList(void) const
 {
     QStringList triggers;
 
-    triggers << _deviceIds << _magCalParam << _magEnabledParam;
+    triggers << _deviceIds << _magCalParam << _magEnabledParam << "SYS_HITL" << "SIM_GZ_EN";
     if (_vehicle->fixedWing() || _vehicle->vtol() || _vehicle->airship()) {
         triggers << _airspeedCalTriggerParams;
     }

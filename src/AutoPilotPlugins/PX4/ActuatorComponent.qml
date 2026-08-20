@@ -17,15 +17,44 @@ SetupPage {
 
     property var _showAdvanced:              advanced
     readonly property real _margins:         ScreenTools.defaultFontPixelHeight
+    readonly property real _pagePad:         ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real _sectionGap:      ScreenTools.defaultFontPixelHeight * 1.15
+    readonly property real _cardRadius:      ScreenTools.defaultFontPixelWidth * 0.9
+    readonly property bool _actuatorDarkTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode === mainWindow.themeBlack
+        return actuatorPalette.globalTheme === QGCPalette.Dark
+    }
+    readonly property color _actuatorTitleColor: _actuatorDarkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _actuatorBodyColor:  _actuatorDarkTheme ? "#8E8E93" : "#3A3A3C"
+    readonly property color _actuatorCardFill:   _actuatorDarkTheme ? actuatorPalette.windowShade : "#F5F5F5"
+    readonly property color _actuatorCardBorder: _actuatorDarkTheme ? actuatorPalette.windowShade : "#E5E5E5"
+    readonly property color _actuatorAccent:     "#00a04c"
+
+    QGCPalette { id: actuatorPalette; colorGroupEnabled: actuatorPage.enabled }
 
     Component {
         id: pageComponent
 
-        Row {
-            spacing:                        ScreenTools.defaultFontPixelWidth * 4
+        QGCFlickable {
+            id:                             actuatorContentFlick
+            width:                          actuatorPage.availableWidth
+            height:                         implicitHeight
+            implicitHeight:                 outputsColumn.y + outputsColumn.height + _pagePad + horizontalActuatorScrollBar.height
+            contentWidth:                   Math.max(width,
+                                                     ScreenTools.defaultFontPixelWidth * 92,
+                                                     configurationColumn.x + configurationColumn.width + _pagePad,
+                                                     outputsColumn.x + outputsColumn.width + _pagePad)
+            contentHeight:                  implicitHeight
+            flickableDirection:             Flickable.HorizontalFlick
+            boundsBehavior:                 Flickable.StopAtBounds
+            clip:                           true
             property var _leftColumnWidth:  Math.max(actuatorTesting.implicitWidth, mixerUi.implicitWidth) + (_margins * 2)
 
             ColumnLayout {
+                id:                         configurationColumn
+                x:                          _pagePad
+                y:                          ScreenTools.defaultFontPixelHeight * 0.35
                 spacing:                    ScreenTools.defaultFontPixelHeight
                 implicitWidth:              _leftColumnWidth
 
@@ -34,25 +63,21 @@ SetupPage {
                     width:                      _leftColumnWidth
                     visible:                    actuators.mixer.groups.count > 0
                     QGCLabel {
-                        text:                   qsTr("Geometry") + (actuators.mixer.title ? ": " + actuators.mixer.title : "")
-                        font.pointSize:         ScreenTools.mediumFontPointSize
-                        Layout.fillWidth:       true
-                    }
-                    QGCLabel {
-                        text:                   "<a href='"+actuators.mixer.helpUrl+"'>?</a>"
-                        font.pointSize:         ScreenTools.mediumFontPointSize
-                        visible:                actuators.mixer.helpUrl
-                        textFormat:             Text.RichText
-                        onLinkActivated: (link) => {
-                            Qt.openUrlExternally(link);
-                        }
+                        text:             qsTr("Geometry") + (actuators.mixer.title ? ": " + actuators.mixer.title : "")
+                        color:            _actuatorTitleColor
+                        font.pointSize:   ScreenTools.defaultFontPointSize + 1
+                        font.bold:        true
+                        Layout.fillWidth: true
                     }
                 }
 
                 Rectangle {
                     implicitWidth:          _leftColumnWidth
                     implicitHeight:         mixerUi.height + (_margins * 2)
-                    color:                  qgcPal.windowShade
+                    color:                  _actuatorCardFill
+                    radius:                 _cardRadius
+                    border.width:           1
+                    border.color:           _actuatorCardBorder
                     visible:                actuators.mixer.groups.count > 0
 
                     Column {
@@ -174,16 +199,27 @@ SetupPage {
                     }
                 }
 
+                Rectangle {
+                    Layout.fillWidth: true
+                    height:           1
+                    color:            _actuatorCardBorder
+                }
+
                 // actuator testing
                 QGCLabel {
-                    text:               qsTr("Actuator Testing")
-                    font.pointSize:     ScreenTools.mediumFontPointSize
+                    text:           qsTr("Actuator Testing")
+                    color:          _actuatorTitleColor
+                    font.pointSize: ScreenTools.defaultFontPointSize + 1
+                    font.bold:      true
                 }
 
                 Rectangle {
                     implicitWidth:            _leftColumnWidth
                     implicitHeight:           actuatorTesting.height + (_margins * 2)
-                    color:                    qgcPal.windowShade
+                    color:                    _actuatorCardFill
+                    radius:                   _cardRadius
+                    border.width:             1
+                    border.color:             _actuatorCardBorder
 
                     Column {
                         id:                   actuatorTesting
@@ -318,18 +354,29 @@ SetupPage {
                 } // Rectangle
             }
 
-            // Right column
+            // Actuator outputs are intentionally stacked after actuator testing.
             Column {
+                id:      outputsColumn
+                x:       _pagePad
+                y:       configurationColumn.y + configurationColumn.height + _sectionGap
+                spacing: ScreenTools.defaultFontPixelHeight * 0.45
+
+                Rectangle {
+                    width:  Math.max(configurationColumn.width, selActuatorOutput.implicitWidth)
+                    height: 1
+                    color:  _actuatorCardBorder
+                }
+
                 QGCLabel {
-                    text:               qsTr("Actuator Outputs")
-                    font.pointSize:     ScreenTools.mediumFontPointSize
-                    bottomPadding:      ScreenTools.defaultFontPixelHeight
+                    text:           qsTr("Actuator Outputs")
+                    color:          _actuatorTitleColor
+                    font.pointSize: ScreenTools.defaultFontPointSize + 1
+                    font.bold:      true
                 }
                 QGCLabel {
                     text:          qsTr("One or more actuator still needs to be assigned to an output.")
                     visible:       actuators.hasUnsetRequiredFunctions
                     color:         qgcPal.warningText
-                    bottomPadding: ScreenTools.defaultFontPixelHeight
                 }
 
 
@@ -352,7 +399,10 @@ SetupPage {
                     id:                             selActuatorOutput
                     implicitWidth:                  actuatorGroupColumn.width + (_margins * 2)
                     implicitHeight:                 actuatorGroupColumn.height + (_margins * 2)
-                    color:                          qgcPal.windowShade
+                    color:                          _actuatorCardFill
+                    radius:                         _cardRadius
+                    border.width:                   1
+                    border.color:                   _actuatorCardBorder
 
                     property var actuatorOutput:    actuators.selectedActuatorOutput
 
@@ -546,7 +596,35 @@ SetupPage {
                     }
                 } // Rectangle
             } // Column
-        } // Row
+
+            ScrollBar.horizontal: ScrollBar {
+                id: horizontalActuatorScrollBar
+
+                policy: actuatorContentFlick.contentWidth > actuatorContentFlick.width ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                height: Math.max(12, ScreenTools.defaultFontPixelWidth * 1.35)
+                leftPadding:   2
+                rightPadding:  2
+                topPadding:    2
+                bottomPadding: 2
+                minimumSize:   0.06
+
+                background: Rectangle {
+                    radius: horizontalActuatorScrollBar.height / 2
+                    color:  "#F0F0F0"
+                    border.width: 1
+                    border.color: "#FFFFFF"
+                }
+
+                contentItem: Rectangle {
+                    implicitWidth:  ScreenTools.defaultFontPixelHeight * 2
+                    implicitHeight: Math.max(8, ScreenTools.defaultFontPixelWidth)
+                    radius:         height / 2
+                    color:          _actuatorAccent
+                    border.width:   1
+                    border.color:   "#FFFFFF"
+                }
+            }
+        } // QGCFlickable
 
     }
 }
