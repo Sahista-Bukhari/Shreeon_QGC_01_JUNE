@@ -2764,14 +2764,6 @@ Item {
             }
         }
 
-        FlyViewToolBarIndicators {
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.bottom: parent.bottom
-            anchors.rightMargin: ScreenTools.defaultFontPixelWidth
-            height: parent.height
-        }
-
         // Native QGC-style mission transfer progress along the bottom edge of
         // the toolbar. The value comes directly from MissionController.
         Rectangle {

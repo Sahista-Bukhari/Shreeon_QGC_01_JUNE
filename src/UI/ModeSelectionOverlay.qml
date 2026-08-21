@@ -9,7 +9,7 @@ import QGroundControl.Controls
 
 Item {
     id: control
-    height: 350
+    height: 400
     width: 800
 
     QGCPalette { id: qgcPal }
@@ -39,7 +39,6 @@ Item {
                                             "customMission": "qrc:/ModeSelection/custom_mission.png"
                                         })
     readonly property color _pageBackground: "white"
-    readonly property color _pillGreen: "#008000"
     readonly property color _titleColor: "#1C1C1E"
     // Apple-like motion: fixed-duration curves (springs were too slow for toolbar handoff)
     readonly property int _overlayAnimDuration: 420
@@ -50,7 +49,7 @@ Item {
     readonly property real _cardEnterYOffset: ScreenTools.defaultFontPixelHeight * 0.85
     readonly property int _cardStaggerMs: 58
     readonly property int _textAnimDelay: 80
-    readonly property list<real> _appleEase: [0.25, 0.1, 0.25, 1.0]
+    readonly property var _appleEase: [0.25, 0.1, 0.25, 1.0]
 
     property bool isOpen: false
     property bool _selectingMode: false
@@ -389,116 +388,6 @@ Item {
                     x: control._textSlideX
                 }
 
-                Rectangle {
-                    id: standardModePill
-
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    color: control._pillGreen
-                    height: ScreenTools.defaultFontPixelHeight * 2.0
-                    radius: height / 2
-                    width: standardModeRow.implicitWidth + ScreenTools.defaultFontPixelWidth * 2.4
-
-                    Row {
-                        id: standardModeRow
-
-                        anchors.centerIn: parent
-                        spacing: ScreenTools.defaultFontPixelWidth * 0.5
-
-                        QGCLabel {
-                            id: themeArrow
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: "white"
-                            font.pointSize: ScreenTools.defaultFontPointSize
-                            font.weight: Font.Medium
-                            padding: 10
-                            text: qsTr("Choose Your Theme")
-                        }
-                        QGCColoredImage {
-                            anchors.verticalCenter: parent.verticalCenter
-                            color: "white"
-                            height: ScreenTools.defaultFontPixelHeight * 0.75
-                            source: "/res/chevron-down.svg"
-                            width: height
-                            rotation: themeMenuPopup.visible ? 180 : 0
-
-                            Behavior on rotation { NumberAnimation { duration: 180 } }
-                        }
-                    }
-
-                    MouseArea {
-                        anchors.fill: parent
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (themeMenuPopup.visible)
-                                themeMenuPopup.close()
-                            else
-                                themeMenuPopup.open()
-                        }
-                    }
-
-                    Popup {
-                        id: themeMenuPopup
-                        x: 0
-                        y: standardModePill.height + ScreenTools.defaultFontPixelHeight * 0.35
-                        width: Math.max(standardModePill.width, ScreenTools.defaultFontPixelWidth * 16)
-                        padding: ScreenTools.defaultFontPixelWidth * 0.6
-                        modal: false
-                        focus: true
-                        closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
-
-                        background: Rectangle {
-                            color: "white"
-                            radius: ScreenTools.defaultFontPixelHeight * 0.45
-                            border.width: 1
-                            border.color: Qt.rgba(0, 0, 0, 0.12)
-                        }
-
-                        Column {
-                            width: parent.width
-                            spacing: ScreenTools.defaultFontPixelHeight * 0.25
-
-                            Repeater {
-                                model: [
-                                    { label: qsTr("Default"), mode: mainWindow.themeDefault },
-                                    { label: qsTr("Black"),   mode: mainWindow.themeBlack },
-                                    { label: qsTr("White"),   mode: mainWindow.themeWhite }
-                                ]
-
-                                Rectangle {
-                                    width: parent.width
-                                    height: ScreenTools.defaultFontPixelHeight * 2.1
-                                    radius: ScreenTools.defaultFontPixelHeight * 0.35
-                                    color: themeItemMouse.containsMouse
-                                           ? Qt.rgba(0, 0.5, 0, 0.10)
-                                           : (mainWindow.uiThemeMode === modelData.mode
-                                              ? Qt.rgba(0, 0.5, 0, 0.16)
-                                              : "transparent")
-
-                                    QGCLabel {
-                                        anchors.verticalCenter: parent.verticalCenter
-                                        anchors.left: parent.left
-                                        anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 0.8
-                                        text: modelData.label
-                                        color: control._titleColor
-                                        font.weight: mainWindow.uiThemeMode === modelData.mode ? Font.DemiBold : Font.Normal
-                                    }
-
-                                    MouseArea {
-                                        id: themeItemMouse
-                                        anchors.fill: parent
-                                        hoverEnabled: true
-                                        cursorShape: Qt.PointingHandCursor
-                                        onClicked: {
-                                            mainWindow.setUiThemeMode(modelData.mode)
-                                            themeMenuPopup.close()
-                                        }
-                                    }
-                                }   
-                               }
-                        }
-                    }
-                }
                 QGCLabel {
                     anchors.centerIn: parent
                     color: control._titleColor

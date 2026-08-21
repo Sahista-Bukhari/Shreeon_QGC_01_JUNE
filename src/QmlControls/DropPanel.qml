@@ -10,6 +10,12 @@ import QGroundControl.Controls
 /// enough room to the right then the panel will drop to the left.
 Popup {
     id:             _root
+    width:          Math.min(dropPanelBackground.implicitWidth,
+                             Math.max(ScreenTools.defaultFontPixelWidth * 8,
+                                      dropViewPort.width - _innerMargin * 2))
+    height:         Math.min(dropPanelBackground.implicitHeight,
+                             Math.max(ScreenTools.defaultFontPixelHeight * 3,
+                                      dropViewPort.height - _innerMargin * 2))
     padding:        _innerMargin
     leftPadding:    dropBelow ? _innerMargin : (_dropRight ? _innerMargin + _arrowPointWidth : _innerMargin)
     rightPadding:   dropBelow ? _innerMargin : (_dropRight ? _innerMargin : _innerMargin + _arrowPointWidth)
@@ -32,11 +38,16 @@ Popup {
     property bool _dropRight:           true
 
     onAboutToShow: {
+        const minX = dropViewPort.x + _innerMargin
+        const maxX = Math.max(minX, dropViewPort.x + dropViewPort.width - _root.width - _innerMargin)
+        const minY = dropViewPort.y + _innerMargin
+        const maxY = Math.max(minY, dropViewPort.y + dropViewPort.height - _root.height - _innerMargin)
+
         if (dropBelow) {
             let xPos = clickRect.x + clickRect.width - _root.width
-            xPos = Math.max(dropViewPort.x + _innerMargin, Math.min(xPos, dropViewPort.x + dropViewPort.width - _root.width - _innerMargin))
+            xPos = Math.max(minX, Math.min(xPos, maxX))
             let yPos = clickRect.y + clickRect.height + ScreenTools.defaultFontPixelHeight * 0.35
-            yPos = Math.min(yPos, dropViewPort.y + dropViewPort.height - _root.height - _innerMargin)
+            yPos = Math.max(minY, Math.min(yPos, maxY))
             _root.x = xPos
             _root.y = yPos
             return
@@ -67,43 +78,49 @@ Popup {
         yPos -= _root.height / 2
 
         // Make sure panel is within viewport
-        let originalYPos = yPos
-        yPos = Math.max(yPos, dropViewPort.y)
-        yPos = Math.min(yPos, dropViewPort.y + dropViewPort.height - _root.height)
+        yPos = Math.max(minY, Math.min(yPos, maxY))
+        xPos = Math.max(minX, Math.min(xPos, maxX))
 
         _root.x = xPos
         _root.y = yPos
 
         // Adjust arrow position back to point at click position
-        _arrowPointPositionY += originalYPos - yPos
+        _arrowPointPositionY = Math.max(_arrowPointWidth,
+                                        Math.min(_root.height - _arrowPointWidth,
+                                                 (clickRect.y + clickRect.height / 2) - yPos))
     }
 
     background: Item {
+        id: dropPanelBackground
         implicitWidth:  contentItem.implicitWidth + _innerMargin * 2 + (_root.dropBelow ? 0 : _arrowPointWidth)
         implicitHeight: contentItem.implicitHeight + _innerMargin * 2
 
-        readonly property bool _customMission: typeof mainWindow !== "undefined"
-                                               && mainWindow
-                                               && mainWindow.activeMissionEditor === "customMission"
-        readonly property color _panelColor: _customMission
-                                             ? "#fbfbfb"
-                                             : Qt.rgba(0.28, 0.30, 0.30, 0.78)
+        readonly property color _panelColor: "#ffffff"
         readonly property real _panelRadius: ScreenTools.defaultFontPixelHeight / 2
 
         Item {
             id: panelBody
             x:      _root.dropBelow ? 0 : (_dropRight ? _arrowPointWidth : 0)
-            width:  parent.implicitWidth - (_root.dropBelow ? 0 : _arrowPointWidth)
-            height: parent.implicitHeight
+            width:  parent.width - (_root.dropBelow ? 0 : _arrowPointWidth)
+            height: parent.height
 
             Rectangle {
                 anchors.fill: parent
                 radius: parent.parent._panelRadius
                 color: parent.parent._panelColor
                 border.width: 1
-                border.color: parent.parent._customMission
-                              ? "#e2e2e2"
-                              : Qt.rgba(1, 1, 1, 0.28)
+                border.color: "#d9d9d9"
+
+                Rectangle {
+                    anchors.left:       parent.left
+                    anchors.right:      parent.right
+                    anchors.top:        parent.top
+                    anchors.leftMargin: parent.radius
+                    anchors.rightMargin: parent.radius
+                    height:             3
+                    radius:             height / 2
+                    color:              "#00a651"
+                }
             }
         }
 
@@ -129,12 +146,61 @@ Popup {
         }
     }
 
-    contentItem: SettingsGroupLayout {
-        showBorder: false
-        showDividers: false
+    contentItem: QGCFlickable {
+        id: dropPanelFlickable
+        implicitWidth:  dropPanelContent.implicitWidth
+        implicitHeight: dropPanelContent.implicitHeight
+        contentWidth:   dropPanelContent.width
+        contentHeight:  dropPanelContent.height
+        flickableDirection: Flickable.AutoFlickDirection
+        interactive:    contentWidth > width + 1 || contentHeight > height + 1
+        clip:            true
 
-        Loader {
-            sourceComponent: _root.sourceComponent
+        SettingsGroupLayout {
+            id:             dropPanelContent
+            width:          Math.max(implicitWidth, dropPanelFlickable.width)
+            showBorder:     false
+            showDividers:   false
+
+            Loader {
+                id: dropPanelSourceLoader
+                sourceComponent: _root.sourceComponent
+                onLoaded: {
+                    if (typeof mainWindow !== "undefined"
+                            && mainWindow
+                            && mainWindow.applyLightPopupStyle) {
+                        Qt.callLater(function() {
+                            mainWindow.applyLightPopupStyle(dropPanelSourceLoader.item)
+                        })
+                    }
+                }
+            }
+        }
+
+        ScrollBar.vertical: ScrollBar {
+            policy: dropPanelFlickable.contentHeight > dropPanelFlickable.height
+                    ? ScrollBar.AlwaysOn
+                    : ScrollBar.AlwaysOff
+            width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+            contentItem: Rectangle {
+                implicitWidth: 3
+                radius: width / 2
+                color: "#00a651"
+            }
+        }
+
+        ScrollBar.horizontal: ScrollBar {
+            policy: dropPanelFlickable.contentWidth > dropPanelFlickable.width
+                    ? ScrollBar.AlwaysOn
+                    : ScrollBar.AlwaysOff
+            height: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+            contentItem: Rectangle {
+                implicitHeight: 3
+                radius: height / 2
+                color: "#00a651"
+            }
         }
     }
 }

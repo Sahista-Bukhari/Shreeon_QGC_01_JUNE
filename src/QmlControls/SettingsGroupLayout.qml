@@ -6,15 +6,15 @@ import QGroundControl.Controls
 
 ColumnLayout {
     id:                 control
-    spacing:            _rowGap
-    implicitWidth:      Math.max(headingColumn.implicitWidth, outerRect.implicitWidth)
-    implicitHeight:     (heading !== "" ? headingColumn.implicitHeight + spacing : 0) + outerRect.implicitHeight
+    spacing:            _headingGap
+    implicitWidth:      Math.max(headingRow.implicitWidth, outerRect.implicitWidth)
+    implicitHeight:     (heading !== "" ? headingRow.implicitHeight + spacing : 0) + outerRect.implicitHeight
 
     default property alias contentItem: _contentLayout.data
 
     property alias contentSpacing: _contentLayout.spacing
 
-    property string defaultBorderColor  : QGroundControl.globalPalette.groupBorder
+    property string defaultBorderColor  : control._dividerColor
     property string outerBorderColor    : defaultBorderColor
 
     property string defaultHeadingPointSize:    ScreenTools.defaultFontPointSize + 1
@@ -23,64 +23,87 @@ ColumnLayout {
     property string heading
     property string headingDescription
     property bool   showDividers:       true
-    property bool   showBorder:         false
+    property bool   showBorder:         true
+    property bool   lightStyle:         false
 
     QGCPalette { id: qgcPal; colorGroupEnabled: true }
 
-    readonly property color _titleColor: qgcPal.globalTheme === QGCPalette.Dark ? "#AEAEB2" : "#3A3A3C"
-    readonly property color _bodyColor:  qgcPal.globalTheme === QGCPalette.Dark ? "#8E8E93" : "#3A3A3C"
+    readonly property bool  _darkTheme:  !lightStyle && qgcPal.globalTheme === QGCPalette.Dark
+    readonly property color _titleColor: _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:  _darkTheme ? "#8E8E93" : "#5A5A5E"
+    readonly property color _accentGreen: "#00a04c"
+    readonly property color _cardFill:    _darkTheme ? qgcPal.windowShade : "#F7F7F7"
+    readonly property color _innerFill:   _darkTheme ? qgcPal.window : "#FFFFFF"
+    readonly property color _dividerColor: _darkTheme ? qgcPal.windowShade : "#E5E5E5"
 
     // Shared inset so headings ("General", "Units") line up with option labels
     property real _contentPad:  ScreenTools.defaultFontPixelWidth * 1.25
-    property real _rowGap:      ScreenTools.defaultFontPixelHeight * 0.35
-    property real _margins:     ScreenTools.defaultFontPixelHeight / 2.4
+    property real _headingGap:  ScreenTools.defaultFontPixelHeight * 0.45
+    property real _margins:     ScreenTools.defaultFontPixelHeight * 0.72
 
-    ColumnLayout {
-        id:                 headingColumn
+    RowLayout {
+        id:                 headingRow
         Layout.fillWidth:   true
         Layout.leftMargin:  _contentPad
         Layout.rightMargin: _contentPad
-        spacing:            ScreenTools.defaultFontPixelHeight * 0.15
+        spacing:            ScreenTools.defaultFontPixelWidth * 0.8
         visible:            heading !== ""
 
-        QGCLabel {
-            text:           heading
-            color:          control._titleColor
-            font.pointSize: headingPointSize
-            font.bold:      true
-            font.family:    ScreenTools.normalFontFamily
+        Rectangle {
+            Layout.preferredWidth:  Math.max(3, ScreenTools.defaultFontPixelWidth * 0.38)
+            Layout.preferredHeight: headingText.implicitHeight * 0.9
+            Layout.alignment:       Qt.AlignTop
+            radius:                 width / 2
+            color:                  control._accentGreen
         }
 
-        QGCLabel {
-            Layout.fillWidth:   true
-            text:               headingDescription
-            wrapMode:           Text.WordWrap
-            font.pointSize:     ScreenTools.smallFontPointSize
-            font.family:        ScreenTools.normalFontFamily
-            color:              control._bodyColor
-            visible:            headingDescription !== ""
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing:          ScreenTools.defaultFontPixelHeight * 0.15
+
+            QGCLabel {
+                id:             headingText
+                Layout.fillWidth: true
+                text:           heading
+                color:          control._titleColor
+                font.pointSize: headingPointSize
+                font.weight:    Font.DemiBold
+                font.family:    ScreenTools.normalFontFamily
+                elide:          Text.ElideRight
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text:             headingDescription
+                wrapMode:         Text.WordWrap
+                font.pointSize:   ScreenTools.smallFontPointSize
+                font.family:      ScreenTools.normalFontFamily
+                color:            control._bodyColor
+                visible:          headingDescription !== ""
+            }
         }
     }
 
     Rectangle {
         id:                 outerRect
         Layout.fillWidth:   true
-        implicitWidth:      _contentLayout.implicitWidth + _contentPad * 2 + (showBorder ? _margins * 2 : 0)
-        implicitHeight:     _contentLayout.implicitHeight + (showBorder ? _margins * 2 : 0)
-        color:              "transparent"
+        implicitWidth:      _contentLayout.implicitWidth + _contentPad * 2 + _margins * 2
+        implicitHeight:     _contentLayout.implicitHeight + _margins * 2
+        color:              control._cardFill
         border.color:       outerBorderColor
         border.width:       showBorder ? 1 : 0
-        radius:             ScreenTools.defaultFontPixelHeight / 2
+        radius:             ScreenTools.defaultFontPixelWidth * 1.0
 
         Repeater {
             model: showDividers ? Math.max(0, _contentLayout.visibleChildren.length - 1) : 0
 
             Rectangle {
-                x:                  _contentPad + (showBorder ? _margins : 0)
-                y:                  _contentItem.y + _contentItem.height + _margins + (showBorder ? _margins : 0)
-                width:              parent.width - _contentPad * 2 - (showBorder ? _margins * 2 : 0)
+                x:                  _contentPad + _margins
+                y:                  _contentLayout.y + _contentItem.y + _contentItem.height
+                                    + _contentLayout.spacing * 0.5
+                width:              parent.width - _contentPad * 2 - _margins * 2
                 height:             1
-                color:              qgcPal.globalTheme === QGCPalette.Dark ? qgcPal.windowShade : "#EFEFEF"
+                color:              control._dividerColor
 
                 property var _contentItem: _contentLayout.visibleChildren[index]
             }
@@ -88,10 +111,10 @@ ColumnLayout {
 
         ColumnLayout {
             id:                 _contentLayout
-            x:                  _contentPad + (showBorder ? _margins : 0)
-            y:                  showBorder ? _margins : 0
-            width:              parent.width - _contentPad * 2 - (showBorder ? _margins * 2 : 0)
-            spacing:            _margins * (showDividers ? 1.35 : 0.85)
+            x:                  _contentPad + _margins
+            y:                  _margins
+            width:              parent.width - _contentPad * 2 - _margins * 2
+            spacing:            _margins * (showDividers ? 1.45 : 0.95)
         }
     }
 }

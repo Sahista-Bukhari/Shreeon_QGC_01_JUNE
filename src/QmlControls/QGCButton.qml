@@ -12,6 +12,7 @@ Button {
     property bool primary: false
     property bool showBorder: false
     property bool compact: false
+    property bool lightStyle: false
     property real backRadius: height / 2
     property real heightFactor: 0.5
     property string iconSource: ""
@@ -39,13 +40,19 @@ Button {
     property real _iconHeight: text.height * (compact ? 1.35 : 1.5)
 
     // Custom Mission uses Route Mapping white/green cards
-    readonly property bool _customMission: typeof mainWindow !== "undefined"
+    readonly property bool _customMission: !lightStyle
+                                           && typeof mainWindow !== "undefined"
                                            && mainWindow
                                            && mainWindow.activeMissionEditor === "customMission"
     readonly property color _cmAccent: "#00a651"
     readonly property color _cmHoverGray: "#e8e8e8"
     readonly property color _cmBorder: "#e2e2e2"
     readonly property color _cmTitle: "#3f3f3f"
+    readonly property color _lightAccent: "#00a651"
+    readonly property color _lightHover: "#e8f5ee"
+    readonly property color _lightFill: "#f3f3f3"
+    readonly property color _lightBorder: "#dedede"
+    readonly property color _lightText: "#343434"
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }
 
@@ -59,19 +66,37 @@ Button {
             anchors.fill: parent
             visible: !control._customMission
             radius: control.backRadius
-            border.width: control.showBorder ? 1 : 0
-            border.color: qgcPal.buttonBorder
-            color: control.primary
-                   ? qgcPal.primaryButton
-                   : (control.pressed ? qgcPal.buttonHighlight : control.backgroundColor)
+            border.width: control.showBorder || control.lightStyle ? 1 : 0
+            border.color: control.lightStyle
+                          ? (control.primary || control.checked || control.hovered
+                             ? control._lightAccent
+                             : control._lightBorder)
+                          : qgcPal.buttonBorder
+            color: {
+                if (control.lightStyle) {
+                    if (!control.enabled)
+                        return "#f0f0f0"
+                    if (control.primary || control.checked)
+                        return control._lightAccent
+                    if (control.pressed || control.hovered)
+                        return control._lightHover
+                    return control._lightFill
+                }
+                return control.primary
+                       ? qgcPal.primaryButton
+                       : (control.pressed ? qgcPal.buttonHighlight : control.backgroundColor)
+            }
 
             Rectangle {
                 anchors.fill: parent
                 color: qgcPal.buttonHighlight
                 opacity: control._showHighlight ? 1 : (control.enabled && control.hovered ? 0.1 : 0)
                 radius: parent.radius
-                visible: !control.primary
+                visible: !control.primary && !control.lightStyle
             }
+
+            Behavior on color { ColorAnimation { duration: 120 } }
+            Behavior on border.color { ColorAnimation { duration: 120 } }
         }
 
         // Custom Mission — green idle, gray hover (Application Settings style)
@@ -135,6 +160,13 @@ Button {
             font.family: control.font.family
             font.weight: fontWeight
             color: {
+                if (control.lightStyle && !control._customMission) {
+                    if (!control.enabled)
+                        return "#9b9b9b"
+                    if (control.primary || control.checked)
+                        return "#ffffff"
+                    return control._lightText
+                }
                 if (control._customMission) {
                     if (!control.enabled)
                         return Qt.rgba(0.25, 0.25, 0.25, 0.40)

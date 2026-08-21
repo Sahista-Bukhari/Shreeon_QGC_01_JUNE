@@ -23,6 +23,7 @@ T.ComboBox {
     property bool   centeredLabel:  false
     property bool   sizeToContents: false
     property bool   compact:        false
+    property bool   lightStyle:     false
     property string alternateText:  ""
 
     property real   _popupWidth:    width
@@ -81,12 +82,16 @@ T.ComboBox {
         contentItem: Text {
             text:                   _text
             font:                   control.font
-            color:                  control.currentIndex === index ? "#ffffff" : qgcPal.buttonText
+            color:                  control.currentIndex === index
+                                    ? "#ffffff"
+                                    : (control.lightStyle ? "#343434" : qgcPal.buttonText)
             verticalAlignment:      Text.AlignVCenter
         }
 
         background: Rectangle {
-            color:                  control.currentIndex === index ? "#00a651" : qgcPal.button
+            color:                  control.currentIndex === index
+                                    ? "#00a651"
+                                    : (control.lightStyle ? "#f3f3f3" : qgcPal.button)
         }
 
         highlighted:                control.highlightedIndex === index
@@ -96,7 +101,7 @@ T.ComboBox {
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
                                            && mainWindow.activeMissionEditor === "customMission"
-    readonly property bool _selectedLook: _customMission || qgcPal.globalTheme === QGCPalette.Light
+    readonly property bool _selectedLook: lightStyle || _customMission || qgcPal.globalTheme === QGCPalette.Light
     readonly property color _accentGreen: "#00a651"
     readonly property color _hoverGray: "#e8e8e8"
     readonly property bool _hoverGrayLook: _selectedLook && control.enabled && control.hovered && !control.pressed
@@ -186,8 +191,9 @@ T.ComboBox {
         }
 
         background: Rectangle {
-            color:          qgcPal.window
-            border.width:   0
+            color:          control.lightStyle ? "#ffffff" : qgcPal.window
+            border.width:   control.lightStyle ? 1 : 0
+            border.color:   control.lightStyle ? "#dedede" : "transparent"
             radius:         ScreenTools.defaultBorderRadius
         }
     }

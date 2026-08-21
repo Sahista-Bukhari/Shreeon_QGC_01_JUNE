@@ -1,4 +1,4 @@
-import QtQuick
+    import QtQuick
 import QtQuick.Window
 import QtQuick.Controls
 
@@ -7,7 +7,7 @@ import QGroundControl.Controls
 
 Rectangle {
     id:     _root
-    color:  qgcPal.window
+    color:  qgcPal.w
     z:      QGroundControl.zOrderTopMost
 
     signal popout()

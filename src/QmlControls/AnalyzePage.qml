@@ -17,6 +17,9 @@ Item {
     property real   availableHeight:    height - mainContent.y
     property bool   allowPopout:        false
     property bool   popped:             false
+    property url    popoutIconSource:   "/qmlimages/FloatingWindow.svg"
+    property color  popoutIconColor:    qgcPal.text
+    property real   contentTopMargin:   ScreenTools.defaultFontPixelHeight
     property real   _margins:           ScreenTools.defaultFontPixelHeight * 0.5
 
     signal popout()
@@ -55,7 +58,7 @@ Item {
 
     Item {
         id:                     mainContent
-        anchors.topMargin:      ScreenTools.defaultFontPixelHeight
+        anchors.topMargin:      contentTopMargin
         anchors.top:            headerLoader.sourceComponent === null ? (headingColumn.visible ? headingColumn.bottom : parent.top) : headerLoader.bottom
         anchors.bottom:         parent.bottom
         anchors.left:           parent.left
@@ -73,9 +76,9 @@ Item {
         width:                  ScreenTools.defaultFontPixelHeight * 2
         height:                 width
         sourceSize.width:       width
-        source:                 "/qmlimages/FloatingWindow.svg"
+        source:                 popoutIconSource
         fillMode:               Image.PreserveAspectFit
-        color:                  qgcPal.text
+        color:                  popoutIconColor
         visible:                allowPopout && !popped && !ScreenTools.isMobile
         MouseArea {
             anchors.fill:   parent

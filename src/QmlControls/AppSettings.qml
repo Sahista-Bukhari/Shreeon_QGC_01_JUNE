@@ -33,12 +33,56 @@ Rectangle {
     readonly property color _accentGreen:       "#00a04c"
     readonly property color _buttonGray:        "#f5f5f5"
     readonly property color _rowPressed:        _darkTheme ? qgcPal.windowShade : "#F2F2F2"
-    // Wide side gutters like the reference (~12% each side)
-    readonly property real  _horizontalPad:     Math.max(ScreenTools.defaultFontPixelWidth * 8, width * 0.12)
+    readonly property color _cardFill:          _darkTheme ? qgcPal.windowShade : "#F7F7F7"
+    readonly property color _cardBorder:        _darkTheme ? qgcPal.windowShade : "#E5E5E5"
+    readonly property color _cardHover:         Qt.rgba(0, 160 / 255, 76 / 255, _darkTheme ? 0.16 : 0.08)
+    readonly property color _greenTint:         Qt.rgba(0, 160 / 255, 76 / 255, _darkTheme ? 0.14 : 0.09)
+    readonly property real  _contentSidePad:    Math.max(ScreenTools.defaultFontPixelWidth * 2.2, width * 0.05)
+    readonly property real  _contentMaxWidth:   ScreenTools.defaultFontPixelWidth * 92
+    readonly property real  _cardRadius:        ScreenTools.defaultFontPixelWidth * 1.05
+    readonly property real  _controlSpacing:    ScreenTools.defaultFontPixelWidth
+    readonly property real  _cardSpacing:       ScreenTools.defaultFontPixelHeight * 0.65
+    readonly property real  _sectionSpacing:    ScreenTools.defaultFontPixelHeight * 1.25
     // Header back/close sit near the window edges, not in the content gutter
     readonly property real  _headerIconPad:     ScreenTools.defaultFontPixelWidth * 1.2
-    readonly property real  _rowHeight:         ScreenTools.defaultFontPixelHeight * 3.2
+    readonly property real  _rowHeight:         ScreenTools.defaultFontPixelHeight * 4.2
     readonly property real  _headerHeight:      ScreenTools.toolbarHeight
+    readonly property real  _detailHeaderInset: Math.max(_headerIconPad,
+                                                          (width - Math.min(_contentMaxWidth,
+                                                                            width - _headerIconPad * 2)) / 2)
+
+    property string _selectedSettingsUrl: ""
+
+    function _descriptionForUrl(pageUrl) {
+        var source = pageUrl ? pageUrl.toString() : ""
+        if (source.indexOf("GeneralSettings") >= 0)
+            return qsTr("Language, units, theme, storage, and application behavior")
+        if (source.indexOf("FlyViewSettings") >= 0)
+            return qsTr("Configure flight controls, instruments, and map behavior")
+        if (source.indexOf("PlanViewSettings") >= 0)
+            return qsTr("Set mission planning defaults and waypoint options")
+        if (source.indexOf("VideoSettings") >= 0)
+            return qsTr("Manage video sources, recording, and streaming")
+        if (source.indexOf("ADSBServerSettings") >= 0)
+            return qsTr("Configure aircraft traffic server connectivity")
+        if (source.indexOf("LinkSettings") >= 0)
+            return qsTr("Create and manage vehicle communication links")
+        if (source.indexOf("AppLogging") >= 0)
+            return qsTr("Control application logging and diagnostic files")
+        if (source.indexOf("MapSettings") >= 0)
+            return qsTr("Choose map providers, cache, and offline map data")
+        if (source.indexOf("NTRIPSettings") >= 0)
+            return qsTr("Set up RTK correction data and NTRIP access")
+        if (source.indexOf("PX4LogTransferSettings") >= 0)
+            return qsTr("Configure automatic PX4 flight-log transfers")
+        if (source.indexOf("RemoteIDSettings") >= 0)
+            return qsTr("Review and configure Remote ID settings")
+        if (source.indexOf("TelemetrySettings") >= 0)
+            return qsTr("Configure telemetry saving and data forwarding")
+        if (source.indexOf("HelpSettings") >= 0)
+            return qsTr("Open documentation and application information")
+        return qsTr("Open configuration options")
+    }
 
     // Keep API used by MainWindow / Remote ID / Comm Links deep-links
     function showSettingsPage(settingsPage) {
@@ -70,6 +114,7 @@ Rectangle {
     function _openSettingsUrl(pageName, pageUrl) {
         if (!mainWindow.allowViewSwitch())
             return
+        _selectedSettingsUrl = pageUrl ? pageUrl.toString() : ""
         settingsStack.push(detailPageComponent, {
                                pageTitle: pageName,
                                pageSource: pageUrl
@@ -93,8 +138,10 @@ Rectangle {
         id: rowRoot
 
         property string label
+        property string description
         property string iconSource: ""
         property bool   showChevron: true
+        property bool   selected: false
 
         signal clicked()
 
@@ -103,18 +150,32 @@ Rectangle {
 
         Rectangle {
             anchors.fill: parent
-            color:        rowMouse.pressed ? settingsView._rowPressed : "transparent"
+            radius:       settingsView._cardRadius
+            color: {
+                if (rowMouse.pressed)
+                    return settingsView._greenTint
+                if (rowRoot.selected || rowMouse.containsMouse)
+                    return settingsView._cardHover
+                return settingsView._cardFill
+            }
+            border.width: 1
+            border.color: rowRoot.selected || rowMouse.containsMouse
+                          ? settingsView._accentGreen
+                          : settingsView._cardBorder
+
+            Behavior on color { ColorAnimation { duration: 130 } }
+            Behavior on border.color { ColorAnimation { duration: 130 } }
         }
 
         RowLayout {
             anchors.fill:           parent
-            anchors.leftMargin:     settingsView._horizontalPad
-            anchors.rightMargin:    settingsView._horizontalPad
-            spacing:                ScreenTools.defaultFontPixelWidth * 1.5
+            anchors.leftMargin:     ScreenTools.defaultFontPixelWidth * 1.6
+            anchors.rightMargin:    ScreenTools.defaultFontPixelWidth * 1.4
+            spacing:                ScreenTools.defaultFontPixelWidth * 1.25
 
             Item {
-                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 2.2
-                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.2
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 2.35
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.35
                 Layout.alignment:       Qt.AlignVCenter
                 visible:                rowRoot.iconSource !== ""
 
@@ -134,28 +195,60 @@ Rectangle {
                 }
             }
 
-            QGCLabel {
-                Layout.fillWidth:   true
-                Layout.alignment:   Qt.AlignVCenter
-                text:               rowRoot.label
-                color:              settingsView._titleColor
-                font.pointSize:     ScreenTools.defaultFontPointSize
-                elide:              Text.ElideRight
+            ColumnLayout {
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+                spacing:          ScreenTools.defaultFontPixelHeight * 0.12
+
+                QGCLabel {
+                    Layout.fillWidth: true
+                    text:             rowRoot.label
+                    color:            rowRoot.selected
+                                      ? settingsView._accentGreen
+                                      : settingsView._titleColor
+                    font.pointSize:   ScreenTools.defaultFontPointSize
+                    font.weight:      Font.DemiBold
+                    elide:            Text.ElideRight
+                }
+
+                QGCLabel {
+                    Layout.fillWidth: true
+                    text:             rowRoot.description
+                    color:            settingsView._secondaryText
+                    font.pointSize:   ScreenTools.smallFontPointSize
+                    elide:            Text.ElideRight
+                }
             }
 
-            QGCLabel {
+            Rectangle {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.65
+                Layout.preferredHeight: Layout.preferredWidth
                 Layout.alignment:   Qt.AlignVCenter
-                visible:            rowRoot.showChevron
-                text:               "›"
-                color:              settingsView._secondaryText
-                font.pointSize:     ScreenTools.largeFontPointSize * 1.8
-                font.weight:        Font.Light
+                visible:                rowRoot.showChevron
+                radius:                 width / 2
+                color:                  settingsView._pageBackground
+                border.width:           1
+                border.color:           rowRoot.selected || rowMouse.containsMouse
+                                        ? settingsView._accentGreen
+                                        : settingsView._cardBorder
+
+                QGCLabel {
+                    anchors.centerIn: parent
+                    anchors.verticalCenterOffset: -1
+                    text:             "›"
+                    color:            rowRoot.selected || rowMouse.containsMouse
+                                      ? settingsView._accentGreen
+                                      : settingsView._secondaryText
+                    font.pointSize:   ScreenTools.largeFontPointSize
+                    font.weight:      Font.Normal
+                }
             }
         }
 
         MouseArea {
             id:             rowMouse
             anchors.fill:   parent
+            hoverEnabled:   !ScreenTools.isMobile
             cursorShape:    Qt.PointingHandCursor
             onClicked:      rowRoot.clicked()
         }
@@ -223,151 +316,225 @@ Rectangle {
             }
 
             QGCFlickable {
-                anchors.left:           parent.left
-                anchors.right:          parent.right
-                anchors.top:            hubHeader.bottom
-                anchors.bottom:         resetToggleRow.top
-                anchors.bottomMargin:   ScreenTools.defaultFontPixelHeight
-                contentWidth:           width
-                contentHeight:          hubList.height + ScreenTools.defaultFontPixelHeight * 2
-                clip:                   true
-                flickableDirection:     Flickable.VerticalFlick
+                id:                 hubFlickable
+                anchors.left:       parent.left
+                anchors.right:      parent.right
+                anchors.top:        hubHeader.bottom
+                anchors.bottom:     parent.bottom
+                contentWidth:       width
+                contentHeight:      hubContent.implicitHeight + ScreenTools.defaultFontPixelHeight * 3
+                clip:               true
+                flickableDirection: Flickable.VerticalFlick
+
+                ScrollBar.vertical: ScrollBar {
+                    policy:        hubFlickable.contentHeight > hubFlickable.height
+                                   ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                    width:         Math.max(7, ScreenTools.defaultFontPixelWidth * 0.7)
+                    topPadding:    settingsView._cardSpacing
+                    bottomPadding: topPadding
+                    leftPadding:   2
+                    rightPadding:  2
+
+                    background: Rectangle {
+                        radius: parent.width / 2
+                        color:  settingsView._cardFill
+                    }
+
+                    contentItem: Rectangle {
+                        radius: width / 2
+                        color:  settingsView._accentGreen
+                    }
+                }
 
                 Column {
-                    id:                 hubList
-                    width:              parent.width
-                    anchors.top:        parent.top
-                    anchors.topMargin:  ScreenTools.defaultFontPixelHeight * 1.5
+                    id:    hubContent
+                    x:     Math.round((hubFlickable.width - width) / 2)
+                    y:     ScreenTools.defaultFontPixelHeight * 1.35
+                    width: Math.max(0, Math.min(settingsView._contentMaxWidth,
+                                                hubFlickable.width - settingsView._contentSidePad * 2))
 
                     Repeater {
                         model: settingsPagesModel
 
                         delegate: Item {
-                            width:  hubList.width
-                            height: visible ? (isDivider ? ScreenTools.defaultFontPixelHeight * 2.2 : settingsView._rowHeight) : 0
+                            width:  hubContent.width
+                            height: visible
+                                    ? (isDivider
+                                       ? settingsView._sectionSpacing
+                                       : settingsView._rowHeight + settingsView._cardSpacing)
+                                    : 0
                             visible: isDivider ? true : pageVisible()
 
                             readonly property bool isDivider: name === "Divider"
 
-                            // Full-width soft section band (like the reference)
                             Rectangle {
                                 anchors.verticalCenter: parent.verticalCenter
                                 anchors.left:           parent.left
                                 anchors.right:          parent.right
-                                height:                 ScreenTools.defaultFontPixelHeight * 0.55
-                                color:                  settingsView._sectionBandColor
+                                height:                 1
+                                color:                  settingsView._cardBorder
                                 visible:                parent.isDivider
+
+                                Rectangle {
+                                    anchors.centerIn: parent
+                                    width:            ScreenTools.defaultFontPixelWidth * 5
+                                    height:           2
+                                    radius:           height / 2
+                                    color:            settingsView._accentGreen
+                                }
                             }
 
                             SettingsNavRow {
-                                anchors.fill:   parent
-                                visible:        !parent.isDivider
-                                label:          name
-                                iconSource:     iconUrl
-                                onClicked:      settingsView._openSettingsUrl(name, url)
+                                anchors.left:  parent.left
+                                anchors.right: parent.right
+                                anchors.top:   parent.top
+                                visible:       !parent.isDivider
+                                label:         name
+                                description:   settingsView._descriptionForUrl(url)
+                                iconSource:    iconUrl
+                                selected:      settingsView._selectedSettingsUrl === url.toString()
+                                onClicked:     settingsView._openSettingsUrl(name, url)
                             }
                         }
                     }
-                }
-            }
 
-            // Neumorphic Reset toggle — ON clears all settings on next start
-            Row {
-                id:                     resetToggleRow
-                anchors.right:          parent.right
-                anchors.bottom:         parent.bottom
-                anchors.rightMargin:    settingsView._horizontalPad
-                anchors.bottomMargin:   ScreenTools.defaultFontPixelHeight * 1.5
-                spacing:                ScreenTools.defaultFontPixelWidth * 1.5
-
-                QGCLabel {
-                    anchors.verticalCenter: parent.verticalCenter
-                    text:                   qsTr("Reset")
-                    color:                  settingsView._titleColor
-                    font.pointSize:         ScreenTools.defaultFontPointSize
-                    font.weight:            Font.Medium
-                }
-
-                Item {
-                    id:                     resetToggle
-                    anchors.verticalCenter: parent.verticalCenter
-                    width:                  ScreenTools.defaultFontPixelHeight * 4.4
-                    height:                 ScreenTools.defaultFontPixelHeight * 2.35
-
-                    property bool checked: false
-
-                    // Soft outer shadow (neumorphic)
-                    Rectangle {
-                        anchors.horizontalCenter: parent.horizontalCenter
-                        anchors.verticalCenter:   parent.verticalCenter
-                        anchors.verticalCenterOffset: 2
-                        width:              parent.width
-                        height:             parent.height
-                        radius:             height / 2
-                        color:              "#D1D1D6"
-                        opacity:            0.55
-                        z:                  -1
+                    Item {
+                        width:  parent.width
+                        height: settingsView._cardSpacing * 0.5
                     }
 
                     Rectangle {
-                        id:                 track
-                        anchors.fill:       parent
-                        radius:             height / 2
-                        color:              resetToggle.checked
-                                            ? settingsView._accentGreen
-                                            : (settingsView._darkTheme ? "#3A3A3C" : settingsView._buttonGray)
+                        width:  parent.width
+                        height: Math.max(ScreenTools.defaultFontPixelHeight * 4.6,
+                                         resetLayout.implicitHeight + settingsView._controlSpacing * 2)
+                        radius: settingsView._cardRadius
+                        color:  settingsView._cardFill
+                        border.width: 1
+                        border.color: settingsView._cardBorder
 
-                        Behavior on color { ColorAnimation { duration: 180 } }
+                        RowLayout {
+                            id:              resetLayout
+                            anchors.fill:    parent
+                            anchors.margins: settingsView._controlSpacing * 1.25
+                            spacing:         settingsView._controlSpacing * 1.2
 
-                        // White circular knob
-                        Rectangle {
-                            id:                     knob
-                            anchors.verticalCenter: parent.verticalCenter
-                            x:                      resetToggle.checked
-                                                    ? parent.width - width - 3
-                                                    : 3
-                            width:                  parent.height - 6
-                            height:                 width
-                            radius:                 width / 2
-                            color:                  "#FFFFFF"
-                            border.width:           0.5
-                            border.color:           "#E5E5EA"
-
-                            Behavior on x { NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-
-                            // soft faux shadow under knob
                             Rectangle {
-                                anchors.horizontalCenter: parent.horizontalCenter
-                                anchors.top:              parent.top
-                                anchors.topMargin:        2
-                                width:                    parent.width
-                                height:                   parent.height
-                                radius:                   width / 2
-                                color:                    "#000000"
-                                opacity:                  0.12
-                                z:                        -1
+                                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 2.35
+                                Layout.preferredHeight: Layout.preferredWidth
+                                Layout.alignment:       Qt.AlignVCenter
+                                radius:                 width / 2
+                                color:                  settingsView._greenTint
+
+                                QGCColoredImage {
+                                    anchors.centerIn: parent
+                                    width:            parent.width * 0.5
+                                    height:           width
+                                    source:           "/qmlimages/Gears.svg"
+                                    color:            settingsView._accentGreen
+                                    fillMode:         Image.PreserveAspectFit
+                                }
+                            }
+
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing:          ScreenTools.defaultFontPixelHeight * 0.12
+
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text:             qsTr("Reset application settings")
+                                    color:            settingsView._titleColor
+                                    font.weight:      Font.DemiBold
+                                    elide:            Text.ElideRight
+                                }
+
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text:             qsTr("Clear saved preferences the next time the application starts")
+                                    color:            settingsView._secondaryText
+                                    font.pointSize:   ScreenTools.smallFontPointSize
+                                    elide:            Text.ElideRight
+                                }
+                            }
+
+                            Item {
+                                id:                     resetToggle
+                                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 4.4
+                                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.35
+                                Layout.alignment:       Qt.AlignVCenter
+
+                                property bool checked: false
+
+                                Rectangle {
+                                    anchors.horizontalCenter: parent.horizontalCenter
+                                    anchors.verticalCenter:   parent.verticalCenter
+                                    anchors.verticalCenterOffset: 2
+                                    width:                    parent.width
+                                    height:                   parent.height
+                                    radius:                   height / 2
+                                    color:                    "#D1D1D6"
+                                    opacity:                  0.48
+                                    z:                        -1
+                                }
+
+                                Rectangle {
+                                    id:           track
+                                    anchors.fill: parent
+                                    radius:       height / 2
+                                    color:        resetToggle.checked
+                                                  ? settingsView._accentGreen
+                                                  : (settingsView._darkTheme ? "#3A3A3C" : settingsView._buttonGray)
+                                    border.width: 1
+                                    border.color: resetToggle.checked
+                                                  ? settingsView._accentGreen
+                                                  : settingsView._cardBorder
+
+                                    Behavior on color { ColorAnimation { duration: 180 } }
+
+                                    Rectangle {
+                                        id:                     knob
+                                        anchors.verticalCenter: parent.verticalCenter
+                                        x:                      resetToggle.checked
+                                                                ? parent.width - width - 3
+                                                                : 3
+                                        width:                  parent.height - 6
+                                        height:                 width
+                                        radius:                 width / 2
+                                        color:                  "#FFFFFF"
+                                        border.width:           0.5
+                                        border.color:           "#E5E5EA"
+
+                                        Behavior on x {
+                                            NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                                        }
+                                    }
+                                }
+
+                                MouseArea {
+                                    anchors.fill: parent
+                                    cursorShape:  Qt.PointingHandCursor
+                                    onClicked: {
+                                        if (!resetToggle.checked) {
+                                            mainWindow.showMessageDialog(
+                                                qsTr("Reset Settings"),
+                                                qsTr("Clear all application settings on next start? This cannot be undone."),
+                                                Dialog.Cancel | Dialog.Reset,
+                                                function() {
+                                                    resetToggle.checked = true
+                                                    QGroundControl.deleteAllSettingsNextBoot()
+                                                })
+                                        } else {
+                                            resetToggle.checked = false
+                                            QGroundControl.clearDeleteAllSettingsNextBoot()
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
 
-                    MouseArea {
-                        anchors.fill:   parent
-                        cursorShape:    Qt.PointingHandCursor
-                        onClicked: {
-                            if (!resetToggle.checked) {
-                                mainWindow.showMessageDialog(
-                                    qsTr("Reset Settings"),
-                                    qsTr("Clear all application settings on next start? This cannot be undone."),
-                                    Dialog.Cancel | Dialog.Reset,
-                                    function() {
-                                        resetToggle.checked = true
-                                        QGroundControl.deleteAllSettingsNextBoot()
-                                    })
-                            } else {
-                                resetToggle.checked = false
-                                QGroundControl.clearDeleteAllSettingsNextBoot()
-                            }
-                        }
+                    Item {
+                        width:  parent.width
+                        height: ScreenTools.defaultFontPixelHeight * 1.5
                     }
                 }
             }
@@ -401,20 +568,39 @@ Rectangle {
                     id:                     backButton
                     anchors.left:           parent.left
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.leftMargin:     settingsView._headerIconPad
-                    height:                 ScreenTools.defaultFontPixelHeight * 2.0
+                    anchors.leftMargin:     settingsView._detailHeaderInset
+                    height:                 ScreenTools.defaultFontPixelHeight * 2.2
                     width:                  height
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius:       width / 2
+                        color:        detailBackMouse.containsMouse
+                                      ? settingsView._cardHover
+                                      : settingsView._cardFill
+                        border.width: 1
+                        border.color: detailBackMouse.containsMouse
+                                      ? settingsView._accentGreen
+                                      : settingsView._cardBorder
+
+                        Behavior on color { ColorAnimation { duration: 130 } }
+                        Behavior on border.color { ColorAnimation { duration: 130 } }
+                    }
 
                     QGCColoredImage {
                         anchors.centerIn:   parent
-                        width:              ScreenTools.defaultFontPixelHeight * 0.95
+                        width:              ScreenTools.defaultFontPixelHeight * 0.82
                         height:             width
                         source:             "qrc:/InstrumentValueIcons/arrow-thin-left.svg"
-                        color:              settingsView._iconColor
+                        color:              detailBackMouse.containsMouse
+                                            ? settingsView._accentGreen
+                                            : settingsView._secondaryText
                     }
 
                     MouseArea {
+                        id:             detailBackMouse
                         anchors.fill:   parent
+                        hoverEnabled:   true
                         cursorShape:    Qt.PointingHandCursor
                         onClicked:      settingsView._goBack()
                     }
@@ -439,17 +625,33 @@ Rectangle {
                     id:                     closeButton
                     anchors.right:          parent.right
                     anchors.verticalCenter: parent.verticalCenter
-                    anchors.rightMargin:    settingsView._headerIconPad
-                    height:                 ScreenTools.defaultFontPixelHeight * 2.0
+                    anchors.rightMargin:    settingsView._detailHeaderInset
+                    height:                 ScreenTools.defaultFontPixelHeight * 2.2
                     width:                  height
+
+                    Rectangle {
+                        anchors.fill: parent
+                        radius:       width / 2
+                        color:        detailCloseMouse.containsMouse
+                                      ? settingsView._cardHover
+                                      : settingsView._cardFill
+                        border.width: 1
+                        border.color: detailCloseMouse.containsMouse
+                                      ? settingsView._accentGreen
+                                      : settingsView._cardBorder
+
+                        Behavior on color { ColorAnimation { duration: 130 } }
+                        Behavior on border.color { ColorAnimation { duration: 130 } }
+                    }
 
                     QGCColoredImage {
                         anchors.centerIn:   parent
-                        width:              ScreenTools.defaultFontPixelHeight * 0.85
+                        width:              ScreenTools.defaultFontPixelHeight * 0.72
                         height:             width
                         source:             "/res/XDeleteBlack.svg"
-                        color:              settingsView._iconColor
-                        opacity:            detailCloseMouse.containsMouse ? 1.0 : 0.85
+                        color:              detailCloseMouse.containsMouse
+                                            ? settingsView._accentGreen
+                                            : settingsView._secondaryText
                     }
 
                     MouseArea {

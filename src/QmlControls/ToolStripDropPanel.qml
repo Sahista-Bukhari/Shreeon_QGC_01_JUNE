@@ -29,6 +29,9 @@ Item {
     property real   _viewportMaxTop:    0
     property real   _viewportMaxBottom: parent.parent.height - parent.y
     property real   _viewportMaxHeight: _viewportMaxBottom - _viewportMaxTop
+    property real   _viewportMaxLeft:   viewportMargins
+    property real   _viewportMaxRight:  parent.parent.width - parent.x - viewportMargins
+    property real   _viewportMaxWidth:  Math.max(1, _viewportMaxRight - _viewportMaxLeft)
     property var    _dropPanelCancel
     property var    _parentButton
 
@@ -54,7 +57,8 @@ Item {
         var panelComponentWidth  = panelLoader.item.width
         var panelComponentHeight = panelLoader.item.height
 
-        dropDownItem.width  = panelComponentWidth  + (_dropMargin * 2) + _arrowPointWidth
+        dropDownItem.width  = Math.min(panelComponentWidth + (_dropMargin * 2) + _arrowPointWidth,
+                                       _viewportMaxWidth)
         dropDownItem.height = panelComponentHeight + (_dropMargin * 2)
 
         if (dropToLeft) {
@@ -64,6 +68,9 @@ Item {
             // Position dropdown to the right of the toolbar (default)
             dropDownItem.x = _dropEdgeTopPoint.x + _dropMargin
         }
+        dropDownItem.x = Math.max(_viewportMaxLeft,
+                                  Math.min(dropDownItem.x,
+                                           _viewportMaxRight - dropDownItem.width))
         dropDownItem.y = _dropEdgeTopPoint.y -(dropDownItem.height / 2) + radius
 
         // Validate that dropdown is within viewport
@@ -171,9 +178,9 @@ Item {
             anchors.fill:       parent
             clip:               true
             boundsBehavior:     Flickable.StopAtBounds
-            flickableDirection: Flickable.VerticalFlick
-            interactive:        contentHeight > height + 1
-            contentWidth:       width
+            flickableDirection: Flickable.AutoFlickDirection
+            interactive:        contentHeight > height + 1 || contentWidth > width + 1
+            contentWidth:       Math.max(width, panelLoader.width)
             contentHeight:      panelLoader.height
 
             Loader {
@@ -183,6 +190,32 @@ Item {
                 onWidthChanged:     _calcPositions()
 
                 property var dropPanel: _root
+            }
+
+            ScrollBar.vertical: ScrollBar {
+                policy: panelItemFlickable.contentHeight > panelItemFlickable.height
+                        ? ScrollBar.AlwaysOn
+                        : ScrollBar.AlwaysOff
+                width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+                contentItem: Rectangle {
+                    implicitWidth: 3
+                    radius: width / 2
+                    color: "#00a651"
+                }
+            }
+
+            ScrollBar.horizontal: ScrollBar {
+                policy: panelItemFlickable.contentWidth > panelItemFlickable.width
+                        ? ScrollBar.AlwaysOn
+                        : ScrollBar.AlwaysOff
+                height: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+                contentItem: Rectangle {
+                    implicitHeight: 3
+                    radius: height / 2
+                    color: "#00a651"
+                }
             }
         }
     } // Item - dropDownItem

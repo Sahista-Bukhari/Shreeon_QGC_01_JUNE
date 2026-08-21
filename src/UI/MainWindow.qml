@@ -16,7 +16,7 @@ import QGroundControl.Toolbar
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:         mainWindow
-    height: 350
+    height: 400
     width: 800
     visible:    true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
@@ -27,11 +27,15 @@ ApplicationWindow {
     // Set true to preview only CustomHomePage (no Fly View / mode selection).
     readonly property bool homePageOnly: true
 
-    // UI theme: Default = current product look, Black = QGC Indoor/Dark, White = QGC Outdoor/Light
+    // UI theme: Default = current product look, Black = QGC Indoor/Dark
     readonly property int themeDefault: 0
     readonly property int themeBlack:   1
-    readonly property int themeWhite:   2
     property int uiThemeMode: themeSettings.uiThemeMode
+
+    // Live vehicle indicators belong to Fly View only. Fly View remains loaded
+    // behind tool pages, so use this property to prevent its toolbar from
+    // showing through while another page is open.
+    readonly property bool flyViewToolbarVisible: flyView.visible && !toolDrawer.visible
 
     Settings {
         id: themeSettings
@@ -63,7 +67,7 @@ ApplicationWindow {
         var appSettings = QGroundControl.settingsManager.appSettings
         if (!appSettings || !appSettings.indoorPalette)
             return
-        // Black → Indoor/Dark. Default & White → Outdoor/Light
+        // Black → Indoor/Dark. Default → Outdoor/Light
         var wantIndoor = (uiThemeMode === themeBlack) ? 1 : 0
         if (appSettings.indoorPalette.rawValue !== wantIndoor)
             appSettings.indoorPalette.rawValue = wantIndoor
@@ -87,7 +91,7 @@ ApplicationWindow {
     }
 
     function setUiThemeMode(mode) {
-        if (mode !== themeDefault && mode !== themeBlack && mode !== themeWhite)
+        if (mode !== themeDefault && mode !== themeBlack)
             return
         themeSettings.uiThemeMode = mode
         uiThemeMode = mode
@@ -96,6 +100,11 @@ ApplicationWindow {
 
     Component.onCompleted: {
         console.log("the application begins")
+        // Migrate the removed White option (or any invalid stored value) to Default.
+        if (uiThemeMode !== themeDefault && uiThemeMode !== themeBlack) {
+            themeSettings.uiThemeMode = themeDefault
+            uiThemeMode = themeDefault
+        }
         applyUiTheme()
 
         if (homePageOnly) {
@@ -1132,13 +1141,25 @@ ApplicationWindow {
         id:                 criticalVehicleMessagePopup
         y:                  ScreenTools.toolbarHeight + ScreenTools.defaultFontPixelHeight
         x:                  Math.round((mainWindow.width - width) * 0.5)
-        width:              mainWindow.width  * 0.55
-        height:             criticalVehicleMessageText.contentHeight + ScreenTools.defaultFontPixelHeight * 2
+        width:              Math.min(mainWindow.width * 0.55,
+                                     mainWindow.width - ScreenTools.defaultFontPixelWidth * 2)
+        height:             Math.min(criticalVehicleMessageText.contentHeight + ScreenTools.defaultFontPixelHeight * 2,
+                                     mainWindow.height - y - ScreenTools.defaultFontPixelHeight)
         modal:              false
         focus:              true
 
         property alias  criticalVehicleMessage:             criticalVehicleMessageText.text
         property bool   additionalCriticalMessagesReceived: false
+
+        function dismissPopup() {
+            close()
+            if (additionalCriticalMessagesReceived) {
+                additionalCriticalMessagesReceived = false
+                flyView.dropMainStatusIndicatorTool()
+            } else if (QGroundControl.multiVehicleManager.activeVehicle) {
+                QGroundControl.multiVehicleManager.activeVehicle.resetErrorLevelMessages()
+            }
+        }
 
         background: Rectangle {
             anchors.fill:   parent
@@ -1194,31 +1215,116 @@ ApplicationWindow {
             }
         }
 
-        QGCLabel {
-            id:                 criticalVehicleMessageText
-            width:              criticalVehicleMessagePopup.width - ScreenTools.defaultFontPixelHeight
-            anchors.centerIn:   parent
-            wrapMode:           Text.WordWrap
-            color:              qgcPal.alertText
-            textFormat:         TextEdit.RichText
+        QGCFlickable {
+            id:                 criticalMessageFlickable
+            anchors.fill:       parent
+            anchors.margins:    ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.rightMargin: ScreenTools.defaultFontPixelHeight * 1.8
+            contentWidth:       width
+            contentHeight:      criticalVehicleMessageText.contentHeight
+            interactive:        contentHeight > height + 1
+            flickableDirection: Flickable.VerticalFlick
+
+            QGCLabel {
+                id:                 criticalVehicleMessageText
+                y:                  criticalMessageFlickable.contentHeight < criticalMessageFlickable.height
+                                    ? (criticalMessageFlickable.height - contentHeight) / 2
+                                    : 0
+                width:              criticalMessageFlickable.width
+                wrapMode:           Text.WordWrap
+                color:              qgcPal.alertText
+                textFormat:         TextEdit.RichText
+            }
+
+            ScrollBar.vertical: ScrollBar {
+                policy: criticalMessageFlickable.contentHeight > criticalMessageFlickable.height
+                        ? ScrollBar.AlwaysOn
+                        : ScrollBar.AlwaysOff
+                width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+                contentItem: Rectangle {
+                    implicitWidth: 3
+                    radius: width / 2
+                    color: qgcPal.alertText
+                }
+            }
         }
 
-        MouseArea {
-            anchors.fill: parent
-            onClicked: {
-                criticalVehicleMessagePopup.close()
-                if (criticalVehicleMessagePopup.additionalCriticalMessagesReceived) {
-                    criticalVehicleMessagePopup.additionalCriticalMessagesReceived = false;
-                    flyView.dropMainStatusIndicatorTool();
-                } else {
-                    QGroundControl.multiVehicleManager.activeVehicle.resetErrorLevelMessages();
-                }
+        Rectangle {
+            anchors.right:      parent.right
+            anchors.top:        parent.top
+            anchors.margins:    ScreenTools.defaultFontPixelHeight * 0.35
+            width:              Math.max(24, ScreenTools.defaultFontPixelHeight * 1.35)
+            height:             width
+            radius:             width / 2
+            color:              criticalCloseMouse.pressed
+                                ? Qt.rgba(0, 0, 0, 0.18)
+                                : Qt.rgba(1, 1, 1, 0.18)
+            border.width:       1
+            border.color:       qgcPal.alertText
+
+            QGCLabel {
+                anchors.centerIn: parent
+                text:             "×"
+                color:            qgcPal.alertText
+                font.pixelSize:   parent.height * 0.65
+            }
+
+            QGCMouseArea {
+                id:             criticalCloseMouse
+                anchors.fill:   parent
+                hoverEnabled:   true
+                cursorShape:    Qt.PointingHandCursor
+                onClicked:      criticalVehicleMessagePopup.dismissPopup()
             }
         }
     }
 
     //-------------------------------------------------------------------------
     //-- Indicator Drawer
+
+    function applyLightPopupStyle(item) {
+        if (!item)
+            return
+
+        const isQgcButton = item.lightStyle !== undefined
+                            && item.backgroundColor !== undefined
+                            && item.textColor !== undefined
+        const isQgcCombo = item.lightStyle !== undefined
+                           && item.alternateText !== undefined
+                           && item.popup !== undefined
+
+        if (item.lightStyle !== undefined)
+            item.lightStyle = true
+
+        // These controls fully manage their own light appearance.
+        if (isQgcButton || isQgcCombo)
+            return
+
+        if (item.textColor !== undefined)
+            item.textColor = "#343434"
+
+        if (item.placeholderTextColor !== undefined)
+            item.placeholderTextColor = "#7a7a7a"
+
+        // Convert only bright neutral text inherited from the dark Fly View
+        // palette. Semantic red/orange/yellow/green colors stay untouched.
+        if (item.color !== undefined && typeof item.text === "string") {
+            const c = item.color
+            if (c && c.r !== undefined) {
+                const maxChannel = Math.max(c.r, c.g, c.b)
+                const minChannel = Math.min(c.r, c.g, c.b)
+                if ((maxChannel - minChannel) < 0.14 && maxChannel > 0.48)
+                    item.color = "#343434"
+            }
+        }
+
+        const children = item.children
+        if (children) {
+            for (let i = 0; i < children.length; i++)
+                applyLightPopupStyle(children[i])
+        }
+    }
 
     function showIndicatorDrawer(drawerComponent, indicatorItem) {
         indicatorDrawer.sourceComponent = drawerComponent
@@ -1250,6 +1356,10 @@ ApplicationWindow {
         property bool _expanded:    false
         property real _margins:     ScreenTools.defaultFontPixelHeight / 4
 
+        on_ExpandedChanged: Qt.callLater(function() {
+            mainWindow.applyLightPopupStyle(indicatorDrawerLoader.item)
+        })
+
         function calcXPosition() {
             if (indicatorItem) {
                 var xCenter = indicatorItem.mapToItem(mainWindow.contentItem, indicatorItem.width / 2, 0).x
@@ -1273,9 +1383,21 @@ ApplicationWindow {
             Rectangle {
                 id:             backgroundRect
                 anchors.fill:   parent
-                color:          QGroundControl.globalPalette.window
-                radius:         indicatorDrawer._margins
-                opacity:        0.85
+                color:          "#ffffff"
+                radius:         ScreenTools.defaultFontPixelWidth * 0.85
+                border.width:   1
+                border.color:   "#d9d9d9"
+
+                Rectangle {
+                    anchors.left:       parent.left
+                    anchors.right:      parent.right
+                    anchors.top:        parent.top
+                    anchors.leftMargin: parent.radius
+                    anchors.rightMargin: parent.radius
+                    height:             3
+                    radius:             height / 2
+                    color:              "#00a651"
+                }
             }
 
             Rectangle {
@@ -1284,14 +1406,16 @@ ApplicationWindow {
                 width:                      ScreenTools.largeFontPixelHeight
                 height:                     width
                 radius:                     width / 2
-                color:                      QGroundControl.globalPalette.button
-                border.color:               QGroundControl.globalPalette.buttonText
+                color:                      "#ffffff"
+                border.color:               "#00a651"
+                border.width:               1
                 visible:                    indicatorDrawerLoader.item && indicatorDrawerLoader.item.showExpand && !indicatorDrawer._expanded
 
                 QGCLabel {
                     anchors.centerIn:   parent
                     text:               ">"
-                    color:              QGroundControl.globalPalette.buttonText
+                    color:              "#00a651"
+                    font.weight:        Font.DemiBold
                 }
 
                 QGCMouseArea {
@@ -1310,6 +1434,10 @@ ApplicationWindow {
 
             Loader {
                 id: indicatorDrawerLoader
+
+                onLoaded: Qt.callLater(function() {
+                    mainWindow.applyLightPopupStyle(indicatorDrawerLoader.item)
+                })
 
                 Binding {
                     target:     indicatorDrawerLoader.item

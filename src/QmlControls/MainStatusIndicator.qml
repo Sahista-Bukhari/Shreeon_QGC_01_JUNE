@@ -190,6 +190,8 @@ RowLayout {
                 QGCButton {
                     enabled:    _armed || !_healthAndArmingChecksSupported || _activeVehicle.healthAndArmingCheckReport.canArm
                     text:       _armed ? qsTr("Disarm") : (control._allowForceArm ? qsTr("Force Arm") : qsTr("Arm"))
+                    lightStyle: true
+                    primary:    enabled
 
                     onClicked: {
                         var controller = globals.guidedControllerFlyView
@@ -242,6 +244,7 @@ RowLayout {
                 //Layout.fillWidth:   true
                 heading:            qsTr("Vehicle Messages")
                 visible:            !vehicleMessageList.noMessages
+                lightStyle:         true
 
                 VehicleMessageList {
                     id: vehicleMessageList
@@ -252,6 +255,7 @@ RowLayout {
                 //Layout.fillWidth:   true
                 heading:            qsTr("Sensor Status")
                 visible:            !_healthAndArmingChecksSupported
+                lightStyle:         true
 
                 GridLayout {
                     rowSpacing:     _spacing
@@ -275,6 +279,7 @@ RowLayout {
                 //Layout.fillWidth:   true
                 heading:            qsTr("Overall Status")
                 visible:            _healthAndArmingChecksSupported && _activeVehicle.healthAndArmingCheckReport.problemsForCurrentMode.count > 0
+                lightStyle:         true
 
                 // List health and arming checks
                 Repeater {
@@ -294,7 +299,7 @@ RowLayout {
                             id:           message
                             text:         object.message
                             textFormat:   TextEdit.RichText
-                            color:        object.severity == 'error' ? qgcPal.colorRed : object.severity == 'warning' ? qgcPal.colorOrange : qgcPal.text
+                            color:        object.severity == 'error' ? qgcPal.colorRed : object.severity == 'warning' ? qgcPal.colorOrange : "#343434"
                             MouseArea {
                                 anchors.fill: parent
                                 onClicked: {
@@ -310,7 +315,7 @@ RowLayout {
                             height:                 1.5 * ScreenTools.defaultFontPixelWidth
                             width:                  height
                             source:                 "/qmlimages/arrow-down.png"
-                            color:                  qgcPal.text
+                            color:                  "#5a5a5a"
                             visible:                object.description != ""
                             MouseArea {
                                 anchors.fill:       parent
@@ -325,6 +330,7 @@ RowLayout {
                         textFormat:         TextEdit.RichText
                         clip:               true
                         visible:            object.expanded
+                        color:              "#5a5a5a"
 
                         property var fact:  null
 
@@ -378,6 +384,7 @@ RowLayout {
                 heading:            qsTr("Force Arm")
                 headingDescription: qsTr("Force arming bypasses pre-arm checks. Use with caution.")
                 visible:            _activeVehicle && !_armed
+                lightStyle:         true
 
                 QGCCheckBoxSlider {
                     Layout.fillWidth:   true
@@ -390,6 +397,7 @@ RowLayout {
             SettingsGroupLayout {
                 Layout.fillWidth:   true
                 visible:            QGroundControl.corePlugin.showAdvancedUI
+                lightStyle:         true
 
                 GridLayout {
                     columns:            2

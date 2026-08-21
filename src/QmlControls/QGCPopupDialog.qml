@@ -48,8 +48,13 @@ Popup {
     property bool   largeTitleText:         false
     property real   minimumContentHeight:   -1
 
-    property real maxContentAvailableWidth:    mainWindow.width - _contentMargin * 8
-    property real maxContentAvailableHeight:   mainWindow.height - titleLabel.implicitHeight - buttonRow.implicitHeight - _contentMargin * 7
+    property real maxContentAvailableWidth:    Math.max(ScreenTools.defaultFontPixelWidth * 12,
+                                                         mainWindow.width - _contentMargin * 8)
+    property real maxContentAvailableHeight:   Math.max(ScreenTools.defaultFontPixelHeight * 2,
+                                                         mainWindow.height
+                                                         - titleLabel.implicitHeight
+                                                         - buttonRowHeight
+                                                         - _contentMargin * 6)
 
     readonly property real headerMinWidth: Math.max(titleLabel.implicitWidth + _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 28 : 40))
     readonly property real dialogPreferredWidth: Math.min(mainWindow.width - _contentMargin * 4, ScreenTools.defaultFontPixelWidth * (compact ? 36 : 54))
@@ -309,8 +314,8 @@ Popup {
     Rectangle {
         id: dialogFrame
         anchors.centerIn: parent
-        width: dialogPreferredWidth
-        height: dialogColumn.implicitHeight
+        width: Math.min(dialogPreferredWidth, mainWindow.width - _contentMargin * 2)
+        height: Math.min(dialogColumn.implicitHeight, mainWindow.height - _contentMargin * 2)
         implicitHeight: dialogColumn.implicitHeight
         color: _customMissionChrome ? "transparent" : "white"
         radius: ScreenTools.defaultFontPixelWidth * (_customMissionChrome ? 1.4 : 0.8)
@@ -329,7 +334,7 @@ Popup {
 
         ColumnLayout {
             id: dialogColumn
-            width: parent.width
+            anchors.fill: parent
             spacing: 0
 
             QGCLabel {
@@ -338,6 +343,7 @@ Popup {
                 Layout.topMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.85 : 1.15)
                 Layout.leftMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
                 Layout.rightMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
+                                    + (headerCloseButton.visible ? headerCloseButton.width : 0)
                 Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.45 : 0.75)
                 text: root.title
                 color: root._customMissionChrome ? "#ffffff" : root._titleColor
@@ -351,10 +357,12 @@ Popup {
             Rectangle {
                 id: messageArea
                 Layout.fillWidth: true
-                Layout.minimumHeight: messageMinHeight
-                Layout.preferredHeight: Math.max(
-                                            totalContentHeight,
-                                            messageMinHeight)
+                Layout.fillHeight: true
+                Layout.minimumHeight: Math.min(messageMinHeight, maxContentAvailableHeight)
+                Layout.maximumHeight: maxContentAvailableHeight
+                Layout.preferredHeight: Math.min(
+                                            Math.max(totalContentHeight, messageMinHeight),
+                                            maxContentAvailableHeight)
                 color: root._customMissionChrome ? "transparent" : "white"
 
                 property real contentWidth: dialogPreferredWidth - _contentMargin * 4
@@ -362,6 +370,7 @@ Popup {
                 property real totalContentHeight: dialogContentParent.childrenRect.height + _contentMargin * (compact ? 1.4 : 2.8)
 
                 QGCFlickable {
+                    id: dialogContentFlickable
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.top: parent.top
@@ -372,6 +381,27 @@ Popup {
                     anchors.bottomMargin: _contentMargin * (compact ? 0.6 : 1.2)
                     contentWidth: messageArea.contentWidth
                     contentHeight: dialogContentParent.childrenRect.height
+                    boundsBehavior: Flickable.StopAtBounds
+                    interactive: contentHeight > height + 1
+
+                    ScrollBar.vertical: ScrollBar {
+                        policy: dialogContentFlickable.contentHeight > dialogContentFlickable.height
+                                ? ScrollBar.AlwaysOn
+                                : ScrollBar.AlwaysOff
+                        width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.38)
+
+                        contentItem: Rectangle {
+                            implicitWidth: 3
+                            radius: width / 2
+                            color: root._accentGreen
+                            opacity: 0.85
+                        }
+
+                        background: Rectangle {
+                            color: Qt.rgba(0, 0, 0, 0.08)
+                            radius: width / 2
+                        }
+                    }
 
                     Item {
                         id: dialogContentParent
@@ -470,6 +500,40 @@ Popup {
                     }
                 }
             }
+        }
+
+        Rectangle {
+            id:                 headerCloseButton
+            anchors.right:      parent.right
+            anchors.top:        parent.top
+            anchors.margins:    Math.max(5, ScreenTools.defaultFontPixelWidth * 0.65)
+            width:              Math.max(26, ScreenTools.defaultFontPixelHeight * 1.45)
+            height:             width
+            radius:             width / 2
+            visible:            root._rejectAllowed && titleLabel.visible
+            color:              headerCloseMouse.pressed
+                                ? root._accentSoftGreen
+                                : (headerCloseMouse.containsMouse ? "#f1f1f1" : "#f6f6f6")
+            border.width:       1
+            border.color:       headerCloseMouse.containsMouse ? root._accentGreen : root._cardBorderIdle
+            z:                  2
+
+            QGCLabel {
+                anchors.centerIn: parent
+                text:             "×"
+                color:            headerCloseMouse.containsMouse ? root._accentGreen : root._bodyColor
+                font.pixelSize:   parent.height * 0.68
+            }
+
+            QGCMouseArea {
+                id:             headerCloseMouse
+                anchors.fill:   parent
+                hoverEnabled:   true
+                cursorShape:    Qt.PointingHandCursor
+                onClicked:      root._reject()
+            }
+
+            Behavior on color { ColorAnimation { duration: 120 } }
         }
     }
 }

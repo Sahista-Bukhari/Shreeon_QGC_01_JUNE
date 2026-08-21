@@ -37,6 +37,9 @@ Rectangle {
     readonly property real  _sideIconSize:      ScreenTools.defaultFontPixelHeight * 2.2
     readonly property real  _contentPad:        ScreenTools.defaultFontPixelWidth * 0.75
     readonly property real  _defaultTextWidth:  ScreenTools.defaultFontPixelWidth
+    readonly property string _mainTitleFamily:  ScreenTools.normalFontFamily
+    readonly property real   _mainTitlePointSize: ScreenTools.largeFontPointSize
+    readonly property int    _mainTitleWeight:  Font.DemiBold
 
     property var    _activeVehicle:                 QGroundControl.multiVehicleManager.activeVehicle
     property string _messagePanelText:              ""
@@ -62,6 +65,12 @@ Rectangle {
 
     DeadMouseArea {
         anchors.fill: parent
+    }
+
+    // GeoTagPage uses this controller from its loading context. It lived in
+    // AnalyzeView before the analyzer pages were moved into this view.
+    GeoTagController {
+        id: geoController
     }
 
     function _vehicleComponentSetupSource(component) {
@@ -116,6 +125,15 @@ Rectangle {
             return
         _selectPage("firmware", qsTr("Firmware"),
                     "qrc:/qml/QGroundControl/VehicleSetup/FirmwareUpgrade.qml",
+                    false, null)
+    }
+
+    function showAnalyzePanel(analyzePage) {
+        if (!mainWindow.allowViewSwitch() || !analyzePage)
+            return
+        _selectPage("analyze:" + analyzePage.url.toString(),
+                    analyzePage.title,
+                    analyzePage.url.toString(),
                     false, null)
     }
 
@@ -269,6 +287,8 @@ Rectangle {
                                     : (sideBtn.selected ? advancedView._accentGreen : advancedView._titleColor)
                 font.pointSize:     ScreenTools.defaultFontPointSize
                 font.bold:          sideBtn.selected
+                wrapMode:           Text.WordWrap
+                maximumLineCount:   2
                 elide:              Text.ElideRight
             }
 
@@ -304,9 +324,9 @@ Rectangle {
         spacing:      0
 
         Rectangle {
-            Layout.preferredWidth:  advancedView._sidebarWidth
-            Layout.fillHeight:      true
-            color:                  advancedView._sidebarBg
+            Layout.preferredWidth: advancedView._sidebarWidth
+            Layout.fillHeight:     true
+            color:                 advancedView._sidebarBg
 
             Rectangle {
                 anchors.top:    parent.top
@@ -359,6 +379,17 @@ Rectangle {
                         buttonVisible:  !ScreenTools.isMobile && _corePlugin.options.showFirmwareUpgrade
                         onClicked:      advancedView.showFirmwarePanel()
                     }
+
+                    Repeater {
+                        model: _corePlugin ? _corePlugin.analyzePages : []
+
+                        SetupSideButton {
+                            label:          modelData.title
+                            iconSource:     modelData.icon
+                            pageKey:        "analyze:" + modelData.url.toString()
+                            onClicked:      advancedView.showAnalyzePanel(modelData)
+                        }
+                    }
                 }
             }
         }
@@ -389,8 +420,9 @@ Rectangle {
                     elide:              Text.ElideRight
                     text:               advancedView._selectedTitle
                     color:              advancedView._headingColor
-                    font.pointSize:     ScreenTools.largeFontPointSize
-                    font.weight:        Font.DemiBold
+                    font.family:        advancedView._mainTitleFamily
+                    font.pointSize:     advancedView._mainTitlePointSize
+                    font.weight:        advancedView._mainTitleWeight
                 }
 
                 Item {
@@ -467,6 +499,15 @@ Rectangle {
                     z:                      1
 
                     property var vehicleComponent: advancedView._selectedComponent
+
+                    Connections {
+                        target:               panelLoader.item
+                        ignoreUnknownSignals: true
+                        function onPopout() {
+                            mainWindow.createrWindowedAnalyzePage(advancedView._selectedTitle,
+                                                                  advancedView._selectedSource)
+                        }
+                    }
                 }
 
                 SequentialAnimation {

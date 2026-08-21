@@ -124,6 +124,63 @@ Item {
             spacing: ScreenTools.defaultFontPixelWidth * 1.0
 
             Item {
+                id:     homeThemeButton
+                width:  root._topIconSize * 1.2
+                height: root._topIconSize * 1.2
+
+                readonly property bool blackSelected: mainWindow.uiThemeMode === mainWindow.themeBlack
+
+                Rectangle {
+                    anchors.fill: parent
+                    radius:       width / 2
+                    color:        homeThemeMouse.pressed
+                                  ? Qt.rgba(1, 1, 1, 0.32)
+                                  : root._panelFill
+                    border.width: 1
+                    border.color: homeThemeMouse.containsMouse
+                                  ? root._green
+                                  : root._panelBorder
+
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                    Behavior on border.color { ColorAnimation { duration: 150 } }
+                }
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width:            parent.width * 0.46
+                    height:           width
+                    source:           homeThemeButton.blackSelected
+                                      ? "qrc:/InstrumentValueIcons/moon.svg"
+                                      : "qrc:/InstrumentValueIcons/brightness-up.svg"
+                    color:            homeThemeButton.blackSelected
+                                      ? root._white
+                                      : root._green
+                    fillMode:         Image.PreserveAspectFit
+
+                    Behavior on color { ColorAnimation { duration: 150 } }
+                }
+
+                MouseArea {
+                    id:           homeThemeMouse
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    cursorShape:  Qt.PointingHandCursor
+                    onClicked: function(mouse) {
+                        themeRipple.tap(mouse.x, mouse.y)
+                        mainWindow.setUiThemeMode(homeThemeButton.blackSelected
+                                                  ? mainWindow.themeDefault
+                                                  : mainWindow.themeBlack)
+                    }
+                }
+
+                RippleEffect {
+                    id:          themeRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius:  parent.width / 2
+                }
+            }
+
+            Item {
                 width: root._topIconSize * 1.2
                 height: root._topIconSize * 1.2
 

@@ -141,6 +141,7 @@ Item {
                 Layout.fillWidth:   true
                 text:               _vtolInFWDFlight ? qsTr("Transition to Multi-Rotor") : qsTr("Transition to Fixed Wing")
                 visible:            _isVTOL && _vehicleInAir
+                lightStyle:         true
 
                 onClicked: {
                     _activeVehicle.vtolInFwdFlight = !_vtolInFWDFlight
@@ -160,6 +161,8 @@ Item {
                         id:                 modeButton
                         text:               modelData
                         Layout.fillWidth:   true
+                        lightStyle:         true
+                        primary:            !editMode && activeVehicle && modelData === activeVehicle.flightMode
 
                         onClicked: {
                             if (editMode) {
@@ -197,6 +200,7 @@ Item {
                 Layout.fillWidth:       true
                 font.pointSize:         ScreenTools.smallFontPointSize
                 horizontalAlignment:    Text.AlignHCenter
+                color:                  "#5a5a5a"
                 visible:                false
 
                 function calcVisible() {
@@ -224,6 +228,7 @@ Item {
 
             SettingsGroupLayout {
                 Layout.fillWidth:  true
+                lightStyle:       true
 
                 FactCheckBoxSlider {
                     Layout.fillWidth:   true

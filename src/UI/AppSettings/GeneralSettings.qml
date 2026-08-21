@@ -83,7 +83,9 @@ SettingsPage {
                     Layout.preferredWidth:  height
                     height:                 baseFontEdit.height * 1.5
                     radius:                 height / 2
-                    color:                  minusMouse.containsMouse ? "#E53935" : "#f5f5f5"
+                    color:                  minusMouse.containsMouse ? "#00a04c" : "#ffffff"
+                    border.width:           1
+                    border.color:           minusMouse.containsMouse ? "#00a04c" : "#E5E5E5"
 
                     Behavior on color { ColorAnimation { duration: 120 } }
 
@@ -120,7 +122,9 @@ SettingsPage {
                     Layout.preferredWidth:  height
                     height:                 baseFontEdit.height * 1.5
                     radius:                 height / 2
-                    color:                  plusMouse.containsMouse ? "#00a04c" : "#f5f5f5"
+                    color:                  plusMouse.containsMouse ? "#00a04c" : "#ffffff"
+                    border.width:           1
+                    border.color:           plusMouse.containsMouse ? "#00a04c" : "#E5E5E5"
 
                     Behavior on color { ColorAnimation { duration: 120 } }
 

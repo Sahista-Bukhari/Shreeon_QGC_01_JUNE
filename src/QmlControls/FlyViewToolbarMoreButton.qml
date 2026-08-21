@@ -86,56 +86,6 @@ Item {
             width:              parent.width - moreMenu._rowPad * 2
             spacing:            ScreenTools.defaultFontPixelHeight * 0.2
 
-            // Analyze
-            Item {
-                width:  parent.width
-                height: ScreenTools.defaultFontPixelHeight * 2.0
-
-                Rectangle {
-                    anchors.fill:   parent
-                    color:          qgcPal.colorGreen
-                    opacity:        analyzeMouseArea.containsMouse ? 0.12 : 0
-                    visible:        analyzeMouseArea.containsMouse
-                }
-
-                Row {
-                    spacing:                moreMenu._iconGap
-                    anchors.left:           parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-
-                    Item {
-                        width:  moreMenu._iconSize
-                        height: moreMenu._iconSize
-                        anchors.verticalCenter: parent.verticalCenter
-
-                        QGCColoredImage {
-                            anchors.fill:           parent
-                            source:                 "/res/analyze-icon.svg"
-                            color:                  qgcPal.textFieldText
-                            fillMode:               Image.PreserveAspectFit
-                        }
-                    }
-
-                    QGCLabel {
-                        text:                   qsTr("Analyze")
-                        font.pointSize:         ScreenTools.defaultFontPointSize
-                        color:                  qgcPal.textFieldText
-                        anchors.verticalCenter: parent.verticalCenter
-                    }
-                }
-
-                MouseArea {
-                    id:             analyzeMouseArea
-                    anchors.fill:   parent
-                    hoverEnabled:   true
-                    cursorShape:    Qt.PointingHandCursor
-                    onClicked: {
-                        control.closeMenu()
-                        mainWindow.showAnalyzeTool(true)
-                    }
-                }
-            }
-
             // Vehicle Config
             Item {
                 width:  parent.width

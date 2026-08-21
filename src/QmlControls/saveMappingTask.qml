@@ -12,6 +12,7 @@ Popup {
     signal dismissed()
 
     property string initialTaskName: ""
+    readonly property bool compactHeight: height <= 420
 
     parent: Overlay.overlay
     x: 0
@@ -48,19 +49,20 @@ Popup {
             anchors.centerIn: parent
             width: Math.min(parent.width - ScreenTools.defaultFontPixelWidth * 4,
                             ScreenTools.defaultFontPixelWidth * 44)
-            height: dialogColumn.implicitHeight
+            height: Math.min(dialogColumn.implicitHeight,
+                             parent.height - ScreenTools.defaultFontPixelHeight)
             radius: ScreenTools.defaultFontPixelWidth * 0.8
             color: "white"
             clip: true
 
             ColumnLayout {
                 id: dialogColumn
-                width: parent.width
+                anchors.fill: parent
                 spacing: 0
 
                 QGCLabel {
                     Layout.fillWidth: true
-                    Layout.topMargin: ScreenTools.defaultFontPixelHeight * 1.4
+                    Layout.topMargin: ScreenTools.defaultFontPixelHeight * (root.compactHeight ? 0.7 : 1.4)
                     text: qsTr("Saving Mapping Task")
                     color: "#202124"
                     font.pointSize: ScreenTools.mediumFontPointSize
@@ -70,7 +72,7 @@ Popup {
 
                 QGCLabel {
                     Layout.fillWidth: true
-                    Layout.topMargin: ScreenTools.defaultFontPixelHeight
+                    Layout.topMargin: ScreenTools.defaultFontPixelHeight * (root.compactHeight ? 0.45 : 1)
                     text: qsTr("Task Name")
                     color: "#343434"
                     horizontalAlignment: Text.AlignHCenter
@@ -82,7 +84,7 @@ Popup {
                     Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 2
                     Layout.rightMargin: ScreenTools.defaultFontPixelWidth * 2
                     Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.4
-                    Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 1.2
+                    Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * (root.compactHeight ? 0.65 : 1.2)
                     text: qsTr("Mapping Task")
                     placeholderText: qsTr("Enter task name")
                     selectByMouse: true
@@ -112,7 +114,8 @@ Popup {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * (root.compactHeight ? 2.25 : 3)
+                        Layout.minimumHeight: ScreenTools.defaultFontPixelHeight * 1.8
                         color: cancelMouseArea.pressed ? "#f1f1f1" : "white"
 
                         QGCLabel {
@@ -136,7 +139,8 @@ Popup {
 
                     Rectangle {
                         Layout.fillWidth: true
-                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * (root.compactHeight ? 2.25 : 3)
+                        Layout.minimumHeight: ScreenTools.defaultFontPixelHeight * 1.8
                         color: saveMouseArea.pressed ? "#f1f1f1" : "white"
 
                         QGCLabel {

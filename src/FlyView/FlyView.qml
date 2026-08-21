@@ -1243,7 +1243,9 @@ Item {
         id:                 toolbar
         guidedValueSlider:  _guidedValueSlider
         utmspSliderTrigger: utmspSendActTrigger
-        visible:            !QGroundControl.videoManager.fullScreen && !mainWindow.modeSelectionVisible
+        visible:            mainWindow.flyViewToolbarVisible
+                            && !QGroundControl.videoManager.fullScreen
+                            && !mainWindow.modeSelectionVisible
     }
 
     // PlanView Toolbar (visible when IN plan edit mode)

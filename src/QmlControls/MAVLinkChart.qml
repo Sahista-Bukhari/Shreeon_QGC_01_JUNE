@@ -8,12 +8,13 @@ import QGroundControl.Controls
 
 ChartView {
     id:                 chartView
-    theme:              ChartView.ChartThemeDark
+    theme:              _darkTheme ? ChartView.ChartThemeDark : ChartView.ChartThemeLight
     antialiasing:       true
     animationOptions:   ChartView.NoAnimation
     legend.visible:     false
-    backgroundColor:    qgcPal.window
-    backgroundRoundness: 0
+    backgroundColor:    _dataCardFill
+    backgroundRoundness: ScreenTools.defaultBorderRadius * 2
+    dropShadowEnabled:  false
     margins.bottom:     ScreenTools.defaultFontPixelHeight * 1.5
     margins.top:        chartHeader.height + (ScreenTools.defaultFontPixelHeight * 2)
     visible:            chartController.chartFields.length > 0
@@ -21,7 +22,23 @@ ChartView {
     required property var inspectorController
     required property int chartIndex
 
+    readonly property bool _darkTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode === mainWindow.themeBlack
+        return chartPalette.globalTheme === QGCPalette.Dark
+    }
+    readonly property color _titleColor:   _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:    _darkTheme ? "#8E8E93" : "#3A3A3C"
+    readonly property color _accentGreen:  "#00a04c"
+    readonly property color _dataCardFill: _darkTheme ? chartPalette.windowShade : "#F5F5F5"
+    readonly property color _tableLine:    _darkTheme ? chartPalette.windowShadeDark : "#E5E5E5"
+
     property var _seriesColors: ["#00E04B","#DE8500","#F32836","#BFBFBF","#536DFF","#EECC44"]
+
+    QGCPalette {
+        id:                chartPalette
+        colorGroupEnabled: chartView.enabled
+    }
 
     function addDimension(field) {
         var color   = _seriesColors[chartView.count]
@@ -59,9 +76,10 @@ ChartView {
         format:                     "<br/>mm:ss.zzz"
         tickCount:                  5
         gridVisible:                true
+        gridLineColor:              chartView._tableLine
         labelsFont.family:          ScreenTools.fixedFontFamily
         labelsFont.pointSize:       ScreenTools.smallFontPointSize
-        labelsColor:                qgcPal.text
+        labelsColor:                chartView._bodyColor
     }
 
     ValueAxis {
@@ -70,9 +88,10 @@ ChartView {
         max:                        chartController ? chartController.rangeYMax : 0
         visible:                    chartController !== null
         lineVisible:                false
+        gridLineColor:              chartView._tableLine
         labelsFont.family:          ScreenTools.fixedFontFamily
         labelsFont.pointSize:       ScreenTools.smallFontPointSize
-        labelsColor:                qgcPal.text
+        labelsColor:                chartView._bodyColor
     }
 
     Row {
@@ -92,6 +111,7 @@ ChartView {
             anchors.verticalCenter: parent.verticalCenter
             QGCLabel {
                 text:               qsTr("Scale:");
+                color:              chartView._titleColor
                 Layout.alignment:   Qt.AlignVCenter
             }
             QGCComboBox {
@@ -102,9 +122,17 @@ ChartView {
                 currentIndex:       chartController ? chartController.rangeXIndex : 0
                 onActivated: (index) => { if(chartController) chartController.rangeXIndex = index; }
                 Layout.alignment:   Qt.AlignVCenter
+
+                background: Rectangle {
+                    radius:       ScreenTools.defaultBorderRadius * 2
+                    color:        chartView._dataCardFill
+                    border.width: 1
+                    border.color: chartView._accentGreen
+                }
             }
             QGCLabel {
                 text:               qsTr("Range:");
+                color:              chartView._titleColor
                 Layout.alignment:   Qt.AlignVCenter
             }
             QGCComboBox {
@@ -115,6 +143,13 @@ ChartView {
                 currentIndex:       chartController ? chartController.rangeYIndex : 0
                 onActivated: (index) => { if(chartController) chartController.rangeYIndex = index; }
                 Layout.alignment:   Qt.AlignVCenter
+
+                background: Rectangle {
+                    radius:       ScreenTools.defaultBorderRadius * 2
+                    color:        chartView._dataCardFill
+                    border.width: 1
+                    border.color: chartView._accentGreen
+                }
             }
         }
         ColumnLayout {

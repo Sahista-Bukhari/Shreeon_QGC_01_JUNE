@@ -41,6 +41,110 @@ Rectangle {
     property bool   _showRCToParam:     _activeVehicle.px4Firmware
     property var    _appSettings:       QGroundControl.settingsManager.appSettings
     property var    _controller:        controller
+    property bool   _parameterGroupOpen: false
+    property bool   _parameterEditorOpen: false
+
+    readonly property bool _masterControlsHidden: _parameterGroupOpen || _parameterEditorOpen
+
+    readonly property bool _editorIsParameter:      _editorDialogFact.componentId != 0
+    readonly property bool _editorAllowForceSave:   QGroundControl.corePlugin.showAdvancedUI && _editorIsParameter
+    readonly property bool _editorAllowDefaultReset: _editorDialogFact.defaultValueAvailable
+    readonly property bool _editorShowCombo:        _editorDialogFact.enumStrings.length !== 0
+                                                       && _editorDialogFact.bitmaskStrings.length === 0
+
+    function openParameterEditor(selectedFact) {
+        _editorDialogFact = selectedFact
+        _parameterEditorOpen = true
+        Qt.callLater(resetParameterEditor)
+    }
+
+    function openParameterGroup(selectedGroup) {
+        _rowWidth = 10
+        controller.currentGroup = selectedGroup
+        _parameterGroupOpen = true
+    }
+
+    function closeParameterGroup() {
+        _parameterGroupOpen = false
+    }
+
+    function closeParameterEditor() {
+        if (ScreenTools.isMobile)
+            Qt.inputMethod.hide()
+        parameterValidationError.text = ""
+        _parameterEditorOpen = false
+    }
+
+    function resetParameterEditor() {
+        parameterValidationError.text = ""
+        parameterAdvanced.checked = false
+        parameterManualEntry.checked = false
+        parameterForceSave.checked = false
+        parameterValueField.text = _editorDialogFact.valueString
+
+        if (_editorShowCombo)
+            parameterFactCombo.currentIndex = _editorDialogFact.enumIndex
+
+        for (let bitIndex = 0; bitIndex < parameterBitmaskRepeater.count; bitIndex++) {
+            const bitCheckBox = parameterBitmaskRepeater.itemAt(bitIndex)
+            if (bitCheckBox) {
+                bitCheckBox.checked = Boolean(_editorDialogFact.value
+                                              & _editorDialogFact.bitmaskValues[bitIndex])
+            }
+        }
+    }
+
+    function editorBitmaskValue() {
+        let value = 0
+        for (let bitIndex = 0; bitIndex < parameterBitmaskRepeater.count; bitIndex++) {
+            const bitCheckBox = parameterBitmaskRepeater.itemAt(bitIndex)
+            if (bitCheckBox && bitCheckBox.checked)
+                value |= _editorDialogFact.bitmaskValues[bitIndex]
+        }
+        return value
+    }
+
+    function editorParameterValueText() {
+        if (_editorDialogFact.enumStrings.length === 0) {
+            return _editorDialogFact.units.length > 0
+                   ? _editorDialogFact.valueString + " " + _editorDialogFact.units
+                   : _editorDialogFact.valueString
+        }
+        if (_editorDialogFact.bitmaskStrings.length !== 0)
+            return _editorDialogFact.selectedBitmaskStrings.join(", ")
+        return _editorDialogFact.enumStringValue
+    }
+
+    function saveParameterEditor() {
+        if (!_editorIsParameter)
+            return
+
+        if (parameterBitmaskColumn.visible && !parameterManualEntry.checked) {
+            _editorDialogFact.value = editorBitmaskValue()
+            _editorDialogFact.valueChanged(_editorDialogFact.value)
+        } else if (parameterFactCombo.visible && !parameterManualEntry.checked) {
+            _editorDialogFact.enumIndex = parameterFactCombo.currentIndex
+        } else {
+            const validationMessage = _editorDialogFact.validate(parameterValueField.text,
+                                                                  parameterForceSave.checked)
+            if (validationMessage !== "") {
+                parameterValidationError.text = validationMessage
+                return
+            }
+            _editorDialogFact.value = parameterValueField.text
+            _editorDialogFact.valueChanged(_editorDialogFact.value)
+        }
+
+        closeParameterEditor()
+    }
+
+    function resetParameterToDefault() {
+        if (!_editorAllowDefaultReset)
+            return
+        _editorDialogFact.value = _editorDialogFact.defaultValue
+        _editorDialogFact.valueChanged(_editorDialogFact.value)
+        closeParameterEditor()
+    }
 
     ParameterEditorController {
         id: controller
@@ -129,19 +233,18 @@ Rectangle {
     }
 
     Component {
-        id: editorDialogComponent
-
-        ParameterEditorDialog {
-            fact:           _editorDialogFact
-            showRCToParam:  _showRCToParam
-        }
-    }
-
-    Component {
         id: parameterDiffDialog
 
         ParameterDiffDialog {
             paramController: _controller
+        }
+    }
+
+    Component {
+        id: parameterRCToParamDialog
+
+        RCToParamDialog {
+            tuningFact: _editorDialogFact
         }
     }
 
@@ -241,6 +344,47 @@ Rectangle {
         }
     }
 
+    component ParameterCloseButton: Button {
+        id: closeButton
+
+        hoverEnabled:   !ScreenTools.isMobile
+        focusPolicy:    Qt.ClickFocus
+        leftPadding:    ScreenTools.defaultFontPixelWidth * 1.75
+        rightPadding:   leftPadding
+        topPadding:     ScreenTools.defaultFontPixelHeight * 0.3
+        bottomPadding:  topPadding
+        font.family:    ScreenTools.normalFontFamily
+        font.pointSize: ScreenTools.defaultFontPointSize
+        implicitWidth:  Math.max(ScreenTools.implicitButtonWidth,
+                                 closeButtonLabel.implicitWidth + leftPadding + rightPadding)
+        implicitHeight: Math.max(ScreenTools.implicitButtonHeight,
+                                 closeButtonLabel.implicitHeight + topPadding + bottomPadding)
+
+        contentItem: QGCLabel {
+            id:                  closeButtonLabel
+            text:                closeButton.text
+            color:               closeButton.pressed ? "#FFFFFF" : _titleColor
+            font:                closeButton.font
+            horizontalAlignment: Text.AlignHCenter
+            verticalAlignment:   Text.AlignVCenter
+        }
+
+        background: Rectangle {
+            implicitWidth:  ScreenTools.implicitButtonWidth
+            implicitHeight: ScreenTools.implicitButtonHeight
+            radius:         closeButton.height / 2
+            border.width:   1
+            border.color:   _accentGreen
+            color: {
+                if (closeButton.pressed)
+                    return _accentGreen
+                if (closeButton.hovered)
+                    return _cardSelectedFill
+                return _cardIdleFill
+            }
+        }
+    }
+
     ColumnLayout {
         id:             header
         anchors.top:    parent.top
@@ -250,6 +394,23 @@ Rectangle {
         anchors.leftMargin:  _pagePad
         anchors.rightMargin: _pagePad
         spacing:        _headerSpacing
+        height:         _masterControlsHidden ? 0 : implicitHeight
+        opacity:        _masterControlsHidden ? 0 : 1
+        clip:           true
+
+        Behavior on height {
+            NumberAnimation {
+                duration:    280
+                easing.type: Easing.InOutCubic
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration:    180
+                easing.type: Easing.InOutQuad
+            }
+        }
 
         RowLayout {
             Layout.fillWidth: true
@@ -316,7 +477,7 @@ Rectangle {
     /// Group buttons
     QGCFlickable {
         id :                groupScroll
-        width:              ScreenTools.defaultFontPixelWidth * 25
+        width:              _masterControlsHidden ? 0 : ScreenTools.defaultFontPixelWidth * 25
         anchors.left:       parent.left
         anchors.leftMargin: _pagePad
         anchors.top:        header.bottom
@@ -327,7 +488,22 @@ Rectangle {
         pixelAligned:       true
         contentHeight:      groupedViewCategoryColumn.height
         flickableDirection: Flickable.VerticalFlick
-        visible:            true
+        opacity:            _masterControlsHidden ? 0 : 1
+        enabled:            !_masterControlsHidden
+
+        Behavior on width {
+            NumberAnimation {
+                duration:    320
+                easing.type: Easing.InOutCubic
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration:    180
+                easing.type: Easing.InOutQuad
+            }
+        }
 
         ColumnLayout {
             id:             groupedViewCategoryColumn
@@ -372,9 +548,8 @@ Rectangle {
                             autoExclusive:  true
 
                             onClicked: {
-                                if (!checked) _rowWidth = 10
                                 checked = true
-                                controller.currentGroup = object
+                                openParameterGroup(object)
                             }
                         }
                     }
@@ -383,10 +558,73 @@ Rectangle {
         }
     }
 
+    Item {
+        id:                  parameterGroupToolbar
+        anchors.top:         parent.top
+        anchors.left:        parent.left
+        anchors.right:       parent.right
+        anchors.topMargin:   ScreenTools.defaultFontPixelHeight * 0.35
+        anchors.leftMargin:  _pagePad
+        anchors.rightMargin: _pagePad
+        height:              _parameterGroupOpen && !_parameterEditorOpen
+                             ? parameterGroupToolbarRow.height + _headerSpacing * 0.65 + 1
+                             : 0
+        opacity:             _parameterGroupOpen && !_parameterEditorOpen ? 1 : 0
+        clip:                true
+        z:                   10
+
+        RowLayout {
+            id:            parameterGroupToolbarRow
+            anchors.top:   parent.top
+            anchors.left:  parent.left
+            anchors.right: parent.right
+            height:        ScreenTools.implicitButtonHeight * 0.9
+            spacing:       _controlSpacing
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text:             controller.currentGroup ? controller.currentGroup.name : qsTr("Parameters")
+                color:            _titleColor
+                font.weight:      Font.DemiBold
+                elide:            Text.ElideRight
+            }
+
+                ParameterCloseButton {
+                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 8.5
+                    Layout.preferredHeight: parameterGroupToolbarRow.height
+                Layout.alignment:       Qt.AlignVCenter
+                text:                   qsTr("Close")
+                onClicked:              closeParameterGroup()
+            }
+        }
+
+        Rectangle {
+            anchors.left:   parent.left
+            anchors.right:  parent.right
+            anchors.bottom: parent.bottom
+            height:         1
+            color:          _tableLine
+        }
+
+        Behavior on height {
+            NumberAnimation {
+                duration:    260
+                easing.type: Easing.InOutCubic
+            }
+        }
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration:    180
+                easing.type: Easing.InOutQuad
+            }
+        }
+    }
+
     TableView {
         id:                 tableView
         anchors.leftMargin: ScreenTools.defaultFontPixelWidth
-        anchors.top:        header.bottom
+        anchors.top:        _parameterGroupOpen ? parameterGroupToolbar.bottom : header.bottom
         anchors.topMargin:  _headerSpacing
         anchors.bottom:     parent.bottom
         anchors.bottomMargin: _pagePad
@@ -400,6 +638,15 @@ Rectangle {
         flickableDirection: Flickable.HorizontalAndVerticalFlick
         boundsBehavior:     Flickable.StopAtBounds
         clip:               true
+        opacity:            _parameterEditorOpen ? 0 : 1
+        enabled:            !_parameterEditorOpen
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration:    180
+                easing.type: Easing.InOutQuad
+            }
+        }
 
         columnWidthProvider: function(column) {
             return column === 0 ? tableView.contentWidth : 0
@@ -409,27 +656,36 @@ Rectangle {
             id: horizontalParameterScrollBar
 
             policy: tableView.contentWidth > tableView.width ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
-            height: Math.max(12, ScreenTools.defaultFontPixelWidth * 1.35)
-            leftPadding:   2
-            rightPadding:  2
-            topPadding:    2
+            height:        Math.max(14, ScreenTools.defaultFontPixelHeight * 0.8)
+            leftPadding:   _controlSpacing * 0.5
+            rightPadding:  leftPadding
+            topPadding:    Math.max(6, _headerSpacing * 0.6)
             bottomPadding: 2
             minimumSize:   0.06
 
             background: Rectangle {
-                radius: horizontalParameterScrollBar.height / 2
-                color:  "#F0F0F0"
-                border.width: 1
-                border.color: "#FFFFFF"
+                color: _pageBackground
+
+                Rectangle {
+                    anchors.left:         parent.left
+                    anchors.right:        parent.right
+                    anchors.bottom:       parent.bottom
+                    anchors.leftMargin:   horizontalParameterScrollBar.leftPadding
+                    anchors.rightMargin:  horizontalParameterScrollBar.rightPadding
+                    anchors.bottomMargin: horizontalParameterScrollBar.bottomPadding
+                    height:                horizontalParameterScrollBar.height
+                                           - horizontalParameterScrollBar.topPadding
+                                           - horizontalParameterScrollBar.bottomPadding
+                    radius:                height / 2
+                    color:                 _darkTheme ? _dataCardFill : "#F0F0F0"
+                }
             }
 
             contentItem: Rectangle {
                 implicitWidth:  ScreenTools.defaultFontPixelHeight * 2
-                implicitHeight: Math.max(8, ScreenTools.defaultFontPixelWidth)
+                implicitHeight: Math.max(4, ScreenTools.defaultFontPixelWidth * 0.45)
                 radius:         height / 2
                 color:          _accentGreen
-                border.width:   1
-                border.color:   "#FFFFFF"
             }
         }
 
@@ -498,8 +754,377 @@ Rectangle {
             QGCMouseArea {
                 anchors.fill: parent
                 onClicked: mouse => {
-                    _editorDialogFact = fact
-                    editorDialogComponent.createObject(mainWindow).open()
+                    openParameterEditor(fact)
+                }
+            }
+        }
+    }
+
+    Item {
+        id:              parameterDetailPane
+        anchors.fill:    parent
+        opacity:         _parameterEditorOpen ? 1 : 0
+        enabled:         _parameterEditorOpen
+        z:               20
+
+        Behavior on opacity {
+            NumberAnimation {
+                duration:    220
+                easing.type: Easing.InOutQuad
+            }
+        }
+
+        Item {
+            id:                  parameterDetailToolbar
+            anchors.top:         parent.top
+            anchors.left:        parent.left
+            anchors.right:       parent.right
+            anchors.topMargin:   ScreenTools.defaultFontPixelHeight * 0.35
+            anchors.leftMargin:  _pagePad
+            anchors.rightMargin: _pagePad
+            height:              parameterDetailToolbarRow.height + _headerSpacing * 0.65 + 1
+
+            RowLayout {
+                id:            parameterDetailToolbarRow
+                anchors.top:   parent.top
+                anchors.left:  parent.left
+                anchors.right: parent.right
+                height:        ScreenTools.implicitButtonHeight * 0.9
+                spacing:       _controlSpacing
+
+                QGCLabel {
+                    Layout.fillWidth: true
+                    text:             _editorIsParameter ? _editorDialogFact.name : qsTr("Parameter")
+                    color:            _titleColor
+                    font.weight:      Font.DemiBold
+                    elide:            Text.ElideRight
+                }
+
+                ParameterCloseButton {
+                    Layout.preferredWidth:  ScreenTools.defaultFontPixelWidth * 8.5
+                    Layout.preferredHeight: parameterDetailToolbarRow.height
+                    Layout.alignment:       Qt.AlignVCenter
+                    text:                   qsTr("Close")
+                    onClicked:              closeParameterEditor()
+                }
+            }
+
+            Rectangle {
+                anchors.left:   parent.left
+                anchors.right:  parent.right
+                anchors.bottom: parent.bottom
+                height:         1
+                color:          _tableLine
+            }
+        }
+
+        QGCFlickable {
+            id:                  parameterDetailScroll
+            anchors.top:         parameterDetailToolbar.bottom
+            anchors.bottom:      parent.bottom
+            anchors.left:        parent.left
+            anchors.right:       parent.right
+            anchors.topMargin:   _headerSpacing
+            anchors.leftMargin:  _pagePad
+            anchors.rightMargin: _pagePad
+            anchors.bottomMargin: _pagePad
+            contentWidth:        width
+            contentHeight:       parameterDetailColumn.height
+            flickableDirection:  Flickable.VerticalFlick
+            clip:                true
+            pixelAligned:        true
+
+            ColumnLayout {
+                id:      parameterDetailColumn
+                width:   parameterDetailScroll.width
+                spacing: _headerSpacing
+
+                Rectangle {
+                    Layout.fillWidth:       true
+                    Layout.preferredHeight: parameterSummaryLayout.implicitHeight + _controlSpacing * 2
+                    radius:                 _cardRadius
+                    color:                  _dataCardFill
+                    border.width:           1
+                    border.color:           _tableLine
+
+                    ColumnLayout {
+                        id:              parameterSummaryLayout
+                        anchors.fill:    parent
+                        anchors.margins: _controlSpacing
+                        spacing:         _headerSpacing * 0.55
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing:          _controlSpacing
+
+                            QGCLabel {
+                                text:        qsTr("Parameter")
+                                color:       _bodyColor
+                                font.weight: Font.DemiBold
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth: true
+                                Layout.minimumWidth: 0
+                                Layout.preferredWidth: parameterSummaryLayout.width * 0.4
+                                Layout.maximumWidth: parameterSummaryLayout.width * 0.4
+                                text:             _editorIsParameter ? _editorDialogFact.name : ""
+                                color:            _accentGreen
+                                font.weight:      Font.DemiBold
+                                elide:            Text.ElideRight
+                            }
+
+                            QGCLabel {
+                                text:        qsTr("Component")
+                                color:       _bodyColor
+                                font.weight: Font.DemiBold
+                            }
+
+                            QGCLabel {
+                                text:  _editorIsParameter ? _editorDialogFact.componentId : ""
+                                color: _titleColor
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing:          _controlSpacing
+
+                            QGCLabel {
+                                text:        qsTr("Current Value")
+                                color:       _bodyColor
+                                font.weight: Font.DemiBold
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth: true
+                                text:             _editorIsParameter ? editorParameterValueText() : ""
+                                color:            _titleColor
+                                elide:            Text.ElideRight
+                            }
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             _editorIsParameter ? _editorDialogFact.shortDescription : ""
+                            color:            _bodyColor
+                            wrapMode:         Text.WordWrap
+                            visible:          text.length > 0
+                        }
+                    }
+                }
+
+                Rectangle {
+                    Layout.fillWidth:       true
+                    Layout.preferredHeight: parameterFormLayout.implicitHeight + _controlSpacing * 2
+                    radius:                 _cardRadius
+                    color:                  _cardIdleFill
+                    border.width:           1
+                    border.color:           _tableLine
+
+                    ColumnLayout {
+                        id:              parameterFormLayout
+                        anchors.fill:    parent
+                        anchors.margins: _controlSpacing
+                        spacing:         _headerSpacing
+
+                        QGCLabel {
+                            id:               parameterValidationError
+                            Layout.fillWidth: true
+                            text:             ""
+                            color:            qgcPal.warningText
+                            wrapMode:         Text.WordWrap
+                            visible:          text.length > 0
+                        }
+
+                        QGCLabel {
+                            text:        qsTr("Value")
+                            color:       _titleColor
+                            font.weight: Font.DemiBold
+                        }
+
+                        QGCTextField {
+                            id:                     parameterValueField
+                            Layout.fillWidth:       true
+                            unitsLabel:             _editorIsParameter ? _editorDialogFact.units : ""
+                            showUnits:              unitsLabel.length > 0
+                            activeFocusBorderColor: _accentGreen
+                            fieldTextColor:         _titleColor
+                            inputMethodHints:       (_editorIsParameter && (_editorDialogFact.typeIsString || ScreenTools.isiOS))
+                                                    ? Qt.ImhNone
+                                                    : Qt.ImhFormattedNumbersOnly
+                            visible:                parameterManualEntry.checked
+                                                    || (!_editorShowCombo
+                                                        && _editorDialogFact.bitmaskStrings.length === 0)
+                        }
+
+                        QGCComboBox {
+                            id:               parameterFactCombo
+                            Layout.fillWidth: true
+                            model:            _editorIsParameter ? _editorDialogFact.enumStrings : []
+                            visible:          _editorShowCombo && !parameterManualEntry.checked
+
+                            onCurrentIndexChanged: {
+                                if (_editorIsParameter && currentIndex >= 0 && currentIndex < model.length)
+                                    parameterValueField.text = _editorDialogFact.enumValues[currentIndex]
+                            }
+                        }
+
+                        ColumnLayout {
+                            id:               parameterBitmaskColumn
+                            Layout.fillWidth: true
+                            spacing:          ScreenTools.defaultFontPixelHeight * 0.35
+                            visible:          _editorIsParameter
+                                              && _editorDialogFact.bitmaskStrings.length > 0
+                                              && !parameterManualEntry.checked
+
+                            Repeater {
+                                id:    parameterBitmaskRepeater
+                                model: _editorIsParameter ? _editorDialogFact.bitmaskStrings : []
+
+                                QGCCheckBox {
+                                    Layout.fillWidth:     true
+                                    text:                 modelData
+                                    textColor:            _titleColor
+                                    uncheckedBorderColor: _accentGreen
+                                }
+                            }
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing:          _controlSpacing
+
+                            QGCLabel {
+                                text:    qsTr("Min: ") + (_editorIsParameter ? _editorDialogFact.minString : "")
+                                color:   _bodyColor
+                                visible: _editorIsParameter && !_editorDialogFact.minIsDefaultForType
+                            }
+
+                            QGCLabel {
+                                text:    qsTr("Max: ") + (_editorIsParameter ? _editorDialogFact.maxString : "")
+                                color:   _bodyColor
+                                visible: _editorIsParameter && !_editorDialogFact.maxIsDefaultForType
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth: true
+                                text:             qsTr("Default: ") + (_editorAllowDefaultReset
+                                                                       ? _editorDialogFact.defaultValueString
+                                                                       : "")
+                                color:            _bodyColor
+                                visible:          _editorAllowDefaultReset
+                                elide:            Text.ElideRight
+                            }
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             _editorIsParameter ? _editorDialogFact.longDescription : ""
+                            color:            _titleColor
+                            wrapMode:         Text.WordWrap
+                            visible:          text.length > 0
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Vehicle reboot required after change")
+                            color:            _bodyColor
+                            visible:          _editorIsParameter && _editorDialogFact.vehicleRebootRequired
+                            wrapMode:         Text.WordWrap
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Application restart required after change")
+                            color:            _bodyColor
+                            visible:          _editorIsParameter && _editorDialogFact.qgcRebootRequired
+                            wrapMode:         Text.WordWrap
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Warning: Modifying values while the vehicle is in flight can lead to vehicle instability or vehicle loss. Verify the value carefully before saving.")
+                            color:            _bodyColor
+                            visible:          _editorIsParameter && _editorDialogFact.componentId !== -1
+                            wrapMode:         Text.WordWrap
+                        }
+
+                        QGCCheckBox {
+                            id:                   parameterForceSave
+                            text:                 qsTr("Force save (dangerous!)")
+                            textColor:            _titleColor
+                            uncheckedBorderColor: _accentGreen
+                            visible:              _editorAllowForceSave && parameterValidationError.text.length > 0
+                        }
+
+                        QGCCheckBox {
+                            id:                   parameterAdvanced
+                            text:                 qsTr("Advanced settings")
+                            textColor:            _titleColor
+                            uncheckedBorderColor: _accentGreen
+                            visible:              _showRCToParam
+                                                  || _editorShowCombo
+                                                  || (_editorIsParameter && _editorDialogFact.bitmaskStrings.length > 0)
+                        }
+
+                        QGCCheckBox {
+                            id:                   parameterManualEntry
+                            text:                 qsTr("Manual Entry")
+                            textColor:            _titleColor
+                            uncheckedBorderColor: _accentGreen
+                            visible:              parameterAdvanced.checked
+                                                  && (_editorShowCombo
+                                                      || (_editorIsParameter
+                                                          && _editorDialogFact.bitmaskStrings.length > 0))
+                            onClicked: {
+                                if (checked)
+                                    parameterValueField.text = _editorDialogFact.valueString
+                            }
+                        }
+
+                        ParameterCloseButton {
+                            Layout.alignment: Qt.AlignLeft
+                            text:             qsTr("Set RC to Param")
+                            visible:          parameterAdvanced.checked && _showRCToParam
+                            onClicked:        parameterRCToParamDialog.createObject(mainWindow).open()
+                        }
+
+                        Rectangle {
+                            Layout.fillWidth: true
+                            height:           1
+                            color:            _tableLine
+                        }
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            spacing:          _controlSpacing
+
+                            Item {
+                                Layout.fillWidth: true
+                            }
+
+                            ParameterCloseButton {
+                                text:      qsTr("Reset To Default")
+                                visible:   _editorAllowDefaultReset
+                                onClicked: resetParameterToDefault()
+                            }
+
+                            QGCButton {
+                                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 10
+                                text:                  qsTr("Save")
+                                primary:               true
+                                backgroundColor:       _accentGreen
+                                textColor:              "#FFFFFF"
+                                onClicked:              saveParameterEditor()
+                            }
+                        }
+                    }
+                }
+
+                Item {
+                    Layout.fillWidth:       true
+                    Layout.preferredHeight: _controlSpacing
                 }
             }
         }

@@ -1,214 +1,501 @@
 import QtQuick
 import QtQuick.Controls
-import QtQuick.Dialogs
 import QtQuick.Layouts
 
 import QGroundControl
-import QGroundControl.FactControls
 import QGroundControl.Controls
 
 AnalyzePage {
-    id:                 vibrationPage
-    pageComponent:      pageComponent
-    pageDescription:    qsTr("Analyze vibration associated with your vehicle.")
-    allowPopout:        true
+    id: vibrationPage
 
-    property var    _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle ? QGroundControl.multiVehicleManager.activeVehicle : QGroundControl.multiVehicleManager.offlineEditingVehicle
-    property bool   _available:     !isNaN(_activeVehicle.vibration.xAxis.rawValue)
-    property real   _margins:       ScreenTools.defaultFontPixelWidth / 2
-    property real   _barWidth:      ScreenTools.defaultFontPixelWidth * 7
-    property real   _barHeight:     ScreenTools.defaultFontPixelHeight * 10
-    property real   _xValue:        _activeVehicle.vibration.xAxis.rawValue
-    property real   _yValue:        _activeVehicle.vibration.yAxis.rawValue
-    property real   _zValue:        _activeVehicle.vibration.zAxis.rawValue
+    headerComponent:   vibrationHeaderComponent
+    pageComponent:     pageComponent
+    contentTopMargin:  _headerSpacing
+    allowPopout:       true
+    popoutIconSource:  "/qmlimages/VibrationPopout.svg"
+    popoutIconColor:   _accentGreen
 
-    readonly property real _barMinimum:     0.0
-    readonly property real _barMaximum:     90.0
-    readonly property real _barBadValue:    60.0
-    readonly property real _barMidValue:    30.0
+    readonly property var  _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
+                                           ? QGroundControl.multiVehicleManager.activeVehicle
+                                           : QGroundControl.multiVehicleManager.offlineEditingVehicle
+    readonly property var  _vibration:     _activeVehicle ? _activeVehicle.vibration : null
+    readonly property bool _available:     _vibration && _vibration.xAxis &&
+                                           !isNaN(Number(_vibration.xAxis.rawValue))
 
-    QGCPalette { id:qgcPal; colorGroupEnabled: true }
+    readonly property real _xValue: _available ? Number(_vibration.xAxis.rawValue) : 0
+    readonly property real _yValue: _available ? Number(_vibration.yAxis.rawValue) : 0
+    readonly property real _zValue: _available ? Number(_vibration.zAxis.rawValue) : 0
+    readonly property real _clip1:  _vibration && _vibration.clipCount1
+                                    ? Number(_vibration.clipCount1.rawValue) : 0
+    readonly property real _clip2:  _vibration && _vibration.clipCount2
+                                    ? Number(_vibration.clipCount2.rawValue) : 0
+    readonly property real _clip3:  _vibration && _vibration.clipCount3
+                                    ? Number(_vibration.clipCount3.rawValue) : 0
+    readonly property real _peakValue: Math.max(_xValue, _yValue, _zValue)
+
+    readonly property real _barMinimum:  0
+    readonly property real _barMaximum:  90
+    readonly property real _barMidValue: 30
+    readonly property real _barBadValue: 60
+
+    readonly property bool _darkTheme: {
+        if (typeof mainWindow !== "undefined" && mainWindow)
+            return mainWindow.uiThemeMode === mainWindow.themeBlack
+        return vibrationPalette.globalTheme === QGCPalette.Dark
+    }
+    readonly property color _pageBackground:   _darkTheme ? vibrationPalette.window : "#FFFFFF"
+    readonly property color _titleColor:       _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:        _darkTheme ? "#8E8E93" : "#5A5A5E"
+    readonly property color _accentGreen:      "#00a04c"
+    readonly property color _elevatedColor:    _darkTheme ? "#8B9792" : "#77857F"
+    readonly property color _highColor:        _darkTheme ? "#AEAEB2" : "#5A5A5E"
+    readonly property color _cardIdleFill:     _darkTheme ? vibrationPalette.window : "#FFFFFF"
+    readonly property color _cardSelectedFill: Qt.rgba(0, 160 / 255, 76 / 255, _darkTheme ? 0.16 : 0.08)
+    readonly property color _dataCardFill:     _darkTheme ? vibrationPalette.windowShade : "#F5F5F5"
+    readonly property color _tableLine:        _darkTheme ? vibrationPalette.windowShade : "#E5E5E5"
+    readonly property real  _pagePad:          ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real  _controlSpacing:   ScreenTools.defaultFontPixelWidth
+    readonly property real  _headerSpacing:    Math.ceil(ScreenTools.defaultFontPixelHeight * 0.65)
+    readonly property real  _cardRadius:       ScreenTools.defaultFontPixelWidth * 0.9
+
+    QGCPalette {
+        id:                vibrationPalette
+        colorGroupEnabled: vibrationPage.enabled
+    }
+
+    function boundedValue(value) {
+        return Math.max(_barMinimum, Math.min(_barMaximum, value))
+    }
+
+    function statusForValue(value) {
+        if (value >= _barBadValue)
+            return qsTr("High")
+        if (value >= _barMidValue)
+            return qsTr("Elevated")
+        return qsTr("Normal")
+    }
+
+    function colorForValue(value) {
+        if (value >= _barBadValue)
+            return _highColor
+        if (value >= _barMidValue)
+            return _elevatedColor
+        return _accentGreen
+    }
+
+    component AxisCard: Rectangle {
+        id: axisCard
+
+        required property string axisName
+        required property real   axisValue
+
+        Layout.fillWidth:       true
+        Layout.minimumWidth:    ScreenTools.defaultFontPixelWidth * 10
+        Layout.preferredHeight: axisLayout.implicitHeight + vibrationPage._controlSpacing * 2
+        radius:                 vibrationPage._cardRadius
+        color:                  vibrationPage._dataCardFill
+        border.width:           1
+        border.color:           vibrationPage._tableLine
+
+        ColumnLayout {
+            id:              axisLayout
+            anchors.fill:    parent
+            anchors.margins: vibrationPage._controlSpacing
+            spacing:         vibrationPage._headerSpacing
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing:          vibrationPage._controlSpacing * 0.5
+
+                Rectangle {
+                    Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.55
+                    Layout.preferredHeight: Layout.preferredWidth
+                    radius:                 width / 2
+                    color:                  vibrationPage._cardSelectedFill
+                    border.width:           1
+                    border.color:           vibrationPage._accentGreen
+
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        text:             axisCard.axisName
+                        color:            vibrationPage._accentGreen
+                        font.weight:      Font.DemiBold
+                    }
+                }
+
+                Item { Layout.fillWidth: true }
+
+                QGCLabel {
+                    text:        axisCard.axisValue.toFixed(1)
+                    color:       vibrationPage.colorForValue(axisCard.axisValue)
+                    font.weight: Font.DemiBold
+                }
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text:             qsTr("%1 axis vibration").arg(axisCard.axisName)
+                color:            vibrationPage._titleColor
+                font.weight:      Font.DemiBold
+                elide:            Text.ElideRight
+            }
+
+            Rectangle {
+                Layout.fillWidth:       true
+                Layout.preferredHeight: Math.max(8, ScreenTools.defaultFontPixelHeight * 0.55)
+                radius:                 height / 2
+                color:                  vibrationPage._cardIdleFill
+                border.width:           1
+                border.color:           vibrationPage._tableLine
+                clip:                   true
+
+                Rectangle {
+                    anchors.left:   parent.left
+                    anchors.top:    parent.top
+                    anchors.bottom: parent.bottom
+                    width:          parent.width * vibrationPage.boundedValue(axisCard.axisValue) /
+                                    (vibrationPage._barMaximum - vibrationPage._barMinimum)
+                    radius:         parent.radius
+                    color:          vibrationPage.colorForValue(axisCard.axisValue)
+
+                    Behavior on width {
+                        NumberAnimation { duration: 180; easing.type: Easing.OutCubic }
+                    }
+
+                    Behavior on color {
+                        ColorAnimation { duration: 140 }
+                    }
+                }
+
+                Rectangle {
+                    x:       parent.width * vibrationPage._barMidValue / vibrationPage._barMaximum
+                    width:   1
+                    height:  parent.height
+                    color:   vibrationPage._bodyColor
+                    opacity: 0.45
+                }
+
+                Rectangle {
+                    x:       parent.width * vibrationPage._barBadValue / vibrationPage._barMaximum
+                    width:   1
+                    height:  parent.height
+                    color:   vibrationPage._bodyColor
+                    opacity: 0.65
+                }
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+
+                QGCLabel {
+                    text:           "0"
+                    color:          vibrationPage._bodyColor
+                    font.pointSize: ScreenTools.smallFontPointSize
+                }
+
+                Item { Layout.fillWidth: true }
+
+                QGCLabel {
+                    text:           "30"
+                    color:          vibrationPage._bodyColor
+                    font.pointSize: ScreenTools.smallFontPointSize
+                }
+
+                Item { Layout.fillWidth: true }
+
+                QGCLabel {
+                    text:           "60"
+                    color:          vibrationPage._bodyColor
+                    font.pointSize: ScreenTools.smallFontPointSize
+                }
+
+                Item { Layout.fillWidth: true }
+
+                QGCLabel {
+                    text:           "90"
+                    color:          vibrationPage._bodyColor
+                    font.pointSize: ScreenTools.smallFontPointSize
+                }
+            }
+
+            QGCLabel {
+                Layout.fillWidth:    true
+                text:                vibrationPage.statusForValue(axisCard.axisValue)
+                color:               vibrationPage.colorForValue(axisCard.axisValue)
+                font.weight:         Font.DemiBold
+                horizontalAlignment: Text.AlignRight
+            }
+        }
+    }
+
+    component ClipRow: Rectangle {
+        id: clipRow
+
+        required property string sensorName
+        required property real   clipCount
+
+        Layout.fillWidth:       true
+        Layout.preferredHeight: clipRowLayout.implicitHeight + vibrationPage._headerSpacing * 1.4
+        radius:                 vibrationPage._cardRadius * 0.65
+        color:                  vibrationPage._cardIdleFill
+        border.width:           1
+        border.color:           vibrationPage._tableLine
+
+        RowLayout {
+            id:                  clipRowLayout
+            anchors.fill:        parent
+            anchors.leftMargin:  vibrationPage._controlSpacing
+            anchors.rightMargin: vibrationPage._controlSpacing
+            spacing:             vibrationPage._controlSpacing
+
+            Rectangle {
+                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.55
+                Layout.preferredHeight: Layout.preferredWidth
+                radius:                 width / 2
+                color:                  clipRow.clipCount === 0
+                                        ? vibrationPage._accentGreen
+                                        : vibrationPage._highColor
+            }
+
+            QGCLabel {
+                Layout.fillWidth: true
+                text:             clipRow.sensorName
+                color:            vibrationPage._titleColor
+            }
+
+            QGCLabel {
+                text:        qsTr("%1 clips").arg(clipRow.clipCount.toFixed(0))
+                color:       clipRow.clipCount === 0
+                             ? vibrationPage._accentGreen
+                             : vibrationPage._highColor
+                font.weight: Font.DemiBold
+            }
+        }
+    }
+
+    Component {
+        id: vibrationHeaderComponent
+
+        Item {
+            implicitHeight: vibrationHeaderLayout.implicitHeight
+
+            ColumnLayout {
+                id:                  vibrationHeaderLayout
+                anchors.left:        parent.left
+                anchors.right:       parent.right
+                anchors.leftMargin:  vibrationPage._pagePad
+                anchors.rightMargin: vibrationPage._pagePad
+                spacing:             vibrationPage._headerSpacing
+
+                QGCLabel {
+                    Layout.fillWidth: true
+                    text:             qsTr("Monitor live accelerometer vibration and clipping across all axes.")
+                    color:            vibrationPage._bodyColor
+                    wrapMode:         Text.WordWrap
+                }
+
+                Rectangle {
+                    Layout.fillWidth: true
+                    height:           1
+                    color:            vibrationPage._tableLine
+                }
+            }
+        }
+    }
 
     Component {
         id: pageComponent
 
-        Item {
-            width:  childrenRect.width
-            height: childrenRect.height
+        Rectangle {
+            width:  vibrationPage.availableWidth
+            height: vibrationPage.availableHeight
+            color:  vibrationPage._pageBackground
 
-            RowLayout {
-                id:         barRow
-                spacing:    ScreenTools.defaultFontPixelWidth * 2
+            QGCFlickable {
+                id:                 vibrationFlickable
+                anchors.fill:       parent
+                contentWidth:       width
+                contentHeight:      vibrationContent.height + vibrationPage._pagePad
+                flickableDirection: Flickable.VerticalFlick
+                clip:               true
 
-                ColumnLayout {
-                    Rectangle {
-                        id:                 xBar
-                        height:             _barHeight
-                        width:              _barWidth
-                        Layout.alignment:   Qt.AlignHCenter
-                        color:              "transparent"
-                        border.width:       1
-                        border.color:       qgcPal.text
+                ScrollBar.vertical: ScrollBar {
+                    policy:        vibrationFlickable.contentHeight > vibrationFlickable.height
+                                   ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                    width:         Math.max(7, ScreenTools.defaultFontPixelWidth * 0.7)
+                    topPadding:    vibrationPage._headerSpacing
+                    bottomPadding: vibrationPage._headerSpacing
+                    leftPadding:   2
+                    rightPadding:  2
 
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            width:          parent.width
-                            height:         parent.height * (Math.min(_barMaximum, _xValue) / (_barMaximum - _barMinimum))
-                            color:          qgcPal.text
-                        }
-
-                        // Max vibe indication line at 60
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barBadValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
-                        }
-
-                        // Mid vibe indication line at 30
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barMidValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
-                        }
+                    background: Rectangle {
+                        radius: parent.width / 2
+                        color:  vibrationPage._dataCardFill
                     }
 
-                    QGCLabel {
-                        Layout.alignment:   Qt.AlignHCenter
-                        text:               qsTr("X (%1)").arg(_xValue.toFixed(0))
+                    contentItem: Rectangle {
+                        radius: width / 2
+                        color:  vibrationPage._accentGreen
                     }
                 }
 
                 ColumnLayout {
+                    id:      vibrationContent
+                    x:       vibrationPage._pagePad
+                    width:   Math.max(0, vibrationFlickable.width - vibrationPage._pagePad * 2)
+                    spacing: vibrationPage._controlSpacing
+
                     Rectangle {
-                        height:             _barHeight
-                        width:              _barWidth
-                        Layout.alignment:   Qt.AlignHCenter
-                        color:              "transparent"
-                        border.width:       1
-                        border.color:       qgcPal.text
+                        Layout.fillWidth:       true
+                        Layout.preferredHeight: summaryLayout.implicitHeight + vibrationPage._controlSpacing * 1.5
+                        radius:                 vibrationPage._cardRadius
+                        color:                  vibrationPage._cardSelectedFill
+                        border.width:           1
+                        border.color:           vibrationPage._accentGreen
 
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            width:          parent.width
-                            height:         parent.height * (Math.min(_barMaximum, _yValue) / (_barMaximum - _barMinimum))
-                            color:          qgcPal.text
-                        }
+                        RowLayout {
+                            id:              summaryLayout
+                            anchors.fill:    parent
+                            anchors.margins: vibrationPage._controlSpacing
+                            spacing:         vibrationPage._controlSpacing
 
-                        // Max vibe indication line at 60
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barBadValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
-                        }
+                            Rectangle {
+                                Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.7
+                                Layout.preferredHeight: Layout.preferredWidth
+                                radius:                 width / 2
+                                color:                  vibrationPage._available
+                                                        ? vibrationPage.colorForValue(vibrationPage._peakValue)
+                                                        : vibrationPage._bodyColor
+                            }
 
-                        // Mid vibe indication line at 30
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barMidValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing:          0
+
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text:             vibrationPage._available
+                                                      ? qsTr("Live vibration data")
+                                                      : qsTr("Vibration data unavailable")
+                                    color:            vibrationPage._titleColor
+                                    font.weight:      Font.DemiBold
+                                    elide:            Text.ElideRight
+                                }
+
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text:             vibrationPage._available
+                                                      ? qsTr("Peak level %1 · %2")
+                                                            .arg(vibrationPage._peakValue.toFixed(1))
+                                                            .arg(vibrationPage.statusForValue(vibrationPage._peakValue))
+                                                      : qsTr("Connect a supported vehicle to view live values.")
+                                    color:            vibrationPage._bodyColor
+                                    elide:            Text.ElideRight
+                                }
+                            }
                         }
                     }
 
-                    QGCLabel {
-                        Layout.alignment:   Qt.AlignHCenter
-                        text:               qsTr("Y (%1)").arg(_yValue.toFixed(0))
-                    }
-                }
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns:          3
+                        columnSpacing:    vibrationPage._controlSpacing
+                        rowSpacing:       vibrationPage._controlSpacing
 
-                ColumnLayout {
+                        AxisCard {
+                            axisName:  qsTr("X")
+                            axisValue: vibrationPage._xValue
+                        }
+
+                        AxisCard {
+                            axisName:  qsTr("Y")
+                            axisValue: vibrationPage._yValue
+                        }
+
+                        AxisCard {
+                            axisName:  qsTr("Z")
+                            axisValue: vibrationPage._zValue
+                        }
+                    }
+
                     Rectangle {
-                        height:             _barHeight
-                        width:              _barWidth
-                        Layout.alignment:   Qt.AlignHCenter
-                        color:              "transparent"
-                        border.width:       1
-                        border.color:       qgcPal.text
+                        Layout.fillWidth:       true
+                        Layout.preferredHeight: clipLayout.implicitHeight + vibrationPage._controlSpacing * 2
+                        radius:                 vibrationPage._cardRadius
+                        color:                  vibrationPage._dataCardFill
+                        border.width:           1
+                        border.color:           vibrationPage._tableLine
 
-                        Rectangle {
-                            anchors.bottom: parent.bottom
-                            width:          parent.width
-                            height:         parent.height * (Math.min(_barMaximum, _zValue) / (_barMaximum - _barMinimum))
-                            color:          qgcPal.text
-                        }
+                        ColumnLayout {
+                            id:              clipLayout
+                            anchors.fill:    parent
+                            anchors.margins: vibrationPage._controlSpacing
+                            spacing:         vibrationPage._headerSpacing
 
-                        // Max vibe indication line at 60
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barBadValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
-                        }
+                            RowLayout {
+                                Layout.fillWidth: true
 
-                        // Mid vibe indication line at 30
-                        Rectangle {
-                            anchors.topMargin:      parent.height * (1.0 - ((_barMidValue - _barMinimum) / (_barMaximum - _barMinimum)))
-                            anchors.top:            parent.top
-                            anchors.left:           parent.left
-                            anchors.right:          parent.right
-                            width:                  parent.width
-                            height:                 1
-                            color:                  "red"
+                                QGCLabel {
+                                    Layout.fillWidth: true
+                                    text:             qsTr("Accelerometer clip count")
+                                    color:            vibrationPage._titleColor
+                                    font.weight:      Font.DemiBold
+                                }
+
+                                QGCLabel {
+                                    text:  qsTr("Lower is better")
+                                    color: vibrationPage._bodyColor
+                                }
+                            }
+
+                            ClipRow {
+                                sensorName: qsTr("Accelerometer 1")
+                                clipCount:  vibrationPage._clip1
+                            }
+
+                            ClipRow {
+                                sensorName: qsTr("Accelerometer 2")
+                                clipCount:  vibrationPage._clip2
+                            }
+
+                            ClipRow {
+                                sensorName: qsTr("Accelerometer 3")
+                                clipCount:  vibrationPage._clip3
+                            }
                         }
                     }
 
-                    QGCLabel {
-                        Layout.alignment:   Qt.AlignHCenter
-                        text:               qsTr("Z (%1)").arg(_zValue.toFixed(0))
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing:          vibrationPage._controlSpacing * 1.4
+
+                        Repeater {
+                            model: [
+                                { label: qsTr("Normal 0–30"), color: vibrationPage._accentGreen },
+                                { label: qsTr("Elevated 30–60"), color: vibrationPage._elevatedColor },
+                                { label: qsTr("High 60–90"), color: vibrationPage._highColor }
+                            ]
+
+                            RowLayout {
+                                spacing: vibrationPage._controlSpacing * 0.45
+
+                                Rectangle {
+                                    Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.5
+                                    Layout.preferredHeight: Layout.preferredWidth
+                                    radius:                 width / 2
+                                    color:                  modelData.color
+                                }
+
+                                QGCLabel {
+                                    text:           modelData.label
+                                    color:          vibrationPage._bodyColor
+                                    font.pointSize: ScreenTools.smallFontPointSize
+                                }
+                            }
+                        }
+
+                        Item { Layout.fillWidth: true }
                     }
-                }
-            }
-
-            Column {
-                anchors.margins:    ScreenTools.defaultFontPixelWidth
-                anchors.left:       barRow.right
-
-                QGCLabel {
-                    text: qsTr("Clip count")
-                }
-
-                QGCLabel {
-                    text: qsTr("Accel 1: %1").arg(_activeVehicle.vibration.clipCount1.rawValue)
-                }
-
-                QGCLabel {
-                    text: qsTr("Accel 2: %1").arg(_activeVehicle.vibration.clipCount2.rawValue)
-                }
-
-                QGCLabel {
-                    text: qsTr("Accel 3: %1").arg(_activeVehicle.vibration.clipCount3.rawValue)
-                }
-            }
-
-            Rectangle {
-                anchors.fill:   parent
-                color:          qgcPal.window
-                opacity:        0.75
-                visible:        !_available
-
-                QGCLabel {
-                    anchors.fill:           parent
-                    horizontalAlignment:    Text.AlignHCenter
-                    verticalAlignment:      Text.AlignVCenter
-                    text:                   qsTr("Not Available")
                 }
             }
         }

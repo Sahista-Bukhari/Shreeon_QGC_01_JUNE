@@ -39,7 +39,10 @@ Item {
 
         closePolicy: Popup.CloseOnEscape | Popup.CloseOnPressOutside
         padding: ScreenTools.defaultFontPixelWidth * 0.8
-        y: -height - ScreenTools.defaultFontPixelHeight * 0.5
+        width: Math.min(dropPanelLoader.width + leftPadding + rightPadding,
+                        mainWindow.width - ScreenTools.defaultFontPixelWidth * 2)
+        height: Math.min(dropPanelLoader.height + topPadding + bottomPadding,
+                         mainWindow.height - ScreenTools.toolbarHeight - ScreenTools.defaultFontPixelHeight)
 
         background: Rectangle {
             id: dropPanelBg
@@ -65,6 +68,16 @@ Item {
                 anchors.topMargin: dropPanel.showBelow ? 0 : -1
                 anchors.bottomMargin: dropPanel.showBelow ? -1 : 0
                 anchors.horizontalCenter: parent.horizontalCenter
+                anchors.horizontalCenterOffset: {
+                    if (!dropPanel.sourceButton)
+                        return 0
+                    const buttonPoint = dropPanel.sourceButton.mapToItem(root,
+                                                                         dropPanel.sourceButton.width / 2,
+                                                                         0)
+                    return Math.max(-parent.width / 2 + width,
+                                    Math.min(parent.width / 2 - width,
+                                             buttonPoint.x - dropPanel.x - parent.width / 2))
+                }
                 width: ScreenTools.defaultFontPixelHeight * 1.2
                 height: ScreenTools.defaultFontPixelHeight * 0.6
 
@@ -96,12 +109,36 @@ Item {
             }
         }
 
-        contentItem: Loader {
-            id: dropPanelLoader
-            width: item ? Math.max(item.width, ScreenTools.defaultFontPixelWidth * 24) : ScreenTools.defaultFontPixelWidth * 24
-            onLoaded: {
-                if (item && ("popupRef" in item)) {
-                    item.popupRef = dropPanel;
+        contentItem: QGCFlickable {
+            id: dropPanelFlickable
+            implicitWidth:  dropPanelLoader.width
+            implicitHeight: dropPanelLoader.height
+            contentWidth:   dropPanelLoader.width
+            contentHeight:  dropPanelLoader.height
+            flickableDirection: Flickable.AutoFlickDirection
+            interactive:    contentWidth > width + 1 || contentHeight > height + 1
+            clip:            true
+
+            Loader {
+                id: dropPanelLoader
+                width: item ? Math.max(item.width, ScreenTools.defaultFontPixelWidth * 24) : ScreenTools.defaultFontPixelWidth * 24
+                onLoaded: {
+                    if (item && ("popupRef" in item)) {
+                        item.popupRef = dropPanel;
+                    }
+                }
+            }
+
+            ScrollBar.vertical: ScrollBar {
+                policy: dropPanelFlickable.contentHeight > dropPanelFlickable.height
+                        ? ScrollBar.AlwaysOn
+                        : ScrollBar.AlwaysOff
+                width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+                contentItem: Rectangle {
+                    implicitWidth: 3
+                    radius: width / 2
+                    color: "#00a651"
                 }
             }
         }
@@ -343,21 +380,28 @@ Item {
                                     Qt.callLater(function() {
                                         var buttonLocalPos = actionButton.mapToItem(root, actionButton.width / 2, 0);
                                         var buttonGlobalPos = actionButton.mapToItem(null, 0, 0);
-                                        var popupHeight = dropPanel.contentHeight > 0 ? dropPanel.contentHeight + dropPanel.padding * 2 : ScreenTools.defaultFontPixelHeight * 12;
-                                        
-                                        // Decide above or below
-                                        // If there is less than popupHeight + margin space above the button, show below
-                                        dropPanel.showBelow = (buttonGlobalPos.y < popupHeight + ScreenTools.defaultFontPixelHeight * 2);
+                                        var rootGlobalPos = root.mapToItem(null, 0, 0);
+                                        var popupMargin = ScreenTools.defaultFontPixelHeight * 0.5;
+                                        var spaceAbove = buttonGlobalPos.y - popupMargin;
+                                        var spaceBelow = mainWindow.height - buttonGlobalPos.y - actionButton.height - popupMargin;
 
-                                        dropPanel.x = Math.max(-ScreenTools.defaultFontPixelWidth * 20,
+                                        dropPanel.showBelow = spaceAbove < dropPanel.height + popupMargin
+                                                              && spaceBelow > spaceAbove;
+
+                                        var minLocalX = popupMargin - rootGlobalPos.x;
+                                        var maxLocalX = mainWindow.width - popupMargin - dropPanel.width - rootGlobalPos.x;
+                                        dropPanel.x = Math.max(minLocalX,
                                                                Math.min(buttonLocalPos.x - dropPanel.width / 2,
-                                                                        root.width - dropPanel.width + ScreenTools.defaultFontPixelWidth * 20));
-                                        
-                                        if (dropPanel.showBelow) {
-                                            dropPanel.y = actionButton.height + ScreenTools.defaultFontPixelHeight * 0.5;
-                                        } else {
-                                            dropPanel.y = -popupHeight - ScreenTools.defaultFontPixelHeight * 0.5;
-                                        }
+                                                                        maxLocalX));
+
+                                        var desiredGlobalY = dropPanel.showBelow
+                                                             ? buttonGlobalPos.y + actionButton.height + popupMargin
+                                                             : buttonGlobalPos.y - dropPanel.height - popupMargin;
+                                        var minGlobalY = popupMargin;
+                                        var maxGlobalY = Math.max(minGlobalY,
+                                                                  mainWindow.height - dropPanel.height - popupMargin);
+                                        dropPanel.y = Math.max(minGlobalY,
+                                                               Math.min(desiredGlobalY, maxGlobalY)) - rootGlobalPos.y;
 
                                         dropPanel.sourceButton = actionButton;
                                         dropPanel.open();

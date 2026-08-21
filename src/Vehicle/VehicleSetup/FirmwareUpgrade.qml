@@ -13,13 +13,33 @@ SetupPage {
     pageName:       qsTr("Firmware")
     showAdvanced:   globals.activeVehicle && globals.activeVehicle.apmFirmware
 
+    readonly property bool _darkTheme:         firmwarePalette.globalTheme === QGCPalette.Dark
+    readonly property color _pageBackground:   _darkTheme ? firmwarePalette.window : "#FFFFFF"
+    readonly property color _titleColor:       _darkTheme ? "#AEAEB2" : "#3A3A3C"
+    readonly property color _bodyColor:        _darkTheme ? "#8E8E93" : "#5A5A5E"
+    readonly property color _accentGreen:      "#00a04c"
+    readonly property color _cardFill:         _darkTheme ? firmwarePalette.windowShade : "#F5F5F5"
+    readonly property color _innerCardFill:    _darkTheme ? firmwarePalette.window : "#FFFFFF"
+    readonly property color _dividerColor:     _darkTheme ? firmwarePalette.windowShade : "#E5E5E5"
+    readonly property real  _pagePad:          ScreenTools.defaultFontPixelWidth * 2.2
+    readonly property real  _controlSpacing:   ScreenTools.defaultFontPixelWidth
+    readonly property real  _cardRadius:       ScreenTools.defaultFontPixelWidth * 0.9
+
+    QGCPalette {
+        id:                firmwarePalette
+        colorGroupEnabled: firmwarePage.enabled
+    }
+
     Component {
         id: firmwarePageComponent
 
         ColumnLayout {
-            width:   availableWidth
-            height:  availableHeight
-            spacing: ScreenTools.defaultFontPixelHeight
+            anchors.left:        parent.left
+            anchors.right:       parent.right
+            anchors.leftMargin:  firmwarePage._pagePad
+            anchors.rightMargin: firmwarePage._pagePad
+            height:              firmwarePage.availableHeight
+            spacing:             firmwarePage._controlSpacing
 
             // Those user visible strings are hard to translate because we can't send the
             // HTML strings to translation as this can create a security risk. we need to find
@@ -27,11 +47,13 @@ SetupPage {
 
             // User visible strings
             readonly property string title:             qsTr("Firmware Setup") // Popup dialog title
-            readonly property string highlightPrefix:   "<font color=\"" + qgcPal.warningText + "\">"
+            readonly property string highlightPrefix:   "<font color=\"" + firmwarePalette.warningText + "\">"
+            readonly property string accentPrefix:      "<font color=\"" + firmwarePage._accentGreen + "\"><b>"
+            readonly property string accentSuffix:      "</b></font>"
             readonly property string highlightSuffix:   "</font>"
             readonly property string welcomeText:       qsTr("%1 can upgrade the firmware on Pixhawk devices and SiK Radios.").arg(QGroundControl.appName)
             readonly property string welcomeTextSingle: qsTr("Update the autopilot firmware to the latest version")
-            readonly property string plugInText:        "<big>" + highlightPrefix + qsTr("Plug in your device") + highlightSuffix + qsTr(" via USB to ") + highlightPrefix + qsTr("start") + highlightSuffix + qsTr(" firmware upgrade.") + "</big>"
+            readonly property string plugInText:        accentPrefix + qsTr("Connect your device") + accentSuffix + qsTr(" directly by USB to start the firmware upgrade.")
             readonly property string flashFailText:     qsTr("If upgrade failed, make sure to connect ") + highlightPrefix + qsTr("directly") + highlightSuffix + qsTr(" to a powered USB port on your computer, not through a USB hub. ") +
                                                         qsTr("Also make sure you are only powered via USB ") + highlightPrefix + qsTr("not battery") + highlightSuffix + "."
             readonly property string qgcUnplugText1:    qsTr("All %1 connections to vehicles must be ").arg(QGroundControl.appName) + highlightPrefix + qsTr(" disconnected ") + highlightSuffix + qsTr("prior to firmware upgrade.")
@@ -110,7 +132,7 @@ SetupPage {
                         }
                     } else {
                         // We end up here when we detect a board plugged in after we've started upgrade
-                        statusTextArea.append(highlightPrefix + qsTr("Found device") + highlightSuffix + ": " + controller.boardType)
+                        statusTextArea.append(accentPrefix + qsTr("Found device") + accentSuffix + ": " + controller.boardType)
                     }
                 }
 
@@ -402,29 +424,150 @@ SetupPage {
 
             ProgressBar {
                 id:                     progressBar
-                Layout.preferredWidth:  parent.width
-                visible:                !flashBootloaderButton.visible
+                Layout.fillWidth:       true
+                Layout.preferredHeight: visible ? Math.max(6, ScreenTools.defaultFontPixelHeight * 0.35) : 0
+                visible:                !flashBootloaderButton.visible && value > 0 && value < 1
+
+                background: Rectangle {
+                    implicitHeight: ScreenTools.defaultFontPixelHeight * 0.35
+                    radius:         height / 2
+                    color:          firmwarePage._dividerColor
+                }
+
+                contentItem: Item {
+                    implicitHeight: ScreenTools.defaultFontPixelHeight * 0.35
+
+                    Rectangle {
+                        width:  progressBar.visualPosition * parent.width
+                        height: parent.height
+                        radius: height / 2
+                        color:  firmwarePage._accentGreen
+
+                        Behavior on width {
+                            NumberAnimation { duration: 140; easing.type: Easing.OutCubic }
+                        }
+                    }
+                }
             }
 
             QGCButton {
-                id:         flashBootloaderButton
-                text:       qsTr("Flash ChibiOS Bootloader")
-                visible:    firmwarePage.advanced
-                onClicked:  globals.activeVehicle.flashBootloader()
+                id:               flashBootloaderButton
+                Layout.alignment: Qt.AlignLeft
+                text:             qsTr("Flash ChibiOS Bootloader")
+                primary:          true
+                visible:          firmwarePage.advanced
+                onClicked:        globals.activeVehicle.flashBootloader()
             }
 
-            TextArea {
-                id:                 statusTextArea
-                Layout.preferredWidth:              parent.width
-                Layout.fillHeight:  true
-                readOnly:           true
-                font.pointSize:     ScreenTools.defaultFontPointSize
-                textFormat:         TextEdit.RichText
-                text:               _singleFirmwareMode ? welcomeTextSingle : welcomeText
-                color:              qgcPal.text
+            Rectangle {
+                Layout.fillWidth:       true
+                Layout.fillHeight:      true
+                Layout.minimumHeight:   ScreenTools.defaultFontPixelHeight * 12
+                radius:                 firmwarePage._cardRadius
+                color:                  firmwarePage._cardFill
+                border.width:           1
+                border.color:           firmwarePage._dividerColor
+                clip:                   true
 
-                background: Rectangle {
-                    color: qgcPal.windowShade
+                ColumnLayout {
+                    anchors.fill:    parent
+                    anchors.margins: firmwarePage._controlSpacing * 1.25
+                    spacing:         firmwarePage._controlSpacing
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing:          firmwarePage._controlSpacing
+
+                        Rectangle {
+                            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.7
+                            Layout.preferredHeight: Layout.preferredWidth
+                            radius:                 width / 2
+                            color:                  firmwarePage._accentGreen
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Firmware upgrade status")
+                            color:            firmwarePage._titleColor
+                            font.family:      ScreenTools.normalFontFamily
+                            font.weight:      Font.DemiBold
+                        }
+
+                        QGCLabel {
+                            Layout.preferredWidth: Math.min(ScreenTools.defaultFontPixelWidth * 14,
+                                                            firmwarePage.width * 0.30)
+                            Layout.maximumWidth:   Layout.preferredWidth
+                            text:                  qsTr("USB connection")
+                            color:                 firmwarePage._accentGreen
+                            font.family:           ScreenTools.normalFontFamily
+                            font.weight:           Font.DemiBold
+                            elide:                 Text.ElideRight
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        height:           1
+                        color:            firmwarePage._dividerColor
+                    }
+
+                    ScrollView {
+                        id:                 statusScrollView
+                        Layout.fillWidth:   true
+                        Layout.fillHeight:  true
+                        clip:               true
+                        leftPadding:        1
+                        rightPadding:       1
+                        topPadding:         1
+                        bottomPadding:      1
+
+                        background: Rectangle {
+                            radius:       firmwarePage._cardRadius * 0.65
+                            color:        firmwarePage._innerCardFill
+                            border.width: 1
+                            border.color: firmwarePage._dividerColor
+                        }
+
+                        TextArea {
+                            id:                  statusTextArea
+                            width:               statusScrollView.availableWidth
+                            readOnly:            true
+                            selectByMouse:       true
+                            persistentSelection: true
+                            wrapMode:            TextEdit.Wrap
+                            font.family:         ScreenTools.normalFontFamily
+                            font.pointSize:      ScreenTools.defaultFontPointSize
+                            textFormat:          TextEdit.RichText
+                            text:                _singleFirmwareMode ? welcomeTextSingle : welcomeText
+                            color:               firmwarePage._titleColor
+                            leftPadding:         firmwarePage._controlSpacing
+                            rightPadding:        firmwarePage._controlSpacing * 1.5
+                            topPadding:          firmwarePage._controlSpacing
+                            bottomPadding:       firmwarePage._controlSpacing
+
+                            background: Item {}
+                        }
+
+                        ScrollBar.vertical: ScrollBar {
+                            policy:        statusTextArea.contentHeight > statusScrollView.availableHeight
+                                           ? ScrollBar.AlwaysOn : ScrollBar.AsNeeded
+                            width:         Math.max(7, ScreenTools.defaultFontPixelWidth * 0.7)
+                            topPadding:    firmwarePage._controlSpacing * 0.65
+                            bottomPadding: topPadding
+                            leftPadding:   2
+                            rightPadding:  2
+
+                            background: Rectangle {
+                                radius: parent.width / 2
+                                color:  firmwarePage._cardFill
+                            }
+
+                            contentItem: Rectangle {
+                                radius: width / 2
+                                color:  firmwarePage._accentGreen
+                            }
+                        }
+                    }
                 }
             }
         } // ColumnLayout

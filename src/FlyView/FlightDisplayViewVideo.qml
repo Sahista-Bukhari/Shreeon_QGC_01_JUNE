@@ -38,31 +38,117 @@ Item {
 
     property double _thermalHeightFactor: 0.85 //-- TODO
 
-        Image {
-            id:             noVideo
-            anchors.fill:   parent
-            source:         "/res/NoVideoBackground.jpg"
-            fillMode:       Image.PreserveAspectCrop
-            visible:        !(QGroundControl.videoManager.decoding)
+    Image {
+        id:             noVideo
+        anchors.fill:   parent
+        source:         "/res/NoVideoBackground.jpg"
+        fillMode:       Image.PreserveAspectCrop
+        visible:        !QGroundControl.videoManager.decoding
 
-            Rectangle {
-                anchors.centerIn:   parent
-                width:              noVideoLabel.contentWidth + ScreenTools.defaultFontPixelHeight
-                height:             noVideoLabel.contentHeight + ScreenTools.defaultFontPixelHeight
-                radius:             ScreenTools.defaultFontPixelWidth / 2
-                color:              "black"
-                opacity:            0.5
-            }
+        readonly property bool streamEnabled: QGroundControl.settingsManager.videoSettings.streamEnabled.rawValue
 
-            QGCLabel {
-                id:                 noVideoLabel
-                text:               QGroundControl.settingsManager.videoSettings.streamEnabled.rawValue ? qsTr("WAITING FOR VIDEO") : qsTr("VIDEO DISABLED")
-                font.bold:          true
-                color:              "white"
-                font.pointSize:     useSmallFont ? ScreenTools.smallFontPointSize : ScreenTools.largeFontPointSize
-                anchors.centerIn:   parent
+        // Keep the placeholder legible over both bright and dark parts of the image.
+        Rectangle {
+            anchors.fill: parent
+            gradient: Gradient {
+                orientation: Gradient.Vertical
+                GradientStop { position: 0.0; color: Qt.rgba(0.06, 0.08, 0.07, 0.20) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.03, 0.04, 0.04, 0.58) }
             }
         }
+
+        Rectangle {
+            id:                 noVideoStatus
+            anchors.bottom:     parent.bottom
+            anchors.bottomMargin: useSmallFont
+                                  ? ScreenTools.defaultFontPixelHeight * 0.45
+                                  : ScreenTools.defaultFontPixelHeight * 1.5
+            anchors.horizontalCenter: parent.horizontalCenter
+            width:              useSmallFont
+                                ? parent.width - ScreenTools.defaultFontPixelHeight * 0.9
+                                : Math.min(parent.width - ScreenTools.defaultFontPixelHeight * 3,
+                                           ScreenTools.defaultFontPixelWidth * 34)
+            height:             useSmallFont
+                                ? ScreenTools.defaultFontPixelHeight * 2.45
+                                : ScreenTools.defaultFontPixelHeight * 3.1
+            radius:             ScreenTools.defaultFontPixelHeight * 0.48
+            color:              Qt.rgba(0.055, 0.065, 0.06, 0.86)
+            border.width:       1
+            border.color:       Qt.rgba(1, 1, 1, 0.26)
+
+            Rectangle {
+                id:                 cameraIconTile
+                anchors.left:       parent.left
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+                anchors.verticalCenter: parent.verticalCenter
+                width:              parent.height * 0.66
+                height:             width
+                radius:             width * 0.32
+                color:              noVideo.streamEnabled
+                                    ? Qt.rgba(0, 0.68, 0.36, 0.18)
+                                    : Qt.rgba(1, 1, 1, 0.09)
+                border.width:       1
+                border.color:       noVideo.streamEnabled
+                                    ? Qt.rgba(0, 0.82, 0.44, 0.65)
+                                    : Qt.rgba(1, 1, 1, 0.24)
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width:            parent.width * 0.54
+                    height:           width
+                    source:           "qrc:/InstrumentValueIcons/camera.svg"
+                    color:            noVideo.streamEnabled ? "#00d26f" : "#b9b9b9"
+                    fillMode:         Image.PreserveAspectFit
+                }
+            }
+
+            Column {
+                anchors.left:           cameraIconTile.right
+                anchors.leftMargin:     ScreenTools.defaultFontPixelWidth
+                anchors.right:          statusDot.left
+                anchors.rightMargin:    ScreenTools.defaultFontPixelWidth
+                anchors.verticalCenter: parent.verticalCenter
+                spacing:                -1
+
+                QGCLabel {
+                    text:           qsTr("CAMERA FEED")
+                    color:          Qt.rgba(1, 1, 1, 0.62)
+                    font.bold:      true
+                    font.pointSize: useSmallFont
+                                    ? Math.max(6, ScreenTools.smallFontPointSize - 2)
+                                    : ScreenTools.smallFontPointSize
+                }
+
+                QGCLabel {
+                    id:                 noVideoLabel
+                    width:              parent.width
+                    text:               noVideo.streamEnabled ? qsTr("Waiting for video") : qsTr("Video disabled")
+                    font.bold:          true
+                    color:              "white"
+                    font.pointSize:     useSmallFont ? ScreenTools.smallFontPointSize : ScreenTools.largeFontPointSize
+                    elide:              Text.ElideRight
+                }
+            }
+
+            Rectangle {
+                id:                 statusDot
+                anchors.right:      parent.right
+                anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.1
+                anchors.verticalCenter: parent.verticalCenter
+                width:              Math.max(6, ScreenTools.smallFontPixelHeight * 0.42)
+                height:             width
+                radius:             width / 2
+                color:              noVideo.streamEnabled ? "#00d26f" : "#9b9b9b"
+
+                SequentialAnimation on opacity {
+                    running:    noVideo.visible && noVideo.streamEnabled
+                    loops:      Animation.Infinite
+                    NumberAnimation { to: 0.32; duration: 800; easing.type: Easing.InOutQuad }
+                    NumberAnimation { to: 1.0; duration: 800; easing.type: Easing.InOutQuad }
+                }
+            }
+        }
+    }
 
     Rectangle {
         id:             videoBackground
