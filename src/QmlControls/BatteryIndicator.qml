@@ -600,7 +600,7 @@ Item {
                     buttonText: qsTr("Configure")
 
                     onClicked: {
-                        mainWindow.showKnownVehicleComponentConfigPage(AutoPilotPlugin.KnownPowerVehicleComponent)
+                        mainWindow.showKnownVehicleComponentConfigPage(AutoPilotPlugin.KnownPowerVehicleComponent, true)
                         mainWindow.closeIndicatorDrawer()
                     }
                 }

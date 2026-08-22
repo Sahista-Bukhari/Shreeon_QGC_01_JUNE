@@ -14,7 +14,7 @@ Item {
     property real cornerRadius: 0
 
     readonly property color _accentColor:  "#00ad5b"
-    readonly property color _controlColor: Qt.rgba(0.08, 0.10, 0.09, 0.82)
+    readonly property color _controlColor: Qt.rgba(0.08, 0.10, 0.09, 0.62)
 
     property var    item1:                  null    // Required
     property var    item2:                  null    // Optional, may come and go
@@ -101,7 +101,7 @@ Item {
         anchors.fill:   parent
         visible:        _isExpanded
         radius:         _root.cornerRadius
-        color:          Qt.rgba(0.03, 0.04, 0.04, 0.65)
+        color:          Qt.rgba(0.03, 0.04, 0.04, 0.28)
         z:              -1
     }
 
@@ -113,7 +113,7 @@ Item {
         verticalOffset:     4
         radius:             12
         samples:            25
-        color:              Qt.rgba(0, 0, 0, 0.62)
+        color:              Qt.rgba(0, 0, 0, 0.38)
         transparentBorder:  true
         z:                  -2
     }
@@ -154,7 +154,7 @@ Item {
         radius:         _root.cornerRadius
         color:          "transparent"
         border.width:   1
-        border.color:   Qt.rgba(1, 1, 1, 0.48)
+        border.color:   Qt.rgba(0.90, 0.93, 0.91, 0.62)
         z:              1
     }
 

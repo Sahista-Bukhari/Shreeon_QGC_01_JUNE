@@ -589,7 +589,10 @@ Item {
                         border.width: 1
                         clip: true
 
-                        Behavior on color { ColorAnimation { duration: 160 } }
+                        Behavior on color {
+                            ColorAnimation {
+                                duration: 160 }
+                        }
 
                         Rectangle {
                             id: startKnob

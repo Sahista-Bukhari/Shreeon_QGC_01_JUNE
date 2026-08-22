@@ -14,7 +14,13 @@ Control {
     property real   to:                 100
     property string unitsString
     property string label
-    property color  rulerColor:         qgcPal.text
+    property bool   lightStyle:         false
+    property color  rulerColor:         lightStyle ? "#6b706d" : qgcPal.text
+
+    readonly property color _lightText:       "#303432"
+    readonly property color _lightMutedText:  "#858a87"
+    readonly property color _lightField:      "#f1f3f2"
+    readonly property color _lightAccent:     "#00a651"
 
     required property int   decimalPlaces
     required property real  majorTickStepSize
@@ -204,6 +210,11 @@ Control {
                         anchors.bottom:             parent.bottom
                         anchors.horizontalCenter:   majorTickMark.horizontalCenter
                         text:                       parent.tickValue.toFixed(_tickValueDecimalPlaces)
+                        color:                      control.lightStyle
+                                                    ? (parent.tickValue < control.from || parent.tickValue > control.to
+                                                       ? control._lightMutedText
+                                                       : control._lightText)
+                                                    : qgcPal.text
                     }
                 }
             }
@@ -227,18 +238,20 @@ Control {
 
         Rectangle {
             id:         labelItemBackground
-            width:      labelItem.contentWidth
-            height:     labelItem.contentHeight
-            color:      qgcPal.window
-            opacity:    0.8
+            width:      labelItem.contentWidth + ScreenTools.defaultFontPixelWidth * 1.1
+            height:     labelItem.contentHeight + 2
+            color:      control.lightStyle ? control._lightField : qgcPal.window
+            opacity:    control.lightStyle ? 1 : 0.8
+            radius:     control.lightStyle ? ScreenTools.defaultFontPixelWidth * 0.35 : 0
             visible:    labelItem.visible
         }
 
         QGCLabel {
             id:                 labelItem
-            anchors.left:       labelItemBackground.left
-            anchors.top:        labelItemBackground.top
+            anchors.centerIn:   labelItemBackground
             text:               label
+            color:              control.lightStyle ? control._lightText : qgcPal.text
+            font.weight:        control.lightStyle ? Font.Medium : Font.Normal
             visible:            label !== ""
         }
     }
@@ -260,12 +273,13 @@ Control {
             Connections {
                 target: control
                 function onRulerColorChanged() { valueIndicator.requestPaint() }
+                function onLightStyleChanged() { valueIndicator.requestPaint() }
             }
 
             onPaint: {
                 var ctx = getContext("2d")
-                ctx.strokeStyle = control.rulerColor
-                ctx.fillStyle = qgcPal.window
+                ctx.strokeStyle = control.lightStyle ? control._lightAccent : control.rulerColor
+                ctx.fillStyle = control.lightStyle ? control._lightAccent : qgcPal.window
                 ctx.lineWidth = 1
                 ctx.beginPath()
                 ctx.moveTo(width / 2, 0)
@@ -288,6 +302,8 @@ Control {
                 horizontalAlignment:        Text.AlignHCenter
                 verticalAlignment:          Text.AlignBottom
                 text:                       _clampedSliderValue(value) + (unitsString !== "" ? " " + unitsString : "")
+                color:                      control.lightStyle ? "#ffffff" : qgcPal.text
+                font.weight:                control.lightStyle ? Font.DemiBold : Font.Normal
             }
 
             QGCMouseArea {

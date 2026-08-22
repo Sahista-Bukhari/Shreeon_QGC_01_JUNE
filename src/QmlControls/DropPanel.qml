@@ -161,6 +161,7 @@ Popup {
             width:          Math.max(implicitWidth, dropPanelFlickable.width)
             showBorder:     false
             showDividers:   false
+            lightStyle:     true
 
             Loader {
                 id: dropPanelSourceLoader

@@ -144,6 +144,11 @@ Rectangle {
     }
 
     function _closeSetup() {
+        if (typeof mainWindow !== "undefined" && mainWindow &&
+                mainWindow.closeToolAndReturnToSource()) {
+            return
+        }
+
         setupView.popout()
         if (typeof mainWindow !== "undefined" && mainWindow)
             mainWindow.showModeSelection(Qt.point(mainWindow.width / 2, ScreenTools.toolbarHeight / 2))

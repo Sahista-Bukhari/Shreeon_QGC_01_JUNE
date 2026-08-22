@@ -698,7 +698,52 @@ ApplicationWindow {
                     })
     }
 
-    function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav, hideToolbar, halfWidth) {
+    property var  _toolReturnIndicatorComponent: null
+    property var  _toolReturnIndicatorItem:      null
+    property bool _toolReturnIndicatorExpanded:  false
+
+    function _clearToolReturnSource() {
+        _toolReturnIndicatorComponent = null
+        _toolReturnIndicatorItem = null
+        _toolReturnIndicatorExpanded = false
+    }
+
+    function _rememberIndicatorAsToolReturnSource() {
+        if (!indicatorDrawer.visible || !indicatorDrawer.sourceComponent) {
+            _clearToolReturnSource()
+            return
+        }
+
+        _toolReturnIndicatorComponent = indicatorDrawer.sourceComponent
+        _toolReturnIndicatorItem = indicatorDrawer.indicatorItem
+        _toolReturnIndicatorExpanded = indicatorDrawer._expanded
+    }
+
+    // Called by a full setup page when its close control is pressed. If that
+    // page was opened from a toolbar indicator, restore the exact indicator
+    // (including its expanded state) instead of dropping the whole context.
+    function closeToolAndReturnToSource() {
+        if (!_toolReturnIndicatorComponent)
+            return false
+
+        var returnComponent = _toolReturnIndicatorComponent
+        var returnItem = _toolReturnIndicatorItem
+        var returnExpanded = _toolReturnIndicatorExpanded
+        _clearToolReturnSource()
+        toolDrawer.visible = false
+
+        Qt.callLater(function() {
+            mainWindow.showIndicatorDrawer(returnComponent, returnItem, returnExpanded)
+        })
+        return true
+    }
+
+    function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav, hideToolbar, halfWidth, returnToIndicatorDrawer) {
+        if (returnToIndicatorDrawer === true)
+            _rememberIndicatorAsToolReturnSource()
+        else
+            _clearToolReturnSource()
+
         toolDrawer.backIcon         = flyView.visible ? "/qmlimages/PaperPlane.svg" : "/qmlimages/Plan.svg"
         toolDrawer.toolTitle        = toolTitle
         toolDrawer.toolSource       = toolSource
@@ -717,15 +762,15 @@ ApplicationWindow {
         showTool(qsTr("Analyze Tools"), "qrc:/qml/QGroundControl/AnalyzeView/AnalyzeView.qml", "/qmlimages/Analyze.svg", fromFlyViewBackNav)
     }
 
-    function showVehicleConfig(fromFlyViewBackNav) {
+    function showVehicleConfig(fromFlyViewBackNav, returnToIndicatorDrawer) {
         // Wider right panel so Vehicle Config content has more room
         // Half of main screen; SetupView provides its own header + close
-        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true, true)
+        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true, true, returnToIndicatorDrawer)
         toolDrawer.halfWidthRatio = 0.72
     }
 
-    function showVehicleConfigParametersPage() {
-        showVehicleConfig()
+    function showVehicleConfigParametersPage(returnToIndicatorDrawer) {
+        showVehicleConfig(false, returnToIndicatorDrawer)
         toolDrawerLoader.item.showParametersPanel()
     }
 
@@ -738,8 +783,8 @@ ApplicationWindow {
         toolDrawer.halfWidthRatio = 0.72
     }
 
-    function showKnownVehicleComponentConfigPage(knownVehicleComponent) {
-        showVehicleConfig()
+    function showKnownVehicleComponentConfigPage(knownVehicleComponent, returnToIndicatorDrawer) {
+        showVehicleConfig(false, returnToIndicatorDrawer)
         let vehicleComponent = globals.activeVehicle.autopilotPlugin.findKnownVehicleComponent(knownVehicleComponent)
         if (vehicleComponent) {
             toolDrawerLoader.item.showVehicleComponentPanel(vehicleComponent)
@@ -1326,9 +1371,10 @@ ApplicationWindow {
         }
     }
 
-    function showIndicatorDrawer(drawerComponent, indicatorItem) {
+    function showIndicatorDrawer(drawerComponent, indicatorItem, startExpanded) {
         indicatorDrawer.sourceComponent = drawerComponent
         indicatorDrawer.indicatorItem = indicatorItem
+        indicatorDrawer._openExpanded = startExpanded === true
         indicatorDrawer.open()
     }
 
@@ -1353,8 +1399,9 @@ ApplicationWindow {
         property var sourceComponent
         property var indicatorItem
 
-        property bool _expanded:    false
-        property real _margins:     ScreenTools.defaultFontPixelHeight / 4
+        property bool _expanded:     false
+        property bool _openExpanded: false
+        property real _margins:      ScreenTools.defaultFontPixelHeight / 4
 
         on_ExpandedChanged: Qt.callLater(function() {
             mainWindow.applyLightPopupStyle(indicatorDrawerLoader.item)
@@ -1370,11 +1417,13 @@ ApplicationWindow {
         }
 
         onOpened: {
-            _expanded                               = false;
+            _expanded                               = _openExpanded
+            _openExpanded                           = false
             indicatorDrawerLoader.sourceComponent   = indicatorDrawer.sourceComponent
         }
         onClosed: {
             _expanded                               = false
+            _openExpanded                           = false
             indicatorItem                           = undefined
             indicatorDrawerLoader.sourceComponent   = undefined
         }

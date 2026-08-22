@@ -374,6 +374,47 @@ RowLayout {
 
             property real margins: ScreenTools.defaultFontPixelHeight
 
+            Rectangle {
+                Layout.fillWidth:       true
+                Layout.preferredHeight: Math.max(ScreenTools.defaultFontPixelHeight * 2.35,
+                                                  closeStatusButton.implicitHeight + margins * 0.45)
+                color:                  "#f5f7f6"
+                radius:                 ScreenTools.defaultFontPixelWidth * 0.7
+                border.color:           "#dfe4e1"
+                border.width:           1
+
+                RowLayout {
+                    anchors.fill:        parent
+                    anchors.leftMargin:  margins * 0.65
+                    anchors.rightMargin: margins * 0.35
+                    spacing:             margins * 0.5
+
+                    Rectangle {
+                        Layout.preferredWidth:  3
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.05
+                        radius:                 width / 2
+                        color:                  "#00a651"
+                    }
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        text:             qsTr("Arm & Vehicle Status")
+                        color:            "#303633"
+                        font.weight:      Font.DemiBold
+                    }
+
+                    QGCButton {
+                        id:                   closeStatusButton
+                        Layout.preferredWidth: Math.max(ScreenTools.defaultFontPixelWidth * 8,
+                                                        implicitContentWidth + ScreenTools.defaultFontPixelWidth * 3)
+                        text:                 qsTr("Close")
+                        primary:              true
+
+                        onClicked: mainWindow.closeIndicatorDrawer()
+                    }
+                }
+            }
+
             Loader {
                 Layout.fillWidth:   true
                 source:             _activeVehicle.expandedToolbarIndicatorSource("MainStatus")
@@ -409,7 +450,7 @@ RowLayout {
                     QGCButton {
                         text: qsTr("Configure")
                         onClicked: {
-                            mainWindow.showVehicleConfigParametersPage()
+                            mainWindow.showVehicleConfigParametersPage(true)
                             mainWindow.closeIndicatorDrawer()
                         }
                     }
@@ -418,7 +459,7 @@ RowLayout {
                     QGCButton {
                         text: qsTr("Configure")
                         onClicked: {
-                            mainWindow.showVehicleConfig()
+                            mainWindow.showVehicleConfig(false, true)
                             mainWindow.closeIndicatorDrawer()
                         }
                     }

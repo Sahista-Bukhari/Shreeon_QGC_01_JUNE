@@ -221,6 +221,47 @@ Item {
             property real margins:              ScreenTools.defaultFontPixelHeight
             property var  flightModeSettings:   QGroundControl.settingsManager.flightModeSettings
 
+            Rectangle {
+                Layout.fillWidth:       true
+                Layout.preferredHeight: Math.max(ScreenTools.defaultFontPixelHeight * 2.35,
+                                                  closeFlightModeButton.implicitHeight + margins * 0.45)
+                color:                  "#f5f7f6"
+                radius:                 ScreenTools.defaultFontPixelWidth * 0.7
+                border.color:           "#dfe4e1"
+                border.width:           1
+
+                RowLayout {
+                    anchors.fill:        parent
+                    anchors.leftMargin:  margins * 0.65
+                    anchors.rightMargin: margins * 0.35
+                    spacing:             margins * 0.5
+
+                    Rectangle {
+                        Layout.preferredWidth:  3
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.05
+                        radius:                 width / 2
+                        color:                  "#00a651"
+                    }
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        text:             qsTr("Flight Mode Settings")
+                        color:            "#303633"
+                        font.weight:      Font.DemiBold
+                    }
+
+                    QGCButton {
+                        id:                   closeFlightModeButton
+                        Layout.preferredWidth: Math.max(ScreenTools.defaultFontPixelWidth * 8,
+                                                        implicitContentWidth + ScreenTools.defaultFontPixelWidth * 3)
+                        text:                 qsTr("Close")
+                        primary:              true
+
+                        onClicked: mainWindow.closeIndicatorDrawer()
+                    }
+                }
+            }
+
             Loader {
                 Layout.fillWidth:   true
                 source:             _activeVehicle.expandedToolbarIndicatorSource("FlightMode")
@@ -258,7 +299,7 @@ Item {
                                             QGroundControl.corePlugin.showAdvancedUI
 
                     onClicked: {
-                        mainWindow.showKnownVehicleComponentConfigPage(AutoPilotPlugin.KnownFlightModesVehicleComponent)
+                        mainWindow.showKnownVehicleComponentConfigPage(AutoPilotPlugin.KnownFlightModesVehicleComponent, true)
                         mainWindow.closeIndicatorDrawer()
                     }
                 }

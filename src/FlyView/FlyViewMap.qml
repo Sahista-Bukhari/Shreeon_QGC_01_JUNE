@@ -1059,11 +1059,107 @@ FlightMap {
 
             sourceComponent: Component {
                 ColumnLayout {
-                    spacing: ScreenTools.defaultFontPixelWidth / 2
+                    width:   ScreenTools.defaultFontPixelWidth * 23
+                    spacing: ScreenTools.defaultFontPixelHeight * 0.4
+
+                    readonly property color _accentGreen:  "#00a651"
+                    readonly property color _primaryText:  "#303030"
+                    readonly property color _mutedText:    "#707070"
+                    readonly property real  _buttonRadius: ScreenTools.defaultFontPixelHeight * 0.36
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing:          ScreenTools.defaultFontPixelWidth * 0.8
+
+                        Rectangle {
+                            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.9
+                            Layout.preferredHeight: Layout.preferredWidth
+                            radius:                 ScreenTools.defaultFontPixelHeight * 0.48
+                            color:                  "#e7f6ee"
+
+                            QGCColoredImage {
+                                anchors.centerIn: parent
+                                width:            parent.width * 0.48
+                                height:           width
+                                source:           "qrc:/InstrumentValueIcons/pin.svg"
+                                color:            _accentGreen
+                            }
+                        }
+
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing:          0
+
+                            QGCLabel {
+                                Layout.fillWidth: true
+                                text:             qsTr("Map location")
+                                color:            _primaryText
+                                font.weight:      Font.DemiBold
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth: true
+                                text:             qsTr("Choose an action")
+                                color:            _mutedText
+                                font.pointSize:   ScreenTools.smallFontPointSize
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth:       true
+                        Layout.preferredHeight: coordinateGrid.implicitHeight
+                                                + ScreenTools.defaultFontPixelHeight * 0.8
+                        radius:                 _buttonRadius
+                        color:                  "#f2f3f2"
+                        border.width:           1
+                        border.color:           "#dedede"
+
+                        GridLayout {
+                            id:              coordinateGrid
+                            anchors.fill:    parent
+                            anchors.margins: ScreenTools.defaultFontPixelWidth * 0.8
+                            columns:         2
+                            rowSpacing:      ScreenTools.defaultFontPixelHeight * 0.08
+                            columnSpacing:   ScreenTools.defaultFontPixelWidth
+
+                            QGCLabel {
+                                text:           qsTr("Latitude")
+                                color:          _mutedText
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth:    true
+                                text:                mapClickCoord.latitude.toFixed(6)
+                                color:               _primaryText
+                                font.weight:         Font.Medium
+                                horizontalAlignment: Text.AlignRight
+                            }
+
+                            QGCLabel {
+                                text:           qsTr("Longitude")
+                                color:          _mutedText
+                                font.pointSize: ScreenTools.smallFontPointSize
+                            }
+
+                            QGCLabel {
+                                Layout.fillWidth:    true
+                                text:                mapClickCoord.longitude.toFixed(6)
+                                color:               _primaryText
+                                font.weight:         Font.Medium
+                                horizontalAlignment: Text.AlignRight
+                            }
+                        }
+                    }
 
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Go to location")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showGotoLocation
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1081,6 +1177,10 @@ FlightMap {
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Orbit at location")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showOrbit
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1092,6 +1192,10 @@ FlightMap {
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("ROI at location")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showROI
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1102,6 +1206,10 @@ FlightMap {
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Set home here")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showSetHome
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1112,6 +1220,10 @@ FlightMap {
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Set Estimator Origin")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showSetEstimatorOrigin
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1122,6 +1234,10 @@ FlightMap {
                     QGCButton {
                         Layout.fillWidth:   true
                         text:               qsTr("Set Heading")
+                        lightStyle:         true
+                        compact:            true
+                        heightFactor:       0.28
+                        backRadius:         _buttonRadius
                         visible:            globals.guidedControllerFlyView.showChangeHeading
                         onClicked: {
                             mapClickDropPanel.close()
@@ -1129,11 +1245,6 @@ FlightMap {
                         }
                     }
 
-                    ColumnLayout {
-                        spacing: 0
-                        QGCLabel { text: qsTr("Lat: %1").arg(mapClickCoord.latitude.toFixed(6)) }
-                        QGCLabel { text: qsTr("Lon: %1").arg(mapClickCoord.longitude.toFixed(6)) }
-                    }
                 }
             }
         }

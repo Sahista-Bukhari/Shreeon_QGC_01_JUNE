@@ -52,8 +52,8 @@ Item {
             anchors.fill: parent
             gradient: Gradient {
                 orientation: Gradient.Vertical
-                GradientStop { position: 0.0; color: Qt.rgba(0.06, 0.08, 0.07, 0.20) }
-                GradientStop { position: 1.0; color: Qt.rgba(0.03, 0.04, 0.04, 0.58) }
+                GradientStop { position: 0.0; color: Qt.rgba(0.06, 0.08, 0.07, 0.08) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.03, 0.04, 0.04, 0.34) }
             }
         }
 
@@ -72,9 +72,15 @@ Item {
                                 ? ScreenTools.defaultFontPixelHeight * 2.45
                                 : ScreenTools.defaultFontPixelHeight * 3.1
             radius:             ScreenTools.defaultFontPixelHeight * 0.48
-            color:              Qt.rgba(0.055, 0.065, 0.06, 0.86)
+            color:              "transparent"
             border.width:       1
-            border.color:       Qt.rgba(1, 1, 1, 0.26)
+            border.color:       Qt.rgba(0.86, 0.90, 0.88, 0.48)
+
+            gradient: Gradient {
+                orientation: Gradient.Vertical
+                GradientStop { position: 0.0; color: Qt.rgba(0.10, 0.12, 0.11, 0.70) }
+                GradientStop { position: 1.0; color: Qt.rgba(0.035, 0.045, 0.04, 0.54) }
+            }
 
             Rectangle {
                 id:                 cameraIconTile
@@ -85,12 +91,12 @@ Item {
                 height:             width
                 radius:             width * 0.32
                 color:              noVideo.streamEnabled
-                                    ? Qt.rgba(0, 0.68, 0.36, 0.18)
-                                    : Qt.rgba(1, 1, 1, 0.09)
+                                    ? Qt.rgba(0, 0.68, 0.36, 0.14)
+                                    : Qt.rgba(1, 1, 1, 0.07)
                 border.width:       1
                 border.color:       noVideo.streamEnabled
-                                    ? Qt.rgba(0, 0.82, 0.44, 0.65)
-                                    : Qt.rgba(1, 1, 1, 0.24)
+                                    ? Qt.rgba(0, 0.82, 0.44, 0.72)
+                                    : Qt.rgba(1, 1, 1, 0.30)
 
                 QGCColoredImage {
                     anchors.centerIn: parent
