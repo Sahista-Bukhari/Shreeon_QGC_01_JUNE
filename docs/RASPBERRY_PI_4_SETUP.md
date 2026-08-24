@@ -275,4 +275,3 @@ cmake --build "$HOME/qgc-build" --parallel 1
 ```
 
 Rerun CMake configuration first if `CMakeLists.txt`, the `cmake` directory, Qt modules, or build options changed.
-

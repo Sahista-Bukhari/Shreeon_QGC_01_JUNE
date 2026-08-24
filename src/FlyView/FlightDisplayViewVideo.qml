@@ -193,21 +193,32 @@ Item {
         }
         Component {
             id: videoBackgroundComponent
-            QGCVideoBackground {
-                id:             videoContent
-                objectName:     "videoContent"
+            Item {
+                QGCVideoBackground {
+                    id:             videoContent
+                    objectName:     "videoContent"
+                    anchors.fill:   parent
 
-                Connections {
-                    target: QGroundControl.videoManager
-                    function onImageFileChanged(filename) {
-                        videoContent.grabToImage(function(result) {
-                            if (!result.saveToFile(filename)) {
-                                console.error('Error capturing video frame');
+                    Connections {
+                        target: QGroundControl.videoManager
+                        function onImageFileChanged(filename) {
+                            var captureSize = QGroundControl.videoManager.videoSize
+                            var saveFrame = function(result) {
+                                if (!result.saveToFile(filename)) {
+                                    console.error('Error capturing video frame');
+                                }
                             }
-                        });
+                            if (captureSize.width > 0 && captureSize.height > 0) {
+                                videoContent.grabToImage(saveFrame, captureSize)
+                            } else {
+                                videoContent.grabToImage(saveFrame)
+                            }
+                        }
                     }
                 }
 
+                // Keep display aids outside videoContent so saved mapping
+                // frames contain only the camera image, never grid overlays.
                 Rectangle {
                     color:  Qt.rgba(1,1,1,0.5)
                     height: parent.height

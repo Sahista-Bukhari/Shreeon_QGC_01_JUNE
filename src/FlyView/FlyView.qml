@@ -388,8 +388,6 @@ Item {
     property real   _mappingPhotoLastSegmentAlong: 0
     property bool   _mappingPhotoSegmentEndCaptured: false
     property var    _routeMappingSessionPhotoFiles: []
-    property var    _routeMappingPendingDeleteFiles: []
-    property int    _routeMappingPhotoDeleteAttempt: 0
 
     ListModel {
         id: _routeMappingLivePhotoModel
@@ -421,51 +419,6 @@ Item {
         _routeMappingSessionPhotoFiles = files
     }
 
-    function _queueRouteMappingPhotoCleanup() {
-        if (_routeMappingSessionPhotoFiles.length === 0) {
-            return
-        }
-
-        // Move completed-flight files into a separate queue so a quickly
-        // re-armed vehicle cannot mix the next mission's photos into cleanup.
-        var pendingFiles = _routeMappingPendingDeleteFiles.slice()
-        for (var i = 0; i < _routeMappingSessionPhotoFiles.length; i++) {
-            if (pendingFiles.indexOf(_routeMappingSessionPhotoFiles[i]) < 0) {
-                pendingFiles.push(_routeMappingSessionPhotoFiles[i])
-            }
-        }
-        _routeMappingPendingDeleteFiles = pendingFiles
-        _routeMappingSessionPhotoFiles = []
-        _routeMappingPhotoDeleteAttempt = 0
-
-        // Release Image elements before removing their backing JPEGs. The
-        // telemetry count remains available for the completed-mission summary.
-        _routeMappingLivePhotoModel.clear()
-        routeMappingPhotoCleanupTimer.restart()
-    }
-
-    function _deletePendingRouteMappingPhotos() {
-        var vehicle = _activeVehicle
-        if (vehicle && (vehicle.flying || vehicle.armed)) {
-            routeMappingPhotoCleanupTimer.restart()
-            return
-        }
-
-        for (var i = 0; i < _routeMappingPendingDeleteFiles.length; i++) {
-            QGCFileDialogController.deleteFile(_routeMappingPendingDeleteFiles[i])
-        }
-
-        // Repeat to cover a final asynchronous frame write which completed
-        // just after the first delete pass.
-        _routeMappingPhotoDeleteAttempt++
-        if (_routeMappingPhotoDeleteAttempt < 3) {
-            routeMappingPhotoCleanupTimer.restart()
-        } else {
-            _routeMappingPendingDeleteFiles = []
-            _routeMappingPhotoDeleteAttempt = 0
-        }
-    }
-
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
         var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
         var duplicateRadius = duplicateRadiusOverride > 0
@@ -490,6 +443,12 @@ Item {
 
     function _appendRouteMappingPhoto(coordinate, telemetryConfirmed, endpointCapture) {
         if (!coordinate || !coordinate.isValid) {
+            return false
+        }
+
+        // Never add an empty/black footprint while the H.264 stream is not
+        // producing decoded frames. The next valid route update will retry.
+        if (!QGroundControl.videoManager.decoding) {
             return false
         }
 
@@ -750,9 +709,10 @@ Item {
 
         function onArmedChanged(armed) {
             if (armed) {
+                // Start a new capture set without deleting the previous
+                // mission's survey photographs from the configured photo path.
+                _root._routeMappingSessionPhotoFiles = []
                 _root.resetRouteMappingLivePhotos()
-            } else {
-                _root._queueRouteMappingPhotoCleanup()
             }
         }
 
@@ -762,9 +722,6 @@ Item {
 
         function onFlyingChanged() {
             _root._updateAutomaticRouteMappingCapture()
-            if (_root._activeVehicle && !_root._activeVehicle.flying) {
-                _root._queueRouteMappingPhotoCleanup()
-            }
         }
 
         function onInitialPlanRequestCompleteChanged(complete) {
@@ -775,13 +732,6 @@ Item {
     }
 
     onMissionRunningChanged: _updateAutomaticRouteMappingCapture()
-
-    Timer {
-        id: routeMappingPhotoCleanupTimer
-        interval: 1500
-        repeat: false
-        onTriggered: _root._deletePendingRouteMappingPhotos()
-    }
 
     Timer {
         id: missionResyncDebounceTimer

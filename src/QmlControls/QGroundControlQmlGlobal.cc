@@ -1,5 +1,6 @@
 #include "QGroundControlQmlGlobal.h"
 
+#include "AudioOutput.h"
 #include "QGCApplication.h"
 #include "QGCCorePlugin.h"
 #include "LinkManager.h"
@@ -120,6 +121,13 @@ bool QGroundControlQmlGlobal::loadBoolGlobalSetting (const QString& key, bool de
     QSettings settings;
     settings.beginGroup(kQmlGlobalKeyName);
     return settings.value(key, defaultValue).toBool();
+}
+
+void QGroundControlQmlGlobal::speak(const QString& text)
+{
+    if (!text.trimmed().isEmpty()) {
+        AudioOutput::instance()->say(text);
+    }
 }
 
 void QGroundControlQmlGlobal::startPX4MockLink(bool sendStatusText)

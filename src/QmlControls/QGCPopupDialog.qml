@@ -100,13 +100,19 @@ Popup {
     }
 
     function _isThemedButtonChrome(item) {
-        // Skip Button content (e.g. Alt Mode rows) — those sit on dark button fills.
+        // Skip Button and ComboBox content — their labels sit on colored fills and
+        // each control already owns its foreground/background contrast.
         // Keep CheckBox / RadioButton so their labels on white get fixed.
         if (!item) {
             return false
         }
-        return (item instanceof Button) && !(item instanceof CheckBox) && !(item instanceof RadioButton)
-            && item.backgroundColor === undefined
+        const isButtonChrome = (item instanceof Button)
+                && !(item instanceof CheckBox)
+                && !(item instanceof RadioButton)
+                && item.backgroundColor === undefined
+        const isComboBoxChrome = (item instanceof ComboBox)
+                || (item.currentText !== undefined && item.popup !== undefined)
+        return isButtonChrome || isComboBoxChrome
     }
 
     function _styleDialogContentControls(item) {
@@ -205,7 +211,11 @@ Popup {
     onAboutToShow: {
         _previousValidationErrorCount = globals.validationErrorCount
         setupDialogButtons(buttons)
-        Qt.callLater(function() { _styleDialogContentControls(dialogContentParent) })
+        dialogContentFlickable.contentY = 0
+        Qt.callLater(function() {
+            dialogContentFlickable.contentY = 0
+            _styleDialogContentControls(dialogContentParent)
+        })
     }
 
     onClosed: {

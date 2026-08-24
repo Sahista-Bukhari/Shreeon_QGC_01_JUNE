@@ -6,24 +6,33 @@ import QGroundControl.FactControls
 import QGroundControl.Controls
 
 FirstRunPrompt {
-    title:      qsTr("Measurement Units")
-    promptId:   QGroundControl.corePlugin.unitsFirstRunPromptId
+    id:       root
+    title:    qsTr("Measurement Units")
+    promptId: QGroundControl.corePlugin.unitsFirstRunPromptId
 
-    property real   _margins:           ScreenTools.defaultFontPixelHeight / 2
-    property var    _unitsSettings:     QGroundControl.settingsManager.unitsSettings
-    property var    _rgFacts:           [ _unitsSettings.horizontalDistanceUnits, _unitsSettings.verticalDistanceUnits, _unitsSettings.areaUnits, _unitsSettings.speedUnits, _unitsSettings.temperatureUnits ]
-    property var    _rgLabels:          [ qsTr("Horizontal Distance"), qsTr("Vertical Distance"), qsTr("Area"), qsTr("Speed"), qsTr("Temperature") ]
-    property int    _cVisibleFacts:     0
-
-    Component.onCompleted: {
-        var cVisibleFacts = 0
-        for (var i=0; i<_rgFacts.length; i++) {
-            if (_rgFacts[i].visible) {
-                cVisibleFacts++
-            }
-        }
-        _cVisibleFacts = cVisibleFacts
-    }
+    property real _cardPadding: ScreenTools.defaultFontPixelHeight * 0.9
+    property real _rowSpacing:  ScreenTools.defaultFontPixelHeight * 0.35
+    property real _fieldWidth:  ScreenTools.defaultFontPixelWidth * 19
+    property var  _unitsSettings: QGroundControl.settingsManager.unitsSettings
+    property var  _rgFacts: [
+        _unitsSettings.horizontalDistanceUnits,
+        _unitsSettings.verticalDistanceUnits,
+        _unitsSettings.areaUnits,
+        _unitsSettings.speedUnits,
+        _unitsSettings.temperatureUnits
+    ]
+    property var _rgLabels: [
+        qsTr("Horizontal Distance"),
+        qsTr("Vertical Distance"),
+        qsTr("Area"),
+        qsTr("Speed"),
+        qsTr("Temperature")
+    ]
+    readonly property color _titleText:      "#343434"
+    readonly property color _secondaryText:  "#707070"
+    readonly property color _cardBackground: "#f5f6f5"
+    readonly property color _cardBorder:     "#dedede"
+    readonly property color _divider:        "#e2e2e2"
 
     function changeSystemOfUnits(metric) {
         // Hack to force reload the ComboBoxes, otherwise they don't update
@@ -47,59 +56,121 @@ FirstRunPrompt {
         }
     }
 
+    function displayUnitName(unitName) {
+        switch (unitName) {
+        case "SquareFeet":
+            return qsTr("Square Feet")
+        case "SquareMeters":
+            return qsTr("Square Meters")
+        case "SquareKilometers":
+            return qsTr("Square Kilometers")
+        case "SquareMiles":
+            return qsTr("Square Miles")
+        case "Feet/second":
+            return qsTr("Feet / second")
+        case "Meters/second":
+            return qsTr("Meters / second")
+        case "Miles/hour":
+            return qsTr("Miles / hour")
+        case "Kilometers/hour":
+            return qsTr("Kilometers / hour")
+        default:
+            return unitName
+        }
+    }
+
     ColumnLayout {
-        id:         settingsColumn
-        spacing:    ScreenTools.defaultFontPixelHeight
+        id:    settingsColumn
+        width: parent ? parent.width : implicitWidth
+        spacing: ScreenTools.defaultFontPixelHeight * 0.85
 
         QGCLabel {
-            id:         unitsSectionLabel
-            text:       qsTr("Choose the measurement units you want to use. You can also change it later in General Settings.")
-
-            Layout.preferredWidth: unitsGrid.width
+            Layout.fillWidth: true
+            text: qsTr("Choose the measurement units you want to use. You can change them later in General Settings.")
+            color: root._secondaryText
+            font.pointSize: ScreenTools.defaultFontPointSize
+            lineHeight: 1.15
             wrapMode: Text.WordWrap
         }
 
         Rectangle {
-            Layout.preferredHeight: unitsGrid.height + (_margins * 2)
-            Layout.preferredWidth:  unitsGrid.width + (_margins * 2)
-            color:                  qgcPal.windowShade
-            Layout.fillWidth:       true
+            Layout.fillWidth: true
+            Layout.preferredHeight: unitsColumn.implicitHeight + (root._cardPadding * 2)
+            color: root._cardBackground
+            radius: ScreenTools.defaultFontPixelWidth
+            border.width: 1
+            border.color: root._cardBorder
 
-            GridLayout {
-                id:                 unitsGrid
-                anchors.margins:    _margins
-                anchors.top:        parent.top
-                anchors.left:       parent.left
-                rows:               _cVisibleFacts + 1
-                flow:               GridLayout.TopToBottom
+            ColumnLayout {
+                id: unitsColumn
+                anchors.fill: parent
+                anchors.margins: root._cardPadding
+                spacing: root._rowSpacing
 
-                QGCLabel { text: qsTr("System of units") }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: ScreenTools.defaultFontPixelWidth
 
-                Repeater {
-                    model: _rgFacts.length
                     QGCLabel {
-                        text:       _rgLabels[index]
-                        visible:    _rgFacts[index].visible
+                        Layout.fillWidth: true
+                        Layout.minimumWidth: 0
+                        text: qsTr("System of units")
+                        color: root._titleText
+                        font.weight: Font.DemiBold
+                        elide: Text.ElideRight
+                    }
+
+                    QGCComboBox {
+                        Layout.preferredWidth: root._fieldWidth
+                        Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 13
+                        compact: true
+                        font.pointSize: ScreenTools.defaultFontPointSize
+                        lightStyle: true
+                        sizeToContents: false
+                        model: [ qsTr("Metric System"), qsTr("Imperial System") ]
+                        currentIndex: _unitsSettings.horizontalDistanceUnits.value === UnitsSettings.HorizontalDistanceUnitsMeters ? 0 : 1
+                        onActivated: (index) => { changeSystemOfUnits(index === 0) }
                     }
                 }
 
-                QGCComboBox {
-                    Layout.fillWidth:   true
-                    sizeToContents:     true
-                    model:              [ qsTr("Metric System"), qsTr("Imperial System") ]
-                    currentIndex:       _unitsSettings.horizontalDistanceUnits.value === UnitsSettings.HorizontalDistanceUnitsMeters ? 0 : 1
-                    onActivated: (index) => { changeSystemOfUnits(currentIndex === 0 /* metric */) }
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 1
+                    Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.15
+                    Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.15
+                    color: root._divider
                 }
 
                 Repeater {
                     id: unitComboBoxRepeater
                     model: _rgFacts.length
-                    FactComboBox {
-                        Layout.fillWidth:   true
-                        sizeToContents:     true
-                        fact:               _rgFacts[index]
-                        indexModel:         false
-                        visible:            _rgFacts[index].visible
+
+                    RowLayout {
+                        required property int index
+
+                        Layout.fillWidth: true
+                        spacing: ScreenTools.defaultFontPixelWidth
+                        visible: root._rgFacts[index].visible
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            Layout.minimumWidth: 0
+                            text: root._rgLabels[index]
+                            color: root._titleText
+                            elide: Text.ElideRight
+                        }
+
+                        FactComboBox {
+                            Layout.preferredWidth: root._fieldWidth
+                            Layout.minimumWidth: ScreenTools.defaultFontPixelWidth * 13
+                            compact: true
+                            font.pointSize: ScreenTools.defaultFontPointSize
+                            lightStyle: true
+                            sizeToContents: false
+                            fact: root._rgFacts[index]
+                            indexModel: false
+                            alternateText: root.displayUnitName(currentText)
+                        }
                     }
                 }
             }

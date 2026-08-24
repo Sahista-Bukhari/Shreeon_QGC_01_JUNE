@@ -276,7 +276,7 @@ Item {
     readonly property color _togglePanelBorder: Qt.rgba(0.20, 0.20, 0.20, 0.65)
     readonly property color _hudGrayWhite:      Qt.rgba(0.82, 0.82, 0.82, 0.95)
     readonly property real  _glassPanelRadius:  ScreenTools.defaultFontPixelHeight * 0.5
-    
+
     // Custom Background Shape
     Canvas {
         id: bgCanvas

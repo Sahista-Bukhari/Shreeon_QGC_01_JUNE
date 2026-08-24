@@ -24,8 +24,8 @@ ApplicationWindow {
 
     property bool   _utmspSendActTrigger
 
-    // Set true to preview only CustomHomePage (no Fly View / mode selection).
-    readonly property bool homePageOnly: true
+    // Set true only while previewing CustomHomePage without the normal QGC views.
+    readonly property bool homePageOnly: false
 
     // UI theme: Default = current product look, Black = QGC Indoor/Dark
     readonly property int themeDefault: 0

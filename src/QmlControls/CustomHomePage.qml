@@ -23,6 +23,7 @@ Item {
 
     property var  _activeVehicle:    QGroundControl.multiVehicleManager.activeVehicle
     property bool _vehicleConnected: _activeVehicle && !_activeVehicle.vehicleLinkManager.communicationLost
+    property bool _welcomeAnnouncementPlayed: false
 
     readonly property string _connectionAlertTitle: qsTr("Device Connection")
     readonly property string _connectionAlertText: _vehicleConnected
@@ -42,6 +43,25 @@ Item {
     function showConnectionNotification() {
         connectionAlertPopup.open()
         root.notificationsClicked()
+    }
+
+    function announceWelcomeOnce() {
+        if (!root.visible || root._welcomeAnnouncementPlayed) {
+            return
+        }
+
+        root._welcomeAnnouncementPlayed = true
+        welcomeAnnouncementTimer.restart()
+    }
+
+    onVisibleChanged: announceWelcomeOnce()
+    Component.onCompleted: announceWelcomeOnce()
+
+    Timer {
+        id:       welcomeAnnouncementTimer
+        interval: 500
+        repeat:   false
+        onTriggered: QGroundControl.speak(qsTr("Welcome to Shreeon Technologies."))
     }
 
     // Background photo
@@ -272,7 +292,6 @@ Item {
                               ? Qt.rgba(0.12, 0.69, 0.36, 0.75)
                               : Qt.rgba(0.90, 0.22, 0.21, 0.75)
             }
-
             Column {
                 width: parent.width
                 spacing: ScreenTools.defaultFontPixelHeight * 0.45
