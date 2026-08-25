@@ -1,0 +1,23 @@
+[Unit]
+Description=Shreeon PX4 full-resolution route-mapping capture
+After=wifibroadcast@drone.service wfb-camera.service
+Wants=wifibroadcast@drone.service wfb-camera.service
+
+[Service]
+Type=simple
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/etc/default/shreeon-route-mapping
+ExecStart=/usr/local/libexec/shreeon-route-mapping-capture \
+    --serial-device ${SERIAL_DEVICE} \
+    --serial-baud ${SERIAL_BAUD} \
+    --wfb-host ${WFB_HOST} \
+    --wfb-port ${WFB_PORT} \
+    --manual-host ${MANUAL_HOST} \
+    --manual-port ${MANUAL_PORT} \
+    --photo-root ${PHOTO_ROOT}
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=40
+
+[Install]
+WantedBy=multi-user.target
