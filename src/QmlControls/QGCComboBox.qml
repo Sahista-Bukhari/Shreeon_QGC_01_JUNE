@@ -109,8 +109,8 @@ T.ComboBox {
     // The label of the button
     contentItem: QGCLabel {
         id:                         text
-        anchors.verticalCenter:     parent.verticalCenter
-        anchors.horizontalCenter:   centeredLabel ? parent.horizontalCenter : undefined
+        verticalAlignment:          Text.AlignVCenter
+        horizontalAlignment:        centeredLabel ? Text.AlignHCenter : Text.AlignLeft
         text:                       control.alternateText === "" ? control.currentText : control.alternateText
         font:                       control.font
         color: {

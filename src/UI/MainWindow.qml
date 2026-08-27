@@ -15,12 +15,26 @@ import QGroundControl.Toolbar
 /// @brief Native QML top level window
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
-    id:         mainWindow
-    height: 400
+    id:             mainWindow
     width: 800
-    visible:    true
+    height: 500
+
+
+    // readonly property int _fixedDesktopWidth:  800
+    // readonly property int _fixedDesktopHeight: 500
+
+    // width:          _fixedDesktopWidth
+    // height:         _fixedDesktopHeight
+    // minimumWidth:   ScreenTools.isMobile ? 0 : _fixedDesktopWidth
+    // maximumWidth:   ScreenTools.isMobile ? 16777215 : _fixedDesktopWidth
+    // minimumHeight:  ScreenTools.isMobile ? 0 : _fixedDesktopHeight
+    // maximumHeight:  ScreenTools.isMobile ? 16777215 : _fixedDesktopHeight
+    visible:        true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
-    flags:      Qt.Window | (ScreenTools.isAndroid ? Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint : 0)
+    flags:          ScreenTools.isAndroid
+                    ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
+                    : Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint
+                        | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
 
     property bool   _utmspSendActTrigger
 
@@ -99,6 +113,13 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
+        if (ScreenTools.isFakeMobile) {
+            width = ScreenTools.screenWidth
+            height = ScreenTools.screenHeight
+        } else if (ScreenTools.isMobile) {
+            showFullScreen()
+        }
+
         console.log("the application begins")
         // Migrate the removed White option (or any invalid stored value) to Default.
         if (uiThemeMode !== themeDefault && uiThemeMode !== themeBlack) {
@@ -128,11 +149,6 @@ ApplicationWindow {
         property string lastUploadedMissionEditor: ""
     }
 
-    /// Saves main window position and size and re-opens it in the same position and size next time
-    MainWindowSavedState {
-        window: mainWindow
-
-    }
     QtObject {
         id: firstRunPromptManager
 

@@ -20,6 +20,7 @@ Item {
     
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property var _guidedController: globals.guidedControllerFlyView
+    readonly property bool _lightTheme: mainWindow.uiThemeMode === mainWindow.themeDefault
     
     property real _buttonHeight: ScreenTools.defaultFontPixelHeight * 2.1
     
@@ -43,11 +44,11 @@ Item {
             height: root._buttonHeight
             radius: height * 0.4
             color: mouseArea.containsMouse
-                   ? (qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0.9, 0.97, 0.92, 1.0) : Qt.rgba(0.08, 0.2, 0.1, 1.0))
-                   : (qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0.93, 0.93, 0.93, 1.0) : Qt.rgba(1, 1, 1, 0.1))
+                   ? (root._lightTheme ? "#e8f5ee" : Qt.rgba(0.08, 0.2, 0.1, 1.0))
+                   : (root._lightTheme ? "#f3f3f3" : Qt.rgba(1, 1, 1, 0.1))
             border.color: mouseArea.containsMouse
-                          ? (qgcPal.globalTheme === QGCPalette.Light ? "#2ecc71" : "#00ff88")
-                          : (qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0, 0, 0, 0.1) : Qt.rgba(1, 1, 1, 0.15))
+                          ? (root._lightTheme ? "#00a651" : "#00ff88")
+                          : (root._lightTheme ? "#dedede" : Qt.rgba(1, 1, 1, 0.15))
             border.width: 1
             clip: true
 
@@ -71,8 +72,8 @@ Item {
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.1
                     source:                 btn.icon
                     color:                  mouseArea.containsMouse
-                                            ? (qgcPal.globalTheme === QGCPalette.Light ? "#2ecc71" : "#00ff88")
-                                            : (qgcPal.globalTheme === QGCPalette.Light ? "#1a1a1a" : "white")
+                                            ? (root._lightTheme ? "#00a651" : "#00ff88")
+                                            : (root._lightTheme ? "#343434" : "white")
                     fillMode:               Image.PreserveAspectFit
                 }
 
@@ -81,7 +82,7 @@ Item {
                     id: labelText
                     Layout.fillWidth: true
                     text: btn.actionTitle
-                    color: qgcPal.globalTheme === QGCPalette.Light ? "#1a1a1a" : "white"
+                    color: root._lightTheme ? "#343434" : "white"
                     font.bold: true
                     font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.75
                     font.family: "Noto Sans"
@@ -126,7 +127,7 @@ Item {
             text:             qsTr("ADDITIONAL ACTIONS")
             font.pixelSize:   ScreenTools.defaultFontPixelHeight * 0.65
             font.bold:        true
-            color:            qgcPal.globalTheme === QGCPalette.Light ? "#2ecc71" : "#00ff88"
+            color:            root._lightTheme ? "#00a651" : "#00ff88"
             font.family:      "Noto Sans"
             font.capitalization: Font.AllUppercase
         }
@@ -134,7 +135,7 @@ Item {
         Rectangle {
             Layout.fillWidth: true
             height:           1
-            color:            qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0, 0.5, 0.27, 0.3) : Qt.rgba(0, 1, 0.5, 0.2)
+            color:            root._lightTheme ? Qt.rgba(0, 0.65, 0.32, 0.25) : Qt.rgba(0, 1, 0.5, 0.2)
         }
 
         // --- DYNAMIC SECTIONS ---
@@ -217,7 +218,7 @@ Item {
             Text {
                 anchors.centerIn: parent
                 text: "No Actions Available"
-                color: qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0, 0, 0, 0.3) : Qt.rgba(1, 1, 1, 0.3)
+                color: root._lightTheme ? Qt.rgba(0, 0, 0, 0.45) : Qt.rgba(1, 1, 1, 0.3)
                 font.pixelSize: ScreenTools.defaultFontPixelHeight * 0.7
             }
         }

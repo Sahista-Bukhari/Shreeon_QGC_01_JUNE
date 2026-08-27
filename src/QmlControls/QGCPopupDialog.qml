@@ -47,6 +47,7 @@ Popup {
     property bool   compact:                false
     property bool   largeTitleText:         false
     property real   minimumContentHeight:   -1
+    property bool   vehicleConfigurationStyle: false
 
     property real maxContentAvailableWidth:    Math.max(ScreenTools.defaultFontPixelWidth * 12,
                                                          mainWindow.width - _contentMargin * 8)
@@ -74,12 +75,12 @@ Popup {
     readonly property bool _customMissionChrome: false
 
     // Match RouteMappingTaskSettings light form colors on white popup surfaces.
-    readonly property color _accentGreen:            "#00a651"
+    readonly property color _accentGreen:            "#00a04c"
     readonly property color _accentSoftGreen:        "#efffee"
-    readonly property color _titleColor:             "#3f3f3f"
-    readonly property color _bodyColor:              "#6a6a6a"
-    readonly property color _hintColor:              "#8a8a8a"
-    readonly property color _cardBorderIdle:         "#e2e2e2"
+    readonly property color _titleColor:             "#1c1c1e"
+    readonly property color _bodyColor:              "#3a3a3c"
+    readonly property color _hintColor:              "#8e8e93"
+    readonly property color _cardBorderIdle:         "#f0f0f0"
     readonly property color _dialogContentTextColor: _titleColor
     readonly property real  _dialogControlRadius:    ScreenTools.defaultFontPixelWidth * 0.75
 
@@ -144,18 +145,30 @@ Popup {
             return
         }
 
-        // QGCButton: green selected chip style from Route Mapping (Medium/High).
+        // QGCButton: use Vehicle Configuration's gray-card/green-accent style
+        // when requested; retain the standard solid-green dialog action elsewhere.
         const isQgcButton = item.backgroundColor !== undefined && item.textColor !== undefined && item.primary !== undefined
         if (isQgcButton) {
-            item.backgroundColor = _accentGreen
-            item.textColor = "white"
-            if (item.showBorder !== undefined) {
-                item.showBorder = false
+            if (vehicleConfigurationStyle) {
+                if (item.lightStyle !== undefined) {
+                    item.lightStyle = true
+                }
+                item.primary = false
+                item.textColor = _accentGreen
+                if (item.showBorder !== undefined) {
+                    item.showBorder = true
+                }
+            } else {
+                item.backgroundColor = _accentGreen
+                item.textColor = "white"
+                if (item.showBorder !== undefined) {
+                    item.showBorder = false
+                }
             }
             if (item.backRadius !== undefined) {
                 item.backRadius = _dialogControlRadius
             }
-            // Do not restyle white label text inside the green button.
+            // The button owns its foreground/background contrast.
             return
         }
 
@@ -352,6 +365,7 @@ Popup {
                 Layout.fillWidth: true
                 Layout.topMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.85 : 1.15)
                 Layout.leftMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
+                                   + (headerCloseButton.visible ? headerCloseButton.width : 0)
                 Layout.rightMargin: ScreenTools.defaultFontPixelWidth * (compact ? 1.5 : 2)
                                     + (headerCloseButton.visible ? headerCloseButton.width : 0)
                 Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * (compact ? 0.45 : 0.75)

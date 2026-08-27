@@ -20,6 +20,27 @@ Item {
     property real   _leftRightMargin:   ScreenTools.defaultFontPixelWidth * 0.75
     property var    _guidedController:  globals.guidedControllerFlyView
 
+    readonly property string _uploadedMissionEditor: mainWindow.uploadedMissionEditor
+    readonly property bool _customTaskOwner: _uploadedMissionEditor === "routeMapping"
+                                                    || _uploadedMissionEditor === "agricultureSpraying"
+                                                    || _uploadedMissionEditor === "seedSpreader"
+    readonly property bool _missionModeActive: !!_activeVehicle
+                                                && _activeVehicle.armed
+                                                && _activeVehicle.flightMode === _activeVehicle.missionFlightMode
+    readonly property bool _showTaskBanner: _customTaskOwner && _missionModeActive
+
+    function _taskModeName(editorType) {
+        switch (editorType) {
+        case "agricultureSpraying":
+            return qsTr("Agriculture Spraying")
+        case "seedSpreader":
+            return qsTr("Seed Spreader")
+        case "routeMapping":
+        default:
+            return qsTr("Route Mapping")
+        }
+    }
+
     function dropMainStatusIndicatorTool() {
         mainStatusIndicator.dropMainStatusIndicator();
     }
@@ -51,7 +72,10 @@ Item {
 
             Item {
                 id:     leftPanel
-                width:  leftPanelLayout.implicitWidth + control._statusBandExtra
+                width:  leftPanelLayout.implicitWidth
+                        + (control._showTaskBanner
+                           ? ScreenTools.defaultFontPixelWidth * 3
+                           : control._statusBandExtra)
                 height: parent.height
 
                 // Status color band (Ready / Comms Lost / Armed, etc.)
@@ -60,12 +84,15 @@ Item {
                     z:          0
                     x:          qgcButton.width
                     height:     parent.height
-                    width:      mainStatusIndicator.width + control._statusBandExtra
+                    width:      parent.width - x
                     opacity:    0.92
 
                     gradient: Gradient {
                         orientation: Gradient.Horizontal
-                        GradientStop { position: 0; color: mainStatusIndicator._mainStatusBGColor }
+                        GradientStop {
+                            position: 0
+                            color: control._showTaskBanner ? "#20a900" : mainStatusIndicator._mainStatusBGColor
+                        }
                         GradientStop {
                             position: 1
                             color:    Qt.rgba(control._glassFill.r, control._glassFill.g, control._glassFill.b, 0)
@@ -111,6 +138,20 @@ Item {
                         MainStatusIndicator {
                             id:                 mainStatusIndicator
                             Layout.fillHeight:  true
+                            visible:            !control._showTaskBanner
+                        }
+
+                        QGCLabel {
+                            id:                 missionTaskLabel
+                            Layout.fillHeight:  true
+                            leftPadding:        ScreenTools.defaultFontPixelWidth
+                            rightPadding:       ScreenTools.defaultFontPixelWidth
+                            verticalAlignment:  Text.AlignVCenter
+                            text:               qsTr("Task in progress. %1 mode").arg(control._taskModeName(control._uploadedMissionEditor))
+                            color:              "white"
+                            font.pointSize:     ScreenTools.defaultFontPointSize
+                            font.weight:        Font.Normal
+                            visible:            control._showTaskBanner
                         }
                     }
 

@@ -11,9 +11,9 @@ TextArea {
     height:                 contentHeight
     readOnly:               true
     textFormat:             TextEdit.RichText
-    color:                  qgcPal.text
+    color:                  "#000000"
     placeholderText:        qsTr("No Messages")
-    placeholderTextColor:   qgcPal.text
+    placeholderTextColor:   "#000000"
     padding:                0
     wrapMode:               TextEdit.Wrap
 
@@ -22,9 +22,11 @@ TextArea {
     property var _fact: null
 
     function formatMessage(message) {
-        message = message.replace(new RegExp("<#E>", "g"), "color: " + qgcPal.warningText + "; font: " + (ScreenTools.defaultFontPointSize.toFixed(0) - 1) + "pt monospace;");
-        message = message.replace(new RegExp("<#I>", "g"), "color: " + qgcPal.warningText + "; font: " + (ScreenTools.defaultFontPointSize.toFixed(0) - 1) + "pt monospace;");
-        message = message.replace(new RegExp("<#N>", "g"), "color: " + qgcPal.text + "; font: " + (ScreenTools.defaultFontPointSize.toFixed(0) - 1) + "pt monospace;");
+        const messageStyle = "color: black; font-family: monospace; font-size: "
+                + (ScreenTools.defaultFontPointSize.toFixed(0) - 1) + "pt;"
+        message = message.replace(new RegExp("<#E>", "g"), messageStyle)
+        message = message.replace(new RegExp("<#I>", "g"), messageStyle)
+        message = message.replace(new RegExp("<#N>", "g"), messageStyle)
         return message;
     }
 

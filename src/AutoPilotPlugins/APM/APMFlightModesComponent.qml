@@ -28,7 +28,6 @@ SetupPage {
     APMFlightModesComponentController {
         id:         controller
     }
-
     Component {
         id: flightModePageComponent
 

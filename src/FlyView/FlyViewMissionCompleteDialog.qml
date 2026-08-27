@@ -50,6 +50,7 @@ Item {
             id:         missionCompleteDialog
             title:      qsTr("Flight Plan complete")
             buttons:    Dialog.Close
+            vehicleConfigurationStyle: true
 
             property var activeVehicleCopy: _activeVehicle
             onActiveVehicleCopyChanged:
@@ -59,19 +60,25 @@ Item {
 
             ColumnLayout {
                 id:         column
-                width:      40 * ScreenTools.defaultFontPixelWidth
-                spacing:    ScreenTools.defaultFontPixelHeight
+                width:      Math.min(40 * ScreenTools.defaultFontPixelWidth,
+                                     parent ? parent.width : 40 * ScreenTools.defaultFontPixelWidth)
+                x:          parent ? Math.max(0, (parent.width - width) / 2) : 0
+                spacing:    ScreenTools.defaultFontPixelHeight * 0.75
 
                 QGCLabel {
                     Layout.fillWidth:       true
                     text:                   qsTr("%1 Images Taken").arg(_activeVehicle.cameraTriggerPoints.count)
                     horizontalAlignment:    Text.AlignHCenter
+                    color:                  "#3a3a3c"
+                    font.pointSize:         ScreenTools.defaultFontPointSize
                     visible:                _activeVehicle.cameraTriggerPoints.count !== 0
                 }
 
                 QGCButton {
                     Layout.fillWidth:   true
+                    Layout.alignment:   Qt.AlignHCenter
                     text:               qsTr("Remove plan from vehicle")
+                    horizontalAlignment: Text.AlignHCenter
                     visible:            !_activeVehicle.communicationLost// && !_activeVehicle.apmFirmware  // ArduPilot has a bug somewhere with mission clear
                     onClicked: {
                         _planController.removeAllFromVehicle()
@@ -83,25 +90,28 @@ Item {
                     Layout.fillWidth:   true
                     Layout.alignment:   Qt.AlignHCenter
                     text:               qsTr("Leave plan on vehicle")
+                    horizontalAlignment: Text.AlignHCenter
                     onClicked:          missionCompleteDialog.close()
 
                 }
 
                 Rectangle {
                     Layout.fillWidth:   true
-                    color:              qgcPal.text
-                    height:             1
+                    Layout.preferredHeight: 1
+                    color:              "#f0f0f0"
+                    visible:            globals.guidedControllerFlyView.showResumeMission
                 }
 
                 ColumnLayout {
                     Layout.fillWidth:   true
-                    spacing:            ScreenTools.defaultFontPixelHeight
+                    spacing:            ScreenTools.defaultFontPixelHeight * 0.75
                     visible:            !_activeVehicle.communicationLost && globals.guidedControllerFlyView.showResumeMission
 
                     QGCButton {
                         Layout.fillWidth:   true
                         Layout.alignment:   Qt.AlignHCenter
                         text:               qsTr("Resume Mission From Waypoint %1").arg(globals.guidedControllerFlyView._resumeMissionIndex)
+                        horizontalAlignment: Text.AlignHCenter
 
                         onClicked: {
                             globals.guidedControllerFlyView.executeAction(globals.guidedControllerFlyView.actionResumeMission, null, null)
@@ -112,6 +122,10 @@ Item {
                     QGCLabel {
                         Layout.fillWidth:   true
                         wrapMode:           Text.WordWrap
+                        horizontalAlignment: Text.AlignHCenter
+                        color:              "#3a3a3c"
+                        font.pointSize:     ScreenTools.defaultFontPointSize
+                        font.weight:        Font.Normal
                         text:               qsTr("Resume Mission will rebuild the current mission from the last flown waypoint and upload it to the vehicle for the next flight.")
                     }
                 }
@@ -119,7 +133,10 @@ Item {
                 QGCLabel {
                     Layout.fillWidth:   true
                     wrapMode:           Text.WordWrap
-                    color:              qgcPal.warningText
+                    horizontalAlignment: Text.AlignHCenter
+                    color:              "#e53935"
+                    font.pointSize:     ScreenTools.defaultFontPointSize
+                    font.weight:        Font.Normal
                     text:               qsTr("If you are changing batteries for Resume Mission do not disconnect from the vehicle.")
                     visible:            globals.guidedControllerFlyView.showResumeMission
                 }

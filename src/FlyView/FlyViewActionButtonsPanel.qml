@@ -19,6 +19,7 @@ Item {
     property real maxVisibleWidth: ScreenTools.defaultFontPixelWidth * 50
     property real _buttonHeight: ScreenTools.defaultFontPixelHeight * 1.85
     property real _buttonSpacing: ScreenTools.defaultFontPixelWidth
+    readonly property bool _lightTheme: mainWindow.uiThemeMode === mainWindow.themeDefault
 
     implicitHeight: _buttonHeight
     width: needsScroll ? maxVisibleWidth : Math.min(maxVisibleWidth, buttonRow.width)
@@ -46,16 +47,16 @@ Item {
 
         background: Rectangle {
             id: dropPanelBg
-            border.color: qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0.8, 0.85, 0.8, 0.8) : Qt.rgba(0.3, 0.5, 0.3, 0.6)
+            border.color: root._lightTheme ? "#dedede" : Qt.rgba(0.3, 0.5, 0.3, 0.6)
             border.width: 1
-            color: qgcPal.globalTheme === QGCPalette.Light ? Qt.rgba(0.97, 0.97, 0.97, 0.97) : Qt.rgba(0.06, 0.08, 0.06, 0.97)
+            color: root._lightTheme ? "#ffffff" : Qt.rgba(0.06, 0.08, 0.06, 0.97)
             radius: ScreenTools.defaultFontPixelHeight * 0.5
 
             layer.enabled: true
             layer.effect: MultiEffect {
                 shadowEnabled: true
                 shadowColor: "black"
-                shadowOpacity: 0.7
+                shadowOpacity: root._lightTheme ? 0.25 : 0.7
                 shadowVerticalOffset: 4
                 shadowBlur: 0.8
             }

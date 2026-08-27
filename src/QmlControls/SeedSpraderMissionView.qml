@@ -2276,90 +2276,12 @@ Item {
             }
         }
 
-        // Top-right toolbar: import and clear.
-        Row {
-            id: mapTools
-            anchors.top: parent.top
-            anchors.topMargin: mainToolBar.height + ScreenTools.defaultFontPixelHeight * 1.2
-            anchors.right: parent.right
-            anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.2
-            spacing: ScreenTools.defaultFontPixelWidth * 1.5
-            z: QGroundControl.zOrderWidgets + 10
-
-            Item {
-                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
-                height: width
-
-                QGCColoredImage {
-                    anchors.centerIn: parent
-                    width: Math.round(parent.width * 0.85)
-                    height: width
-                    source: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
-                    sourceSize.width: width * Screen.devicePixelRatio
-                    sourceSize.height: height * Screen.devicePixelRatio
-                    fillMode: Image.PreserveAspectFit
-                    color: "white"
-                    smooth: true
-                    mipmap: true
-                }
-
-                RippleEffect {
-                    id: importRipple
-                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
-                    clipRadius: width / 2
-                }
-
-                QGCMouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: function(mouse) {
-                        importRipple.tap(mouse.x, mouse.y)
-                        _root.openRouteMappingImportDialog()
-                    }
-                }
-            }
-
-            Item {
-                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
-                height: width
-                opacity: 1.0
-
-                QGCColoredImage {
-                    anchors.centerIn: parent
-                    width: Math.round(parent.width * 0.85)
-                    height: width
-                    source: "/res/modern-icons/MaterialSymbolsLightDirectorySync.svg"
-                    sourceSize.width: width * Screen.devicePixelRatio
-                    sourceSize.height: height * Screen.devicePixelRatio
-                    fillMode: Image.PreserveAspectFit
-                    color: "white"
-                    smooth: true
-                    mipmap: true
-                }
-
-                RippleEffect {
-                    id: clearRipple
-                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
-                    clipRadius: width / 2
-                }
-
-                QGCMouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: function(mouse) {
-                        clearRipple.tap(mouse.x, mouse.y)
-                        _root.clearRouteMappingPlan()
-                    }
-                }
-            }
-        }
-
         // Stats panel: mapping area, photo count, estimated flight time.
         Rectangle {
 
             id: mappingStats
-            anchors.top: mapTools.bottom
-            anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.5
+            anchors.top: parent.top
+            anchors.topMargin: mainToolBar.height + ScreenTools.defaultFontPixelHeight * 0.5
             anchors.right: parent.right
             anchors.rightMargin: ScreenTools.defaultFontPixelWidth
             width: ScreenTools.defaultFontPixelWidth * 30
@@ -2760,6 +2682,82 @@ Item {
                     height: 1
                     color: "#4af200"
                     opacity: 0.55
+                }
+            }
+        }
+
+        // Import and clear actions belong to the toolbar so their stacking,
+        // alignment and click handling are independent of the map overlay.
+        Row {
+            id: mapTools
+            anchors.right: parent.right
+            anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.2
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: ScreenTools.defaultFontPixelWidth * 1.5
+
+            Item {
+                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+                height: width
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: Math.round(parent.width * 0.85)
+                    height: width
+                    source: "/res/modern-icons/MaterialSymbolsCreateNewFolder.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    color: "white"
+                    smooth: true
+                    mipmap: true
+                }
+
+                RippleEffect {
+                    id: importRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
+                QGCMouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: function(mouse) {
+                        importRipple.tap(mouse.x, mouse.y)
+                        _root.openRouteMappingImportDialog()
+                    }
+                }
+            }
+
+            Item {
+                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+                height: width
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: Math.round(parent.width * 0.85)
+                    height: width
+                    source: "/res/modern-icons/MaterialSymbolsLightDirectorySync.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    color: "white"
+                    smooth: true
+                    mipmap: true
+                }
+
+                RippleEffect {
+                    id: clearRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
+                QGCMouseArea {
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: function(mouse) {
+                        clearRipple.tap(mouse.x, mouse.y)
+                        _root.clearRouteMappingPlan()
+                    }
                 }
             }
         }
