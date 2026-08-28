@@ -71,6 +71,7 @@ qt_add_qml_module(FlyViewModule
         ProximityRadarVideoView.qml
         QGCVideoBackground.qml
         RoverChecklist.qml
+        SavedPlanGallery.qml
         SubChecklist.qml
         TelemetryValuesBar.qml
         TerrainProgress.qml

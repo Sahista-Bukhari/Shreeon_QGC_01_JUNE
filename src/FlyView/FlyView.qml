@@ -213,13 +213,17 @@ Item {
         missionImportFinalizeTimer.restart()
     }
 
+    function _openFlyViewPlanFilePicker() {
+        _importPlanForMission = true
+        planFileDialog.title = qsTr("Import your plan")
+        planFileDialog.planFiles = true
+        planFileDialog.nameFilters = _planController.loadNameFilters
+        planFileDialog.openForLoad()
+    }
+
     function openFlyViewPlanImportDialog() {
-       function openFilePicker(){
-           _importPlanForMission = true
-           planFileDialog.title = qsTr("Import your plan")
-           planFileDialog.planFiles = true
-           planFileDialog.nameFilters = _planController.loadNameFilters
-           planFileDialog.openForLoad()
+       function openSavedPlanGallery() {
+           savedPlanGallery.open()
        }
         if(_hasFlyViewPlanContent){
             mainWindow.showMessageDialog(
@@ -233,13 +237,25 @@ Item {
                         qsTr("Open plan"),
                         qsTr("You have unsaved/unsent changes. Loading a new Plan will lose these changes. Are you sure?"),
                         Dialog.Ok | Dialog.Cancel,
-                        openFilePicker
+                        openSavedPlanGallery
                         )
             return
         }
-        openFilePicker()
+        openSavedPlanGallery()
 
     }
+
+    SavedPlanGallery {
+        id: savedPlanGallery
+        folder: _root._appSettings ? _root._appSettings.missionSavePath : ""
+
+        onPlanSelected: (filePath) => {
+            _root._importPlanForMission = false
+            _root.importFlyViewPlan(filePath)
+        }
+        onBrowseRequested: _root._openFlyViewPlanFilePicker()
+    }
+
     Timer {
         id: missionImportFinalizeTimer
         interval: 0

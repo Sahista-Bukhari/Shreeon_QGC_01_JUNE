@@ -3,6 +3,7 @@
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QObject>
 #include <QtCore/QUrl>
+#include <QtCore/QVariantList>
 #include <QtQmlIntegration/QtQmlIntegration>
 
 Q_DECLARE_LOGGING_CATEGORY(QGCFileDialogControllerLog)
@@ -19,6 +20,10 @@ public:
 
     /// Return all file in the specified path which match the specified extension
     Q_INVOKABLE static QStringList getFiles(const QString &directoryPath, const QStringList &nameFilters);
+
+    /// Return metadata and preview geometry for plan files which match the name filters.
+    /// Results are ordered with the most recently modified plan first.
+    Q_INVOKABLE static QVariantList getPlanFileInfoList(const QString &directoryPath, const QStringList &nameFilters);
 
     /// Returns the fully qualified file name from the specified parts.
     /// If filename has no file extension the first file extension is nameFilters is added to the filename.

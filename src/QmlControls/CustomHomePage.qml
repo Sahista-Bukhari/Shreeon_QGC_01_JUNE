@@ -7,8 +7,7 @@ import QGroundControl.Controls
 
 Item {
     id: root
-    anchors.fill: parent
-
+    anchors.fill: parentm
     readonly property color _green:        "#1FAF5B"
     readonly property color _greenDeep:    "#148A45"
     readonly property color _red:          "#E53935"

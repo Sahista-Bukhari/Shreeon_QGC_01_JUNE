@@ -7,13 +7,41 @@
 #include <QtCore/QDir>
 #include <QtCore/QFile>
 #include <QtCore/QFileInfo>
+#include <QtCore/QJsonArray>
+#include <QtCore/QJsonDocument>
+#include <QtCore/QJsonObject>
 #include <QtCore/QProcess>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
+#include <QtCore/QVariantMap>
+#include <QtPositioning/QGeoCoordinate>
 
 QGC_LOGGING_CATEGORY(QGCFileDialogControllerLog, "QMLControls.QGCFileDialogController")
 
 namespace {
+struct PlanPreviewBounds {
+    bool valid = false;
+    double north = 0.0;
+    double south = 0.0;
+    double east = 0.0;
+    double west = 0.0;
+
+    void addCoordinate(const QGeoCoordinate &coordinate)
+    {
+        if (!valid) {
+            north = south = coordinate.latitude();
+            east = west = coordinate.longitude();
+            valid = true;
+            return;
+        }
+
+        north = qMax(north, coordinate.latitude());
+        south = qMin(south, coordinate.latitude());
+        east = qMax(east, coordinate.longitude());
+        west = qMin(west, coordinate.longitude());
+    }
+};
+
 QString normalizeResourcePath(const QString &path)
 {
     if (path.startsWith(QStringLiteral("qrc:/"))) {
@@ -23,6 +51,155 @@ QString normalizeResourcePath(const QString &path)
         return path.mid(3);
     }
     return path;
+}
+
+bool coordinateFromJsonArray(const QJsonArray &coordinateArray, QGeoCoordinate &coordinate)
+{
+    if (coordinateArray.size() < 2 || !coordinateArray[0].isDouble() || !coordinateArray[1].isDouble()) {
+        return false;
+    }
+
+    const double latitude = coordinateArray[0].toDouble();
+    const double longitude = coordinateArray[1].toDouble();
+    if (qFuzzyIsNull(latitude) && qFuzzyIsNull(longitude)) {
+        return false;
+    }
+
+    coordinate = QGeoCoordinate(latitude, longitude);
+    return coordinate.isValid();
+}
+
+bool appendJsonCoordinate(const QJsonArray &coordinateArray, QVariantList &path, PlanPreviewBounds &bounds, QGeoCoordinate *appendedCoordinate = nullptr)
+{
+    QGeoCoordinate coordinate;
+    if (!coordinateFromJsonArray(coordinateArray, coordinate)) {
+        return false;
+    }
+
+    path.append(QVariant::fromValue(coordinate));
+    bounds.addCoordinate(coordinate);
+    if (appendedCoordinate) {
+        *appendedCoordinate = coordinate;
+    }
+    return true;
+}
+
+void appendJsonCoordinatePath(const QJsonArray &coordinateArray, QVariantList &path, PlanPreviewBounds &bounds)
+{
+    for (const QJsonValue &coordinateValue : coordinateArray) {
+        if (coordinateValue.isArray()) {
+            appendJsonCoordinate(coordinateValue.toArray(), path, bounds);
+        }
+    }
+}
+
+QVariantMap planPreviewMetadata(const QString &filePath)
+{
+    QVariantMap preview;
+    preview.insert(QStringLiteral("hasPreview"), false);
+    preview.insert(QStringLiteral("takeoffValid"), false);
+    preview.insert(QStringLiteral("routePath"), QVariantList());
+    preview.insert(QStringLiteral("boundaryPath"), QVariantList());
+    preview.insert(QStringLiteral("takeoffCoordinate"), QVariant::fromValue(QGeoCoordinate()));
+    preview.insert(QStringLiteral("startCoordinate"), QVariant::fromValue(QGeoCoordinate()));
+    preview.insert(QStringLiteral("endCoordinate"), QVariant::fromValue(QGeoCoordinate()));
+    preview.insert(QStringLiteral("north"), 0.0);
+    preview.insert(QStringLiteral("south"), 0.0);
+    preview.insert(QStringLiteral("east"), 0.0);
+    preview.insert(QStringLiteral("west"), 0.0);
+
+    QFile planFile(filePath);
+    if (!planFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return preview;
+    }
+
+    QJsonParseError parseError;
+    const QJsonDocument document = QJsonDocument::fromJson(planFile.readAll(), &parseError);
+    if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
+        return preview;
+    }
+
+    const QJsonArray missionItems = document.object()
+                                          .value(QStringLiteral("mission"))
+                                          .toObject()
+                                          .value(QStringLiteral("items"))
+                                          .toArray();
+    QVariantList routePath;
+    QVariantList boundaryPath;
+    PlanPreviewBounds bounds;
+    QGeoCoordinate takeoffCoordinate;
+
+    for (const QJsonValue &itemValue : missionItems) {
+        if (!itemValue.isObject()) {
+            continue;
+        }
+
+        const QJsonObject item = itemValue.toObject();
+        const QString itemType = item.value(QStringLiteral("type")).toString();
+        if (itemType == QStringLiteral("SimpleItem")) {
+            const QJsonArray parameters = item.value(QStringLiteral("params")).toArray();
+            if (parameters.size() <= 5 || !parameters[4].isDouble() || !parameters[5].isDouble()) {
+                continue;
+            }
+
+            const QJsonArray coordinateArray{ parameters[4], parameters[5] };
+            QGeoCoordinate appendedCoordinate;
+            if (appendJsonCoordinate(coordinateArray, routePath, bounds, &appendedCoordinate)) {
+                const int command = item.value(QStringLiteral("command")).toInt();
+                // MAV_CMD_NAV_TAKEOFF and MAV_CMD_NAV_VTOL_TAKEOFF.
+                if (!takeoffCoordinate.isValid() && (command == 22 || command == 84)) {
+                    takeoffCoordinate = appendedCoordinate;
+                }
+            }
+            continue;
+        }
+
+        if (itemType != QStringLiteral("ComplexItem")) {
+            continue;
+        }
+
+        const QJsonArray polygon = item.value(QStringLiteral("polygon")).toArray();
+        if (boundaryPath.isEmpty() && !polygon.isEmpty()) {
+            appendJsonCoordinatePath(polygon, boundaryPath, bounds);
+        }
+
+        const QJsonObject transectStyle = item.value(QStringLiteral("TransectStyleComplexItem")).toObject();
+        const QJsonArray visualTransectPoints = transectStyle.value(QStringLiteral("VisualTransectPoints")).toArray();
+        if (!visualTransectPoints.isEmpty()) {
+            appendJsonCoordinatePath(visualTransectPoints, routePath, bounds);
+            continue;
+        }
+
+        // Older plans do not persist generated transects. Their source shape
+        // still provides a useful preview until the plan is loaded and rebuilt.
+        const QJsonArray polyline = item.value(QStringLiteral("polyline")).toArray();
+        if (!polyline.isEmpty()) {
+            appendJsonCoordinatePath(polyline, routePath, bounds);
+        } else if (!polygon.isEmpty()) {
+            appendJsonCoordinatePath(polygon, routePath, bounds);
+        }
+    }
+
+    if (routePath.isEmpty() && !boundaryPath.isEmpty()) {
+        routePath = boundaryPath;
+    }
+
+    preview.insert(QStringLiteral("routePath"), routePath);
+    preview.insert(QStringLiteral("boundaryPath"), boundaryPath);
+    preview.insert(QStringLiteral("hasPreview"), bounds.valid && !routePath.isEmpty());
+    preview.insert(QStringLiteral("takeoffValid"), takeoffCoordinate.isValid());
+    preview.insert(QStringLiteral("takeoffCoordinate"), QVariant::fromValue(takeoffCoordinate));
+
+    if (bounds.valid) {
+        preview.insert(QStringLiteral("north"), bounds.north);
+        preview.insert(QStringLiteral("south"), bounds.south);
+        preview.insert(QStringLiteral("east"), bounds.east);
+        preview.insert(QStringLiteral("west"), bounds.west);
+        preview.insert(QStringLiteral("startCoordinate"), routePath.first());
+        preview.insert(QStringLiteral("endCoordinate"), routePath.last());
+    }
+
+    return preview;
 }
 } // namespace
 
@@ -48,6 +225,32 @@ QStringList QGCFileDialogController::getFiles(const QString &directoryPath, cons
     for (const QFileInfo &fileInfo: fileInfoList) {
         qCDebug(QGCFileDialogControllerLog) << "getFiles found" << fileInfo.fileName();
         files << fileInfo.fileName();
+    }
+
+    return files;
+}
+
+QVariantList QGCFileDialogController::getPlanFileInfoList(const QString &directoryPath, const QStringList &nameFilters)
+{
+    qCDebug(QGCFileDialogControllerLog) << "getPlanFileInfoList" << directoryPath << nameFilters;
+
+    QDir fileDir(directoryPath);
+    const QFileInfoList fileInfoList = fileDir.entryInfoList(nameFilters, QDir::Files, QDir::Time);
+
+    QVariantList files;
+    files.reserve(fileInfoList.size());
+    for (const QFileInfo &fileInfo : fileInfoList) {
+        QVariantMap metadata;
+        metadata.insert(QStringLiteral("fileName"), fileInfo.fileName());
+        metadata.insert(QStringLiteral("baseName"), fileInfo.completeBaseName());
+        metadata.insert(QStringLiteral("filePath"), fileInfo.absoluteFilePath());
+        metadata.insert(QStringLiteral("size"), fileInfo.size());
+        metadata.insert(QStringLiteral("lastModified"), fileInfo.lastModified());
+        const QVariantMap preview = planPreviewMetadata(fileInfo.absoluteFilePath());
+        for (auto it = preview.constBegin(); it != preview.constEnd(); ++it) {
+            metadata.insert(it.key(), it.value());
+        }
+        files.append(metadata);
     }
 
     return files;
