@@ -17,7 +17,7 @@ Rectangle {
 
     readonly property bool  _lightTheme: typeof mainWindow !== "undefined"
                                          && mainWindow
-                                         && mainWindow.activeMissionEditor === "customMission"
+                                         && mainWindow.customMissionStyleActive
     readonly property real  _margin:     _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.05 : ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _radius:     _lightTheme ? ScreenTools.defaultFontPixelWidth * 0.75 : ScreenTools.defaultFontPixelWidth / 2
     readonly property color _titleColor: _lightTheme ? "#3f3f3f" : "#ffffff"

@@ -17,7 +17,7 @@ QGCPopupDialog {
     property bool   flyThroughCommandsAllowed
 
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
     readonly property real _cardRadius: ScreenTools.defaultFontPixelHeight * 0.55
 
     ColumnLayout {

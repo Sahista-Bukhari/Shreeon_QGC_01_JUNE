@@ -138,9 +138,12 @@ Rectangle {
     }
 
     function _closeView() {
+        if (typeof mainWindow !== "undefined" && mainWindow) {
+            mainWindow.closeToolAndReturnToOrigin()
+            return
+        }
+
         advancedView.popout()
-        if (typeof mainWindow !== "undefined" && mainWindow)
-            mainWindow.showModeSelection(Qt.point(mainWindow.width / 2, ScreenTools.toolbarHeight / 2))
     }
 
     function _selectPage(key, title, pageSource, isMessage, vehicleComponent) {

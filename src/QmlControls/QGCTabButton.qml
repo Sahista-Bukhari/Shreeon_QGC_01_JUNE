@@ -33,7 +33,7 @@ Button {
 
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
-                                           && mainWindow.activeMissionEditor === "customMission"
+                                           && mainWindow.customMissionStyleActive
     readonly property color _cmAccent: "#00a651"
     readonly property color _cmHoverGray: "#e8e8e8"
     readonly property color _cmBorder: "#e2e2e2"

@@ -40,7 +40,7 @@ Item {
 
     readonly property bool  _customMission: typeof mainWindow !== "undefined"
                                             && mainWindow
-                                            && mainWindow.activeMissionEditor === "customMission"
+                                            && mainWindow.customMissionStyleActive
     readonly property real  _glassRadius: ScreenTools.defaultFontPixelHeight * 0.9
     readonly property color _glassTint:   Qt.rgba(0.06, 0.10, 0.09, 0.34)
     readonly property color _glassRim:    Qt.rgba(1, 1, 1, 0.32)
@@ -51,12 +51,12 @@ Item {
     readonly property color _cardBorder:  "#e2e2e2"
     readonly property real  _cardRadius:  ScreenTools.defaultFontPixelWidth * 0.75
 
-    // Custom Mission: flush square white panel (Task Settings style). Plan View keeps map glass.
+    // Custom Mission uses the same subtly rounded white surface as the other Task Settings panels.
     Rectangle {
         id: rightPanelSolid
         anchors.fill: parent
         visible: root._customMission
-        radius: 0
+        radius: Math.max(4, root._cardRadius * 0.75)
         color: root._panelFill
         border.width: 0
     }

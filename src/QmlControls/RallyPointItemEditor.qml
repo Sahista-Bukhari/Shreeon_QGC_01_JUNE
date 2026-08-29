@@ -31,7 +31,7 @@ Rectangle {
     property bool   _currentItem:       rallyPoint ? rallyPoint === controller.currentRallyPoint : false
     readonly property bool _lightTheme: typeof mainWindow !== "undefined"
                                         && mainWindow
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
     property color  _outerTextColor:    _lightTheme ? "#3f3f3f" : "#ffffff"
 
     readonly property real  _margin:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.05 : ScreenTools.defaultFontPixelWidth / 2

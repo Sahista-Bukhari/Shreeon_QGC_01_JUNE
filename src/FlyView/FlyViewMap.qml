@@ -1057,6 +1057,16 @@ FlightMap {
 
             property var mapClickCoord
 
+            Connections {
+                target: mainWindow
+
+                function onFlyViewToolbarVisibleChanged() {
+                    if (!mainWindow.flyViewToolbarVisible) {
+                        mapClickDropPanel.close()
+                    }
+                }
+            }
+
             sourceComponent: Component {
                 ColumnLayout {
                     width:   ScreenTools.defaultFontPixelWidth * 23
@@ -1251,6 +1261,13 @@ FlightMap {
     }
 
     onMapClicked: (position) => {
+        // This action panel is owned by Fly View. Since the popup itself is
+        // parented to MainWindow, explicitly prevent it from opening while a
+        // mission editor or setup/tool page is active.
+        if (!mainWindow.flyViewToolbarVisible) {
+            return
+        }
+
         // Plan Edit Mode click handling
         if (planEditMode) {
             // In plan edit mode, we use the center crosshair + Add button for waypoint placement

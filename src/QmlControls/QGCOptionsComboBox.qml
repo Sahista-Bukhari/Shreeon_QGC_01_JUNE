@@ -18,7 +18,7 @@ ComboBox {
     property string _flashText
     property bool   _showFlash:     false
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
 
     Component.onCompleted: indicator.color = Qt.binding(function() { return control._glassTheme ? "#ffffff" : _controlQGCPal.text })
 

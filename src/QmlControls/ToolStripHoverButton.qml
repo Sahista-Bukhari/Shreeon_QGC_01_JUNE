@@ -31,7 +31,7 @@ Button {
     property bool forceImageScale11: false
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
-                                           && mainWindow.activeMissionEditor === "customMission"
+                                           && mainWindow.customMissionStyleActive
     property real imageScale:        forceImageScale11 && (text == "") ? 0.8 : 0.6
     property real contentMargins:    _customMission ? (innerText.height * 0.18) : (innerText.height * 0.1)
 

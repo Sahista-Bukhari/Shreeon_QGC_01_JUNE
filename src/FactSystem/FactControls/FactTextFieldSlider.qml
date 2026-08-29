@@ -30,7 +30,7 @@ Rectangle {
     property bool _showSlider:              fact && fact.userMin !== undefined && fact.userMax !== undefined
     readonly property bool _customMission:  typeof mainWindow !== "undefined"
                                             && mainWindow
-                                            && mainWindow.activeMissionEditor === "customMission"
+                                            && mainWindow.customMissionStyleActive
     readonly property bool _lightTheme: {
         if (typeof mainWindow !== "undefined" && mainWindow)
             return mainWindow.uiThemeMode !== mainWindow.themeBlack

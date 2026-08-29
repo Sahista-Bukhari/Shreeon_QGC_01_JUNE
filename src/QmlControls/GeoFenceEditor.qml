@@ -21,7 +21,7 @@ Rectangle {
 
     readonly property bool  _lightTheme: typeof mainWindow !== "undefined"
                                          && mainWindow
-                                         && mainWindow.activeMissionEditor === "customMission"
+                                         && mainWindow.customMissionStyleActive
     readonly property real  _editFieldWidth:    Math.min(width - _margin * 2, ScreenTools.defaultFontPixelWidth * 15)
     readonly property real  _margin:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.05 : ScreenTools.defaultFontPixelWidth / 2
     readonly property real  _radius:            _lightTheme ? ScreenTools.defaultFontPixelWidth * 0.75 : ScreenTools.defaultFontPixelWidth / 2

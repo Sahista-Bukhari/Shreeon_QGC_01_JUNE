@@ -209,7 +209,6 @@ Item {
         _missionController.setCurrentPlanViewSeqNum(0, true)
         planEditMode = false
         _editingLayer = _layerMission
-
         missionImportFinalizeTimer.restart()
     }
 

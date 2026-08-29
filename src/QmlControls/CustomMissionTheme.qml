@@ -10,7 +10,7 @@ QtObject {
 
     readonly property bool active: typeof mainWindow !== "undefined"
                                    && mainWindow
-                                   && mainWindow.activeMissionEditor === "customMission"
+                                   && mainWindow.customMissionStyleActive
 
     readonly property color accentGreen:     "#00a651"
     readonly property color accentSoftGreen: "#e8e8e8"

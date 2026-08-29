@@ -42,7 +42,7 @@ Rectangle {
     property bool   _currentItem:               missionItem.isCurrentItem
     readonly property bool _lightTheme: typeof mainWindow !== "undefined"
                                         && mainWindow
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
     property color  _outerTextColor:            _lightTheme ? "#3f3f3f" : "#ffffff"
     property bool   _noMissionItemsAdded:       ListView.view.model.count === 1
     property real   _sectionSpacer:             ScreenTools.defaultFontPixelWidth / 2  // spacing between section headings
@@ -355,7 +355,7 @@ Rectangle {
                 // Custom Mission: open beside the mission list (over the map), not on top of the cards.
                 var customMission = typeof mainWindow !== "undefined"
                                     && mainWindow
-                                    && mainWindow.activeMissionEditor === "customMission"
+                                    && mainWindow.customMissionStyleActive
                 var dropPanel
                 if (customMission) {
                     var origin = _root.mapToItem(globals.parent, 0, 0)

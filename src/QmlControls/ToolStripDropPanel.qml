@@ -125,7 +125,7 @@ Item {
 
         readonly property bool _customMission: typeof mainWindow !== "undefined"
                                                && mainWindow
-                                               && mainWindow.activeMissionEditor === "customMission"
+                                               && mainWindow.customMissionStyleActive
         readonly property real _panelRadius: ScreenTools.defaultFontPixelHeight * 0.55
         readonly property color _panelColor: _customMission
                                              ? "#fbfbfb"

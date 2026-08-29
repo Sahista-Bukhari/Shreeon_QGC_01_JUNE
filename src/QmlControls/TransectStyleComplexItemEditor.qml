@@ -18,7 +18,7 @@ Rectangle {
     border.color: _glassTheme ? "#e2e2e2" : "transparent"
 
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
 
     property bool   transectAreaDefinitionComplete: true
     property string transectAreaDefinitionHelp:     _internalError

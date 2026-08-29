@@ -87,16 +87,22 @@ void TransectStyleComplexItemTest::_testDirty(void)
 
 void TransectStyleComplexItemTest::_testRebuildTransects(void)
 {
-    auto coveredAreaChangedMask         = _multiSpy->signalNameToMask(SIGNAL(coveredAreaChanged));
-    auto lastSequenceNumberChangedMask  = _multiSpy->signalNameToMask(SIGNAL(lastSequenceNumberChanged));
+    auto coveredAreaChangedMask         = _multiSpy->signalNameToMask("coveredAreaChanged");
+    auto lastSequenceNumberChangedMask  = _multiSpy->signalNameToMask("lastSequenceNumberChanged");
+
+    QVERIFY(coveredAreaChangedMask != 0);
+    QVERIFY(lastSequenceNumberChangedMask != 0);
 
     _transectStyleItem->cameraCalc()->setCameraBrand(CameraCalc::xlatCustomCameraName());
+    _multiSpy->clearAllSignals();
 
     // Changing the survey polygon should trigger:
     //  _rebuildTransects calls
     //  coveredAreaChanged signal
     //  lastSequenceNumberChanged signal
     _transectStyleItem->adjustSurveAreaPolygon();
+    // QGCMapPolygon compresses vertex-drag path changes onto the event loop.
+    QVERIFY(_multiSpy->waitForSignal("coveredAreaChanged", 1000));
     QVERIFY(_transectStyleItem->rebuildTransectsPhase1Called);
     QVERIFY(_transectStyleItem->recalcCameraShotsCalled);
     // FIXME: Temproarily not possible
@@ -161,10 +167,15 @@ void TransectStyleComplexItemTest::_testRebuildTransects(void)
 
 void TransectStyleComplexItemTest::_testDistanceSignalling(void)
 {
-    auto complexDistanceChangedMask     = _multiSpy->signalNameToMask(SIGNAL(complexDistanceChanged));
-    auto greatestDistanceToChangedMask  = _multiSpy->signalNameToMask(SIGNAL(greatestDistanceToChanged));
+    auto complexDistanceChangedMask     = _multiSpy->signalNameToMask("complexDistanceChanged");
+    auto greatestDistanceToChangedMask  = _multiSpy->signalNameToMask("greatestDistanceToChanged");
+
+    QVERIFY(complexDistanceChangedMask != 0);
+    QVERIFY(greatestDistanceToChangedMask != 0);
 
     _transectStyleItem->adjustSurveAreaPolygon();
+    // QGCMapPolygon compresses vertex-drag path changes onto the event loop.
+    QVERIFY(_multiSpy->waitForSignal("greatestDistanceToChanged", 1000));
     QVERIFY(_multiSpy->checkSignalsByMask(complexDistanceChangedMask | greatestDistanceToChangedMask));
     _transectStyleItem->setDirty(false);
     _multiSpy->clearAllSignals();

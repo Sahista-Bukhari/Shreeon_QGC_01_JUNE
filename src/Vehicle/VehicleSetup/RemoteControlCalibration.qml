@@ -199,7 +199,7 @@ RowLayout {
                         border.width: 1
                         border.color: stickDisplayContainer._lineColor
 
-                        Row {
+                      Row {
                             id: sticksRow
                             anchors.centerIn: parent
                             spacing: ScreenTools.defaultFontPixelWidth * 1.6

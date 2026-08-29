@@ -89,7 +89,7 @@ Rectangle {
     signal areaRouteSelected()
 
     color:  "#ffffff"
-    radius: 0
+    radius: Math.max(4, root._radius * 0.75)
     clip:   true
 
     // Slider writes are debounced while dragging so survey rebuilds are not
@@ -504,8 +504,8 @@ Rectangle {
                         Rectangle {
                             Layout.alignment:       Qt.AlignTop
                             Layout.topMargin:       ScreenTools.defaultFontPixelHeight * 0.12
-                            width:                  ScreenTools.defaultFontPixelHeight * 1.05
-                            height:                 width
+                            Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.05
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.05
                             radius:                 width / 2
                             color:                  "white"
                             border.width:           root.routeMode === index ? 0 : 1
@@ -602,12 +602,12 @@ Rectangle {
                     spacing:             root._pad * 1.2
 
                     QGCColoredImage {
-                        Layout.alignment:   Qt.AlignVCenter
-                        width:              ScreenTools.defaultFontPixelHeight * 1.15
-                        height:             width
-                        source:             "/res/Nozel.png"
-                        color:              nozzleSprayHeader.highlighted ? "#ffffff" : root._titleColor
-                        fillMode:           Image.PreserveAspectFit
+                        Layout.alignment:       Qt.AlignVCenter
+                        Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 1.15
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.15
+                        source:                 "/res/Nozel.png"
+                        color:                  nozzleSprayHeader.highlighted ? "#ffffff" : root._titleColor
+                        fillMode:               Image.PreserveAspectFit
                     }
 
                     QGCLabel {
@@ -620,12 +620,12 @@ Rectangle {
                     }
 
                     QGCColoredImage {
-                        Layout.alignment: Qt.AlignVCenter
-                        width:            ScreenTools.defaultFontPixelHeight * 0.65
-                        height:           width
-                        source:           "/res/DropArrow.svg"
-                        color:            nozzleSprayHeader.highlighted ? "#ffffff" : root._bodyColor
-                        rotation:         root.spraySettingsExpanded ? 180 : 0
+                        Layout.alignment:       Qt.AlignVCenter
+                        Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.65
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 0.65
+                        source:                 "/res/DropArrow.svg"
+                        color:                  nozzleSprayHeader.highlighted ? "#ffffff" : root._bodyColor
+                        rotation:               root.spraySettingsExpanded ? 180 : 0
 
                         Behavior on rotation {
                             NumberAnimation { duration: 160 }
@@ -1065,12 +1065,12 @@ Rectangle {
                     }
 
                     QGCColoredImage {
-                        Layout.alignment: Qt.AlignVCenter
-                        width:            ScreenTools.defaultFontPixelHeight * 0.65
-                        height:           width
-                        source:           "/res/DropArrow.svg"
-                        color:            sprayPatternHeader.highlighted ? "#ffffff" : root._bodyColor
-                        rotation:         root.sprayPatternExpanded ? 180 : 0
+                        Layout.alignment:       Qt.AlignVCenter
+                        Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.65
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 0.65
+                        source:                 "/res/DropArrow.svg"
+                        color:                  sprayPatternHeader.highlighted ? "#ffffff" : root._bodyColor
+                        rotation:               root.sprayPatternExpanded ? 180 : 0
 
                         Behavior on rotation {
                             NumberAnimation { duration: 160 }
@@ -1365,12 +1365,12 @@ Rectangle {
                     }
 
                     QGCColoredImage {
-                        Layout.alignment: Qt.AlignVCenter
-                        width:            ScreenTools.defaultFontPixelHeight * 0.65
-                        height:           width
-                        source:           "/res/DropArrow.svg"
-                        color:            takeoffHeader.highlighted ? "#ffffff" : root._bodyColor
-                        rotation:         root.missionExpanded ? 180 : 0
+                        Layout.alignment:       Qt.AlignVCenter
+                        Layout.preferredWidth:  ScreenTools.defaultFontPixelHeight * 0.65
+                        Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 0.65
+                        source:                 "/res/DropArrow.svg"
+                        color:                  takeoffHeader.highlighted ? "#ffffff" : root._bodyColor
+                        rotation:               root.missionExpanded ? 180 : 0
 
                         Behavior on rotation {
                             NumberAnimation { duration: 160 }

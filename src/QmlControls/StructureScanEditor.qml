@@ -20,7 +20,7 @@ Rectangle {
 
     readonly property bool _glassTheme: typeof mainWindow !== "undefined"
                                         && mainWindow
-                                        && mainWindow.activeMissionEditor === "customMission"
+                                        && mainWindow.customMissionStyleActive
 
     // The following properties must be available up the hierarchy chain
     //property real   availableWidth    ///< Width for control

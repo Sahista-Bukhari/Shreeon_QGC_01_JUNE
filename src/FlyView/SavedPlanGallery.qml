@@ -22,10 +22,13 @@ Popup {
     property var _planFiles: []
     property int _selectedIndex: -1
 
-    readonly property color _accentGreen: "#00a04c"
-    readonly property color _titleColor: "#202124"
-    readonly property color _bodyColor: "#5f6368"
-    readonly property color _borderColor: "#e1e4e8"
+    readonly property color _accentGreen:     "#00a651"
+    readonly property color _softGreen:       "#e2f4eb"
+    readonly property color _titleColor:      "#202124"
+    readonly property color _bodyColor:       "#5f6368"
+    readonly property color _borderColor:     "#dfe3e1"
+    readonly property color _surfaceGray:     "#f5f7f6"
+    readonly property color _cardGray:        "#eef1ef"
     readonly property var _internalPlanFiles: [
         "last_executed_mission.plan",
         "route_mapping_last_uploaded.plan",
@@ -91,49 +94,127 @@ Popup {
         _selectedIndex = -1
     }
 
-    background: Rectangle {
-        color: Qt.rgba(0, 0, 0, 0.58)
+    enter: Transition {
+        ParallelAnimation {
+            NumberAnimation {
+                target: drawerTranslate
+                property: "x"
+                from: drawerFrame.width
+                to: 0
+                duration: 340
+                easing.type: Easing.OutCubic
+            }
+            NumberAnimation {
+                target: drawerShade
+                property: "opacity"
+                from: 0
+                to: 1
+                duration: 240
+                easing.type: Easing.OutCubic
+            }
+        }
     }
+
+    exit: Transition {
+        ParallelAnimation {
+            NumberAnimation {
+                target: drawerTranslate
+                property: "x"
+                from: 0
+                to: drawerFrame.width
+                duration: 260
+                easing.type: Easing.InCubic
+            }
+            NumberAnimation {
+                target: drawerShade
+                property: "opacity"
+                from: 1
+                to: 0
+                duration: 220
+                easing.type: Easing.InCubic
+            }
+        }
+    }
+
+    background: Item { }
 
     contentItem: Item {
         Rectangle {
-            id: dialogFrame
-            anchors.centerIn: parent
-            width: Math.min(parent.width - ScreenTools.defaultFontPixelWidth * 2,
-                            ScreenTools.defaultFontPixelWidth * 88)
-            height: Math.min(parent.height - ScreenTools.defaultFontPixelHeight,
-                             ScreenTools.defaultFontPixelHeight * 36)
+            id: drawerShade
+            anchors.fill: parent
+            color: Qt.rgba(0, 0, 0, 0.38)
+
+            QGCMouseArea {
+                anchors.fill: parent
+                onClicked: root.close()
+            }
+        }
+
+        Rectangle {
+            id: drawerFrame
+            anchors.top: parent.top
+            anchors.bottom: parent.bottom
+            anchors.right: parent.right
+            width: ScreenTools.isMobile
+                   ? parent.width
+                   : Math.round(parent.width * 0.72)
             color: "white"
-            radius: ScreenTools.defaultFontPixelWidth * 0.9
             clip: true
+            border.width: 1
+            border.color: root._borderColor
+
+            transform: Translate { id: drawerTranslate }
+
+            DeadMouseArea {
+                anchors.fill: parent
+            }
 
             ColumnLayout {
                 anchors.fill: parent
                 spacing: 0
 
-                ColumnLayout {
+                Item {
                     Layout.fillWidth: true
-                    Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 2
-                    Layout.rightMargin: ScreenTools.defaultFontPixelWidth * 2
-                    Layout.topMargin: ScreenTools.defaultFontPixelHeight
-                    Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.75
-                    spacing: ScreenTools.defaultFontPixelHeight * 0.2
+                    Layout.preferredHeight: Math.max(ScreenTools.toolbarHeight,
+                                                     ScreenTools.defaultFontPixelHeight * 3.2)
 
                     QGCLabel {
-                        Layout.fillWidth: true
+                        anchors.centerIn: parent
                         text: qsTr("Saved Plans")
                         color: root._titleColor
-                        font.pointSize: ScreenTools.mediumFontPointSize
+                        font.pointSize: ScreenTools.largeFontPointSize
                         font.weight: Font.DemiBold
                     }
 
-                    QGCLabel {
-                        Layout.fillWidth: true
-                        text: root._planFiles.length === 1
-                              ? qsTr("Select the saved plan to upload for this mission.")
-                              : qsTr("Select a saved plan to upload for this mission. %1 plans found.").arg(root._planFiles.length)
-                        color: root._bodyColor
-                        wrapMode: Text.WordWrap
+                    Rectangle {
+                        anchors.right: parent.right
+                        anchors.verticalCenter: parent.verticalCenter
+                        anchors.rightMargin: ScreenTools.defaultFontPixelWidth
+                        width: Math.max(30, ScreenTools.defaultFontPixelHeight * 1.8)
+                        height: width
+                        radius: width / 2
+                        color: closeMouse.pressed
+                               ? root._softGreen
+                               : (closeMouse.containsMouse ? root._surfaceGray : "white")
+                        border.width: 1
+                        border.color: closeMouse.containsMouse ? root._accentGreen : root._borderColor
+
+                        QGCLabel {
+                            anchors.centerIn: parent
+                            text: "×"
+                            color: closeMouse.containsMouse ? root._accentGreen : root._bodyColor
+                            font.pixelSize: parent.height * 0.66
+                        }
+
+                        QGCMouseArea {
+                            id: closeMouse
+                            anchors.fill: parent
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.close()
+                        }
+
+                        Behavior on color { ColorAnimation { duration: 120 } }
                     }
                 }
 
@@ -143,27 +224,66 @@ Popup {
                     color: root._borderColor
                 }
 
-                Item {
+                Rectangle {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.7
+                    color: root._surfaceGray
+
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.5
+                        anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.5
+                        spacing: ScreenTools.defaultFontPixelWidth * 0.8
+
+                        Rectangle {
+                            Layout.preferredWidth: 3
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.45
+                            radius: width / 2
+                            color: root._accentGreen
+                        }
+
+                        QGCLabel {
+                            Layout.fillWidth: true
+                            text: root._planFiles.length === 1
+                                  ? qsTr("Select the saved plan to upload for this mission.")
+                                  : qsTr("Select a saved plan to upload for this mission. %1 plans found.").arg(root._planFiles.length)
+                            color: root._bodyColor
+                            elide: Text.ElideRight
+                        }
+                    }
+                }
+
+                Rectangle {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     Layout.leftMargin: ScreenTools.defaultFontPixelWidth
                     Layout.rightMargin: ScreenTools.defaultFontPixelWidth
                     Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.65
                     Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.65
+                    color: root._surfaceGray
+                    radius: ScreenTools.defaultFontPixelWidth * 0.65
 
                     GridView {
                         id: planGrid
                         anchors.fill: parent
+                        anchors.margins: ScreenTools.defaultFontPixelWidth * 0.45
                         clip: true
                         boundsBehavior: Flickable.StopAtBounds
                         model: root._planFiles
-                        readonly property real minimumCardWidth: ScreenTools.defaultFontPixelWidth * 21
-                        readonly property int columnCount: Math.max(1, Math.min(4, Math.floor(width / minimumCardWidth)))
+                        readonly property real minimumCardWidth: ScreenTools.defaultFontPixelWidth * 25
+                        readonly property int columnCount: Math.max(1, Math.min(3, Math.floor(width / minimumCardWidth)))
                         cellWidth: width / columnCount
-                        cellHeight: ScreenTools.defaultFontPixelHeight * 10
+                        cellHeight: ScreenTools.defaultFontPixelHeight * 11
 
                         ScrollBar.vertical: ScrollBar {
                             policy: planGrid.contentHeight > planGrid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
+                            width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.35)
+
+                            contentItem: Rectangle {
+                                implicitWidth: 3
+                                radius: width / 2
+                                color: root._accentGreen
+                            }
                         }
 
                         delegate: Item {
@@ -179,10 +299,17 @@ Popup {
                                 id: planCard
                                 anchors.fill: parent
                                 anchors.margins: ScreenTools.defaultFontPixelWidth * 0.55
-                                color: planDelegate.index === root._selectedIndex ? "#efffee" : "#fafbfc"
+                                color: planDelegate.index === root._selectedIndex
+                                       ? root._softGreen
+                                       : (planCardMouse.containsMouse ? "#ffffff" : root._cardGray)
                                 radius: ScreenTools.defaultFontPixelWidth * 0.7
                                 border.width: planDelegate.index === root._selectedIndex ? 2 : 1
-                                border.color: planDelegate.index === root._selectedIndex ? root._accentGreen : root._borderColor
+                                border.color: planDelegate.index === root._selectedIndex || planCardMouse.containsMouse
+                                              ? root._accentGreen
+                                              : root._borderColor
+
+                                Behavior on color { ColorAnimation { duration: 140 } }
+                                Behavior on border.color { ColorAnimation { duration: 140 } }
 
                                 ColumnLayout {
                                     anchors.fill: parent
@@ -363,6 +490,7 @@ Popup {
                                 }
 
                                 QGCMouseArea {
+                                    id: planCardMouse
                                     anchors.fill: parent
                                     hoverEnabled: true
                                     cursorShape: Qt.PointingHandCursor
@@ -385,7 +513,7 @@ Popup {
                         QGCColoredImage {
                             Layout.alignment: Qt.AlignHCenter
                             Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 3.2
-                            Layout.preferredHeight: Layout.preferredWidth
+                            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 3.2
                             source: "/res/modern-icons/MaterialSymbolsStacksRounded.svg"
                             color: "#9aa0a6"
                         }
@@ -414,36 +542,56 @@ Popup {
                     color: root._borderColor
                 }
 
-                RowLayout {
+                Rectangle {
                     Layout.fillWidth: true
-                    Layout.leftMargin: ScreenTools.defaultFontPixelWidth * 1.5
-                    Layout.rightMargin: ScreenTools.defaultFontPixelWidth * 1.5
-                    Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.65
-                    Layout.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.65
-                    spacing: ScreenTools.defaultFontPixelWidth
+                    Layout.preferredHeight: Math.max(ScreenTools.defaultFontPixelHeight * 3.4,
+                                                     ScreenTools.implicitButtonHeight + ScreenTools.defaultFontPixelHeight)
+                    color: "white"
 
-                    QGCButton {
-                        text: qsTr("Browse Files")
-                        primary: false
-                        onClicked: {
-                            root.close()
-                            root.browseRequested()
+                    RowLayout {
+                        anchors.fill: parent
+                        anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.5
+                        anchors.rightMargin: ScreenTools.defaultFontPixelWidth * 1.5
+                        anchors.topMargin: ScreenTools.defaultFontPixelHeight * 0.5
+                        anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 0.5
+                        spacing: ScreenTools.defaultFontPixelWidth
+
+                        QGCButton {
+                            text: qsTr("Browse Files")
+                            primary: false
+                            compact: true
+                            backgroundColor: root._accentGreen
+                            textColor: "white"
+                            fontWeight: Font.Medium
+                            onClicked: {
+                                root.close()
+                                root.browseRequested()
+                            }
                         }
-                    }
 
-                    Item { Layout.fillWidth: true }
+                        Item { Layout.fillWidth: true }
 
-                    QGCButton {
-                        text: qsTr("Cancel")
-                        primary: false
-                        onClicked: root.close()
-                    }
+                        QGCButton {
+                            text: qsTr("Cancel")
+                            primary: false
+                            compact: true
+                            backgroundColor: root._accentGreen
+                            textColor: "white"
+                            fontWeight: Font.Medium
+                            onClicked: root.close()
+                        }
 
-                    QGCButton {
-                        text: qsTr("Upload Selected Plan")
-                        primary: true
-                        enabled: root._selectedIndex >= 0
-                        onClicked: root.uploadSelectedPlan()
+                        QGCButton {
+                            text: qsTr("Upload Selected Plan")
+                            primary: false
+                            compact: true
+                            backgroundColor: root._accentGreen
+                            textColor: "white"
+                            fontWeight: Font.Medium
+                            enabled: root._selectedIndex >= 0
+                            opacity: enabled ? 1 : 0.48
+                            onClicked: root.uploadSelectedPlan()
+                        }
                     }
                 }
             }

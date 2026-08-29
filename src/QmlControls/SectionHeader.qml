@@ -15,7 +15,7 @@ CheckBox {
     property bool           showSpacer:     true
     property ButtonGroup    buttonGroup:    null
     readonly property bool  _glassTheme:    typeof mainWindow !== "undefined"
-                                            && mainWindow.activeMissionEditor === "customMission"
+                                            && mainWindow.customMissionStyleActive
 
     property real _sectionSpacer: ScreenTools.defaultFontPixelWidth / 2  // spacing between section headings
 

@@ -26,7 +26,7 @@ CheckBox {
     property bool _noText: text === ""
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
-                                           && mainWindow.activeMissionEditor === "customMission"
+                                           && mainWindow.customMissionStyleActive
     readonly property color _accentGreen: "#00a651"
 
     QGCPalette { id: qgcPal; colorGroupEnabled: control.enabled }

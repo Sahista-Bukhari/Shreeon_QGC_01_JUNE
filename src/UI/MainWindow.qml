@@ -46,10 +46,23 @@ ApplicationWindow {
     readonly property int themeBlack:   1
     property int uiThemeMode: themeSettings.uiThemeMode
 
-    // Live vehicle indicators belong to Fly View only. Fly View remains loaded
-    // behind tool pages, so use this property to prevent its toolbar from
-    // showing through while another page is open.
-    readonly property bool flyViewToolbarVisible: flyView.visible && !toolDrawer.visible
+    // Live Fly View controls belong to the foreground Fly View page only.
+    // Fly View remains loaded behind tools and full-screen overlays, so exclude
+    // every foreground surface which can cover it.
+    readonly property bool flyViewToolbarVisible: flyView.visible
+                                                   && !toolDrawer.visible
+                                                   && !modeSelectionOverlay.isOpen
+                                                   && !customHomePage.visible
+                                                   && !userManualViewer.visible
+
+    // Mission ownership persists when leaving an editor, but editor-specific
+    // styling must only be used while Custom Mission is the foreground view.
+    readonly property bool customMissionStyleActive: activeMissionEditor === "customMission"
+                                                      && customMissionView.visible
+                                                      && !toolDrawer.visible
+                                                      && !modeSelectionOverlay.isOpen
+                                                      && !customHomePage.visible
+                                                      && !userManualViewer.visible
 
     Settings {
         id: themeSettings
@@ -746,12 +759,33 @@ ApplicationWindow {
         var returnItem = _toolReturnIndicatorItem
         var returnExpanded = _toolReturnIndicatorExpanded
         _clearToolReturnSource()
-        toolDrawer.visible = false
-
-        Qt.callLater(function() {
-            mainWindow.showIndicatorDrawer(returnComponent, returnItem, returnExpanded)
+        toolDrawer.closeAnimated(function() {
+            Qt.callLater(function() {
+                mainWindow.showIndicatorDrawer(returnComponent, returnItem, returnExpanded)
+            })
         })
         return true
+    }
+
+    // Close a full setup page and restore the view which opened it. Tools
+    // opened from a toolbar indicator still return to that exact indicator.
+    function closeToolAndReturnToOrigin() {
+        if (closeToolAndReturnToSource())
+            return
+
+        // Save these before hiding the drawer, since onVisibleChanged resets
+        // the navigation flags.
+        var returnToFlyView = toolDrawer.returnToFlyView
+        var returnToMissionEditor = toolDrawer.showBackButton && !returnToFlyView
+        toolDrawer.closeAnimated(function() {
+            if (returnToFlyView) {
+                showFlyView()
+            } else if (returnToMissionEditor) {
+                showActiveMissionEditor(false)
+            } else {
+                showModeSelection(Qt.point(mainWindow.width / 2, ScreenTools.toolbarHeight / 2))
+            }
+        })
     }
 
     function showTool(toolTitle, toolSource, toolIcon, fromFlyViewBackNav, hideToolbar, halfWidth, returnToIndicatorDrawer) {
@@ -781,7 +815,7 @@ ApplicationWindow {
     function showVehicleConfig(fromFlyViewBackNav, returnToIndicatorDrawer) {
         // Wider right panel so Vehicle Config content has more room
         // Half of main screen; SetupView provides its own header + close
-        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", false, true, true, returnToIndicatorDrawer)
+        showTool(qsTr("Vehicle Configuration"), "qrc:/qml/QGroundControl/VehicleSetup/SetupView.qml", "/qmlimages/Gears.svg", fromFlyViewBackNav, true, true, returnToIndicatorDrawer)
         toolDrawer.halfWidthRatio = 0.72
     }
 
@@ -1028,10 +1062,41 @@ ApplicationWindow {
         property bool halfWidth:        false
         property real halfWidthRatio:   0.72
 
-        property real _panelSlide:  0
+        property real _panelSlide:       0
+        property real _closeSlideTarget: 0
+        property bool _closing:          false
+        property var  _closeCompletion:  null
+
+        function closeAnimated(completion) {
+            if (!visible) {
+                if (completion)
+                    completion()
+                return
+            }
+            if (_closing)
+                return
+
+            _closing = true
+            _closeCompletion = completion || null
+            _closeSlideTarget = Math.round((halfWidth ? toolDrawerPanel.width : width) * 0.10)
+            drawerOpenAnim.stop()
+            drawerCloseAnim.restart()
+        }
+
+        function _finishAnimatedClose() {
+            var completion = _closeCompletion
+            _closeCompletion = null
+            _closing = false
+            visible = false
+            if (completion)
+                completion()
+        }
 
         onVisibleChanged: {
             if (toolDrawer.visible) {
+                drawerCloseAnim.stop()
+                toolDrawer._closing = false
+                toolDrawer._closeCompletion = null
                 if (toolDrawer.opacity >= 0.99)
                     toolDrawer.opacity = 0
                 toolDrawer._panelSlide = Math.round((toolDrawer.halfWidth ? toolDrawerPanel.width : width) * 0.10)
@@ -1045,6 +1110,9 @@ ApplicationWindow {
                 halfWidth = false
                 halfWidthRatio = 0.72
                 toolDrawer._panelSlide = 0
+                toolDrawer._closeSlideTarget = 0
+                toolDrawer._closing = false
+                toolDrawer._closeCompletion = null
                 toolDrawer.opacity = 0
                 mainWindow.applyUiTheme()
             }
@@ -1066,6 +1134,27 @@ ApplicationWindow {
                 duration:       320
                 easing.type:    Easing.OutCubic
             }
+        }
+
+        ParallelAnimation {
+            id: drawerCloseAnim
+
+            NumberAnimation {
+                target:         toolDrawer
+                property:       "opacity"
+                to:             0
+                duration:       240
+                easing.type:    Easing.InCubic
+            }
+            NumberAnimation {
+                target:         toolDrawer
+                property:       "_panelSlide"
+                to:             toolDrawer._closeSlideTarget
+                duration:       280
+                easing.type:    Easing.InCubic
+            }
+
+            onFinished: toolDrawer._finishAnimatedClose()
         }
 
         // Dimmed area over the other half — click closes the panel
@@ -1149,7 +1238,7 @@ ApplicationWindow {
 
                     QGCToolBarButton {
                         id: qgcButton
-                        height: parent.height
+                        Layout.fillHeight: true
                         icon.source: "/res/QGCLogoFull.svg"
                         logo: true
                         onClicked: {
@@ -1209,7 +1298,7 @@ ApplicationWindow {
         modal:              false
         focus:              true
 
-        property alias  criticalVehicleMessage:             criticalVehicleMessageText.text
+        property string criticalVehicleMessage:             ""
         property bool   additionalCriticalMessagesReceived: false
 
         function dismissPopup() {
@@ -1294,6 +1383,7 @@ ApplicationWindow {
                 width:              criticalMessageFlickable.width
                 wrapMode:           Text.WordWrap
                 color:              qgcPal.alertText
+                text:               criticalVehicleMessagePopup.criticalVehicleMessage
                 textFormat:         TextEdit.RichText
             }
 

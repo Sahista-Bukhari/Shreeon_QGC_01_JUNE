@@ -23,7 +23,7 @@ Button {
     // Custom Mission uses Route Mapping white/green chrome
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
-                                           && mainWindow.activeMissionEditor === "customMission"
+                                           && mainWindow.customMissionStyleActive
 
     QGCPalette { id: qgcPal; colorGroupEnabled: button.enabled }
 

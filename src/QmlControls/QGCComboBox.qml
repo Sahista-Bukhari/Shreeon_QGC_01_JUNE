@@ -100,7 +100,7 @@ T.ComboBox {
     // Closed combo: green idle, gray hover on Custom Mission / Light theme
     readonly property bool _customMission: typeof mainWindow !== "undefined"
                                            && mainWindow
-                                           && mainWindow.activeMissionEditor === "customMission"
+                                           && mainWindow.customMissionStyleActive
     readonly property bool _selectedLook: lightStyle || _customMission || qgcPal.globalTheme === QGCPalette.Light
     readonly property color _accentGreen: "#00a651"
     readonly property color _hoverGray: "#e8e8e8"

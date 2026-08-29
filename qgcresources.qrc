@@ -87,7 +87,6 @@
         <file alias="analyze-icon.svg">resources/icons/analyze-icon.svg</file>
         <file alias="vehicle-config-icon.svg">resources/icons/vehicle-config-icon.svg</file>
         <file alias="settings-icon.svg">resources/icons/settings-icon.svg</file>
-        <file alias="routeimg.png">resources/routeimg.png</file>
         <file alias="modern-icons/MaterialSymbolsAddLocationAlt.svg">resources/modern-icons/MaterialSymbolsAddLocationAlt.svg</file>
         <file alias="modern-icons/MaterialSymbolsEditLocationAlt.svg">resources/modern-icons/MaterialSymbolsEditLocationAlt.svg</file>
         <file alias="modern-icons/MaterialSymbolsLock.svg">resources/modern-icons/MaterialSymbolsLock.svg</file>
@@ -150,8 +149,6 @@
         <file alias="custom_mission.png">resources/ModeSelection/custom_mission.png</file>
         <file alias="manual_mode.png">resources/ModeSelection/manual_mode.png</file>
         <file alias="shreeon_logo.png">resources/ModeSelection/shreeon_logo.png</file>
-        <file alias="settings_gear.svg">resources/ModeSelection/settings_gear.svg</file>
-        <file alias="camera.png">resources/ModeSelection/camera.png</file>
         <file alias="spray.png">resources/ModeSelection/spray.png</file>
         <file alias="menual.png">resources/ModeSelection/menual.png</file>
         <file alias="seeds.png">resources/ModeSelection/seeds.png</file>
