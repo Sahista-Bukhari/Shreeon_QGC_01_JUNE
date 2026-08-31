@@ -16,6 +16,8 @@ private slots:
     void cleanup(void) final;
 
     void _testMissionPlannerFileLoad(void);
+    void _testMissionModeSaveMetadata(void);
+    void _testMissionModeGalleryMetadata(void);
     void _testActiveVehicleChanged(void);
 
 private:

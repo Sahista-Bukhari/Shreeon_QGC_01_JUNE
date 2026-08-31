@@ -10,11 +10,11 @@ import QGroundControl
 import QGroundControl.Controls
 
 /// Gallery of user-saved mission plans. Selecting a card and pressing Upload
-/// returns the fully qualified plan path to the caller.
+/// returns the fully qualified plan path and its originating mission mode.
 Popup {
     id: root
 
-    signal planSelected(string filePath)
+    signal planSelected(string filePath, string missionMode)
     signal browseRequested()
 
     property string folder
@@ -79,13 +79,34 @@ Popup {
         return qsTr("%1 MB").arg((bytes / (1024 * 1024)).toFixed(1))
     }
 
+    function missionModeDisplayName(missionMode) {
+        switch (missionMode) {
+        case "agricultureSpraying":
+            return qsTr("Agriculture Spraying")
+        case "seedSpreader":
+            return qsTr("Seed Spreader")
+        case "customMission":
+            return qsTr("Custom Mission")
+        case "routeMapping":
+        default:
+            return qsTr("Route Mapping")
+        }
+    }
+
+    function missionModeLabel(fileInfo) {
+        var modeName = missionModeDisplayName(fileInfo.missionMode)
+        return fileInfo.missionModeInferred
+                ? qsTr("%1 (legacy)").arg(modeName)
+                : modeName
+    }
+
     function uploadSelectedPlan() {
         if (_selectedIndex < 0 || _selectedIndex >= _planFiles.length) {
             return
         }
-        var selectedPath = _planFiles[_selectedIndex].filePath
+        var selectedPlan = _planFiles[_selectedIndex]
         close()
-        planSelected(selectedPath)
+        planSelected(selectedPlan.filePath, selectedPlan.missionMode)
     }
 
     onOpened: refreshPlans()
@@ -273,7 +294,7 @@ Popup {
                         readonly property real minimumCardWidth: ScreenTools.defaultFontPixelWidth * 25
                         readonly property int columnCount: Math.max(1, Math.min(3, Math.floor(width / minimumCardWidth)))
                         cellWidth: width / columnCount
-                        cellHeight: ScreenTools.defaultFontPixelHeight * 11
+                        cellHeight: ScreenTools.defaultFontPixelHeight * 12.2
 
                         ScrollBar.vertical: ScrollBar {
                             policy: planGrid.contentHeight > planGrid.height ? ScrollBar.AlwaysOn : ScrollBar.AlwaysOff
@@ -476,6 +497,23 @@ Popup {
                                         font.weight: Font.DemiBold
                                         elide: Text.ElideMiddle
                                         horizontalAlignment: Text.AlignHCenter
+                                    }
+
+                                    Rectangle {
+                                        Layout.alignment: Qt.AlignHCenter
+                                        Layout.preferredWidth: modeLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 1.7
+                                        Layout.preferredHeight: modeLabel.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.32
+                                        radius: height / 2
+                                        color: planDelegate.modelData.missionModeInferred ? "#fff3cd" : root._softGreen
+
+                                        QGCLabel {
+                                            id: modeLabel
+                                            anchors.centerIn: parent
+                                            text: root.missionModeLabel(planDelegate.modelData)
+                                            color: planDelegate.modelData.missionModeInferred ? "#765600" : root._accentGreen
+                                            font.pointSize: ScreenTools.smallFontPointSize
+                                            font.weight: Font.DemiBold
+                                        }
                                     }
 
                                     QGCLabel {

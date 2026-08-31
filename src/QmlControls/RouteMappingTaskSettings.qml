@@ -9,6 +9,8 @@ import QGroundControl.FactControls
 Rectangle {
     id: root
 
+    property bool thinFieldBorders: false
+
     readonly property color _accentGreen:     "#00a04c"
     readonly property color _accentSoftGreen: "#efffee"
     readonly property color _titleColor:      "#3f3f3f"
@@ -1119,6 +1121,8 @@ Rectangle {
                     Layout.fillWidth:   true
                     enabled:            root._showGridAngle
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                     onUpdated:          gridAngleSlider.value = root.surveyItem.gridAngle.value
@@ -1159,6 +1163,8 @@ Rectangle {
                     Layout.fillWidth: true
                     enabled: root._showGridAngle
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                 }
@@ -1173,6 +1179,8 @@ Rectangle {
                     Layout.fillWidth: true
                     enabled: root._showGridAngle
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                 }
@@ -1190,6 +1198,8 @@ Rectangle {
                     Layout.fillWidth:   true
                     enabled:            root._patternAltitudeAvailable
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                     onUpdated: {
@@ -1241,6 +1251,8 @@ Rectangle {
                     Layout.fillWidth:   true
                     enabled:            root._patternSpeedAvailable
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       true
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                     onUpdated: {
@@ -1419,6 +1431,8 @@ Rectangle {
                     Layout.fillWidth:   true
                     enabled:            root._missionAltitudeAvailable
                     activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
                     onUpdated: {

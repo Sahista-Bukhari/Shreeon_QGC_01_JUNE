@@ -157,6 +157,8 @@ Rectangle {
                             QGCButton {
                                 text:                  qsTr("Arm")
                                 enabled:               multiVehicleList.armAvailable()
+                                lightStyle:            true
+                                primary:               enabled
                                 onClicked:             _guidedController.confirmAction(_guidedController.actionMVArm)
                                 Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2.75
                                 leftPadding:           0
@@ -166,6 +168,8 @@ Rectangle {
                             QGCButton {
                                 text:                  qsTr("Disarm")
                                 enabled:               multiVehicleList.disarmAvailable()
+                                lightStyle:            true
+                                primary:               enabled
                                 onClicked:             _guidedController.confirmAction(_guidedController.actionMVDisarm)
                                 Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2.75
                                 leftPadding:           0

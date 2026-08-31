@@ -438,6 +438,9 @@ QJsonDocument PlanMasterController::saveToJson()
     planJson[kJsonMissionObjectKey] = missionJson;
     planJson[kJsonGeoFenceObjectKey] = fenceJson;
     planJson[kJsonRallyPointsObjectKey] = rallyJson;
+    if (!_missionMode.isEmpty()) {
+        planJson[kJsonMissionModeKey] = _missionMode;
+    }
     QGCCorePlugin::instance()->postSaveToJson(this, planJson);
     return QJsonDocument(planJson);
 }
@@ -670,5 +673,13 @@ void PlanMasterController::setManualCreation(bool manualCreation)
     if (_manualCreation != manualCreation) {
         _manualCreation = manualCreation;
         emit manualCreationChanged();
+    }
+}
+
+void PlanMasterController::setMissionMode(const QString& missionMode)
+{
+    if (_missionMode != missionMode) {
+        _missionMode = missionMode;
+        emit missionModeChanged();
     }
 }

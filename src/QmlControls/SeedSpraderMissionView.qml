@@ -1580,6 +1580,7 @@ Item {
     PlanMasterController {
         id: planMasterController
         flyView: false
+        missionMode: "seedSpreader"
 
         Component.onCompleted: {
             _planMasterController.start()
@@ -2252,6 +2253,7 @@ Item {
                 anchors.fill: parent
                 patternSectionTitle: qsTr("Seed Spreader Pattern")
                 showPhotoSettings: false
+                thinFieldBorders: true
                 surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
                 takeoffItem: {
                     // Depend on count so this re-evaluates when takeoff is added/removed.

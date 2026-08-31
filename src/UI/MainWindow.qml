@@ -301,6 +301,35 @@ ApplicationWindow {
         persistLastExecutedMission(editorType)
     }
 
+    // Gallery upload restores both the owning editor and Fly View. Loading the
+    // editor first retains its survey/payload parameters for Edit and reconnect.
+    function loadSavedPlanForMissionMode(filePath, editorType) {
+        if (!filePath || filePath === "") {
+            return false
+        }
+
+        var editorView = missionEditorView(editorType)
+        if (!editorView) {
+            return false
+        }
+
+        var loaded = false
+        if (editorView._loadPersistedPlanFromFile) {
+            loaded = editorView._loadPersistedPlanFromFile(filePath)
+        } else if (editorType === "customMission"
+                   && editorView._planMasterController) {
+            editorView._planMasterController.loadFromFile(filePath)
+            loaded = editorView._planMasterController.containsItems
+        }
+
+        if (!loaded) {
+            return false
+        }
+
+        markMissionPlanUploaded(editorType)
+        return true
+    }
+
     function clearUploadedMissionEditor() {
         uploadedMissionEditor = ""
         missionExecutionSettings.lastUploadedMissionEditor = ""

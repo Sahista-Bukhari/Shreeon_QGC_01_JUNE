@@ -1605,6 +1605,7 @@ Item {
     PlanMasterController {
         id: planMasterController
         flyView: false
+        missionMode: "routeMapping"
 
         Component.onCompleted: {
             _planMasterController.start()

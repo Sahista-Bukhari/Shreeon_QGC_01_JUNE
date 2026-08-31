@@ -44,6 +44,7 @@ public:
     Q_PROPERTY(QString                  fileExtension           READ fileExtension                          CONSTANT)                       ///< File extension for missions
     Q_PROPERTY(QString                  kmlFileExtension        READ kmlFileExtension                       CONSTANT)
     Q_PROPERTY(QString                  currentPlanFile         READ currentPlanFile                        NOTIFY currentPlanFileChanged)
+    Q_PROPERTY(QString                  missionMode             READ missionMode            WRITE setMissionMode NOTIFY missionModeChanged)
     Q_PROPERTY(QStringList              loadNameFilters         READ loadNameFilters                        CONSTANT)                       ///< File filter list loading plan files
     Q_PROPERTY(QStringList              saveNameFilters         READ saveNameFilters                        CONSTANT)                       ///< File filter list saving plan files
     Q_PROPERTY(QmlObjectListModel*      planCreators            MEMBER _planCreators                        NOTIFY planCreatorsChanged)
@@ -92,12 +93,14 @@ public:
     QString     fileExtension   (void) const;
     QString     kmlFileExtension(void) const;
     QString     currentPlanFile (void) const { return _currentPlanFile; }
+    QString     missionMode     (void) const { return _missionMode; }
     QStringList loadNameFilters (void) const;
     QStringList saveNameFilters (void) const;
     bool        isEmpty         (void) const;
     bool        manualCreation  (void) const { return _manualCreation; }
 
     void        setFlyView(bool flyView) { _flyView = flyView; }
+    void        setMissionMode(const QString& missionMode);
     void        setManualCreation(bool manualCreation);
 
     QJsonDocument saveToJson    ();
@@ -110,6 +113,7 @@ public:
     static constexpr const char* kJsonMissionObjectKey =       "mission";
     static constexpr const char* kJsonGeoFenceObjectKey =      "geoFence";
     static constexpr const char* kJsonRallyPointsObjectKey =   "rallyPoints";
+    static constexpr const char* kJsonMissionModeKey =         "missionMode";
 
 signals:
     void containsItemsChanged               ();
@@ -117,6 +121,7 @@ signals:
     void dirtyChanged                       (bool dirty);
     void offlineChanged                     (bool offlineEditing);
     void currentPlanFileChanged             (void);
+    void missionModeChanged                 (void);
     void planCreatorsChanged                (QmlObjectListModel* planCreators);
     void managerVehicleChanged              (Vehicle* managerVehicle);
     void promptForPlanUsageOnVehicleChange  (void);
@@ -150,6 +155,7 @@ private:
     bool                    _sendGeoFence =             false;
     bool                    _sendRallyPoints =          false;
     QString                 _currentPlanFile;
+    QString                 _missionMode;
     bool                    _deleteWhenSendCompleted =  false;
     bool                    _previousOverallDirty =     false;
     QmlObjectListModel*     _planCreators =             nullptr;

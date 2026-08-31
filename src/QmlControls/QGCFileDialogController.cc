@@ -107,6 +107,8 @@ QVariantMap planPreviewMetadata(const QString &filePath)
     preview.insert(QStringLiteral("south"), 0.0);
     preview.insert(QStringLiteral("east"), 0.0);
     preview.insert(QStringLiteral("west"), 0.0);
+    preview.insert(QStringLiteral("missionMode"), QString());
+    preview.insert(QStringLiteral("missionModeInferred"), false);
 
     QFile planFile(filePath);
     if (!planFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
@@ -119,7 +121,8 @@ QVariantMap planPreviewMetadata(const QString &filePath)
         return preview;
     }
 
-    const QJsonArray missionItems = document.object()
+    const QJsonObject planObject = document.object();
+    const QJsonArray missionItems = planObject
                                           .value(QStringLiteral("mission"))
                                           .toObject()
                                           .value(QStringLiteral("items"))
@@ -128,6 +131,7 @@ QVariantMap planPreviewMetadata(const QString &filePath)
     QVariantList boundaryPath;
     PlanPreviewBounds bounds;
     QGeoCoordinate takeoffCoordinate;
+    bool hasSurveyItem = false;
 
     for (const QJsonValue &itemValue : missionItems) {
         if (!itemValue.isObject()) {
@@ -158,6 +162,10 @@ QVariantMap planPreviewMetadata(const QString &filePath)
             continue;
         }
 
+        if (item.value(QStringLiteral("complexItemType")).toString() == QStringLiteral("survey")) {
+            hasSurveyItem = true;
+        }
+
         const QJsonArray polygon = item.value(QStringLiteral("polygon")).toArray();
         if (boundaryPath.isEmpty() && !polygon.isEmpty()) {
             appendJsonCoordinatePath(polygon, boundaryPath, bounds);
@@ -184,11 +192,25 @@ QVariantMap planPreviewMetadata(const QString &filePath)
         routePath = boundaryPath;
     }
 
+    QString missionMode = planObject.value(QStringLiteral("missionMode")).toString();
+    const bool supportedMissionMode = missionMode == QStringLiteral("routeMapping")
+            || missionMode == QStringLiteral("agricultureSpraying")
+            || missionMode == QStringLiteral("seedSpreader")
+            || missionMode == QStringLiteral("customMission");
+    const bool missionModeInferred = !supportedMissionMode;
+    if (missionModeInferred) {
+        // Old plan files predate mission-mode metadata. Survey plans are safest
+        // to restore as Route Mapping; all other plans use Custom Mission.
+        missionMode = hasSurveyItem ? QStringLiteral("routeMapping") : QStringLiteral("customMission");
+    }
+
     preview.insert(QStringLiteral("routePath"), routePath);
     preview.insert(QStringLiteral("boundaryPath"), boundaryPath);
     preview.insert(QStringLiteral("hasPreview"), bounds.valid && !routePath.isEmpty());
     preview.insert(QStringLiteral("takeoffValid"), takeoffCoordinate.isValid());
     preview.insert(QStringLiteral("takeoffCoordinate"), QVariant::fromValue(takeoffCoordinate));
+    preview.insert(QStringLiteral("missionMode"), missionMode);
+    preview.insert(QStringLiteral("missionModeInferred"), missionModeInferred);
 
     if (bounds.valid) {
         preview.insert(QStringLiteral("north"), bounds.north);

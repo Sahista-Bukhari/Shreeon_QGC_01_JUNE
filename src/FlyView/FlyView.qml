@@ -248,7 +248,15 @@ Item {
         id: savedPlanGallery
         folder: _root._appSettings ? _root._appSettings.missionSavePath : ""
 
-        onPlanSelected: (filePath) => {
+        onPlanSelected: (filePath, missionMode) => {
+            if (!mainWindow.loadSavedPlanForMissionMode(filePath, missionMode)) {
+                mainWindow.showMessageDialog(
+                            qsTr("Unable to Load Saved Plan"),
+                            qsTr("The saved plan could not be restored for %1 mode.").arg(
+                                mainWindow.missionEditorDisplayName(missionMode)),
+                            Dialog.Ok)
+                return
+            }
             _root._importPlanForMission = false
             _root.importFlyViewPlan(filePath)
         }

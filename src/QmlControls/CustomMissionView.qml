@@ -80,6 +80,7 @@ Item {
     PlanMasterController {
         id: planMasterController
         flyView: false
+        missionMode: "customMission"
 
         Component.onCompleted: {
             _planMasterController.start()

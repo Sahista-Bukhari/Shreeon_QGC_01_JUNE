@@ -34,6 +34,8 @@ TextField {
     property color  fieldBackgroundColor: qgcPal.textField
     property bool   validationError:    false
     property color  activeFocusBorderColor: qgcPal.brandingBlue
+    property bool   persistentBorder:   false
+    property real   fieldBorderWidth:   2
 
     property real _helpLayoutWidth: 0
     property real _marginPadding:   ScreenTools.defaultFontPixelHeight / 3
@@ -86,9 +88,13 @@ TextField {
     }
 
     background: Rectangle {
-        border.width:   control.validationError ? 2 : (control.activeFocus ? 2 : 0)
+        border.width:   control.validationError
+                        ? 2
+                        : (control.activeFocus || control.persistentBorder ? control.fieldBorderWidth : 0)
         border.color:   control.validationError ? qgcPal.colorRed
-                            : (control.activeFocus ? control.activeFocusBorderColor : "transparent")
+                            : (control.activeFocus || control.persistentBorder
+                               ? control.activeFocusBorderColor
+                               : "transparent")
         radius:         ScreenTools.defaultBorderRadius * 2
         color:          control.fieldBackgroundColor
         implicitWidth:  ScreenTools.implicitTextFieldWidth

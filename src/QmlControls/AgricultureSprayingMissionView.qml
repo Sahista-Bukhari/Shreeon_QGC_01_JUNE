@@ -1556,6 +1556,7 @@ Item {
     PlanMasterController {
         id: planMasterController
         flyView: false
+        missionMode: "agricultureSpraying"
 
         Component.onCompleted: {
             _planMasterController.start()
