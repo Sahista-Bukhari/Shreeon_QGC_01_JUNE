@@ -38,6 +38,7 @@ qt_add_qml_module(FlyViewModule
         FlyViewMissionPanel.qml
         FlyViewPlanRightPanel.qml
         FlyViewPreFlightChecklistPopup.qml
+        FlyViewSprayerPanel.qml
         FlyViewToolStrip.qml
         FlyViewToolStripActionList.qml
         FlyViewTopRightColumnLayout.qml

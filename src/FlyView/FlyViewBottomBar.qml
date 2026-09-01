@@ -55,6 +55,13 @@ Item {
     property real _margins: ScreenTools.defaultFontPixelWidth
     property Fact _mpcAltModeFact: paramLoader.item ? paramLoader.item.fact : null
     property Fact _cpDistFact: paramLoader.item ? paramLoader.item.cpDistFact : null
+    property Fact _sprayEnFact: paramLoader.item ? paramLoader.item.sprayEnFact : null
+    property Fact _sprayNozRateFact: paramLoader.item ? paramLoader.item.sprayNozRateFact : null
+    property Fact _sprayPumpRateFact: paramLoader.item ? paramLoader.item.sprayPumpRateFact : null
+    readonly property Fact sprayEnableFact: _sprayEnFact
+    readonly property Fact sprayNozzleRateFact: _sprayNozRateFact
+    readonly property Fact sprayPumpRateFact: _sprayPumpRateFact
+    readonly property bool _sprayEnabled: _sprayEnFact !== null && Number(_sprayEnFact.rawValue) !== 0
     property bool _obstacleAvoidanceActive: _cpDistFact ? _cpDistFact.rawValue > 0 : false
     property bool _terrainFlowIconActive: false
     property bool _paramExists: paramLoader.item ? paramLoader.item.paramExists : false
@@ -165,6 +172,33 @@ Item {
         }
     }
 
+    function _setEnableDisableFact(fact, enabled) {
+        if (!fact)
+            return
+
+        var enumStrings = fact.enumStrings
+        if (enumStrings && enumStrings.length > 0) {
+            var requestedText = enabled ? "enabled" : "disabled"
+            for (var index = 0; index < enumStrings.length; index++) {
+                if (String(enumStrings[index]).toLowerCase().indexOf(requestedText) >= 0) {
+                    fact.value = fact.enumValues[index]
+                    return
+                }
+            }
+        }
+        fact.value = enabled ? 1 : 0
+    }
+
+    function toggleSprayer() {
+        if (!_sprayEnFact)
+            return
+
+        var enabling = !_sprayEnabled
+        _setEnableDisableFact(_sprayEnFact, enabling)
+        if (enabling && paramLoader.item)
+            paramLoader.item.requestDependentSprayFacts()
+    }
+
     implicitHeight: bottomBarRow.height + root._margins * 2
     implicitWidth: bottomBarRow.width + root._margins * 3
 
@@ -190,8 +224,7 @@ Item {
         }
     }
 
-    // === TERRAIN FLOW PARAMETER ===
-    // === TERRAIN FLOW PARAMETER ===
+    // Vehicle parameters used by the terrain, obstacle and agriculture HUD controls.
     // Use Loader to force recreation of FactPanelController when active vehicle changes.
     // This is necessary because FactPanelController binds to the active vehicle only at construction time.
     Loader {
@@ -208,6 +241,12 @@ Item {
         id: paramControllerComponent
 
         Item {
+            id: paramContainer
+
+            property Fact sprayEnFact: null
+            property Fact sprayNozRateFact: null
+            property Fact sprayPumpRateFact: null
+            property bool sprayParamsRequested: false
 
             // Try default component (-1) first, then try Autopilot component (1) explicitly if needed
             property Fact fact: {
@@ -231,9 +270,52 @@ Item {
             // Re-evaluate when parameters become ready
             property bool paramsReady: _activeVehicle && _activeVehicle.parameterManager ? _activeVehicle.parameterManager.parametersReady : false
 
+            function lookupFact(name) {
+                if (!paramsReady || !controller.parameterExists(-1, name))
+                    return null
+                return controller.getParameterFact(-1, name, false)
+            }
+
+            function refreshSprayFacts() {
+                sprayEnFact = lookupFact("SPRAY_EN")
+                sprayNozRateFact = lookupFact("SPRAY_NOZ_RATE")
+                sprayPumpRateFact = lookupFact("SPRAY_PUMP_RATE")
+                requestDependentSprayFacts()
+            }
+
+            // Some sprayer firmwares expose rate parameters only after SPRAY_EN
+            // is enabled. Ask for those values once and refresh when they arrive.
+            function requestDependentSprayFacts() {
+                if (!paramsReady || !sprayEnFact || Number(sprayEnFact.rawValue) === 0
+                        || sprayParamsRequested || (sprayNozRateFact && sprayPumpRateFact)) {
+                    return
+                }
+
+                var missing = []
+                if (!sprayNozRateFact)
+                    missing.push("SPRAY_NOZ_RATE")
+                if (!sprayPumpRateFact)
+                    missing.push("SPRAY_PUMP_RATE")
+                if (missing.length > 0) {
+                    sprayParamsRequested = true
+                    controller.getMissingParameters(missing)
+                }
+            }
+
+            onParamsReadyChanged: {
+                if (paramsReady)
+                    refreshSprayFacts()
+            }
+
+            Component.onCompleted: {
+                if (paramsReady)
+                    refreshSprayFacts()
+            }
+
             FactPanelController {
                 id: controller
 
+                onMissingParametersAvailable: paramContainer.refreshSprayFacts()
             }
 
             // Explicitly notify when rawValue changes to ensure UI updates
@@ -256,6 +338,34 @@ Item {
 
                 ignoreUnknownSignals: true
                 target: cpDistFact
+            }
+
+            Connections {
+                function onRawValueChanged() {
+                    paramContainer.sprayEnFactChanged()
+                    paramContainer.requestDependentSprayFacts()
+                }
+
+                ignoreUnknownSignals: true
+                target: sprayEnFact
+            }
+
+            Connections {
+                function onRawValueChanged() {
+                    paramContainer.sprayNozRateFactChanged()
+                }
+
+                ignoreUnknownSignals: true
+                target: sprayNozRateFact
+            }
+
+            Connections {
+                function onRawValueChanged() {
+                    paramContainer.sprayPumpRateFactChanged()
+                }
+
+                ignoreUnknownSignals: true
+                target: sprayPumpRateFact
             }
         }
     }

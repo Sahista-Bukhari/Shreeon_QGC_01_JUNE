@@ -59,7 +59,10 @@ Item {
         rightEdgeBottomInset: bottomRightRowLayout.rightEdgeBottomInset
         rightEdgeCenterInset: topRightPanel.rightEdgeCenterInset
         rightEdgeTopInset: topRightPanel.rightEdgeTopInset
-        topEdgeCenterInset: mapScale.topEdgeCenterInset
+        topEdgeCenterInset: Math.max(mapScale.topEdgeCenterInset,
+                                     sprayerPanel.visible
+                                     ? sprayerPanel.y + sprayerPanel.height + _layoutMargin
+                                     : 0)
         topEdgeLeftInset: toolStrip.topEdgeLeftInset
         topEdgeRightInset: topRightPanel.topEdgeRightInset
     }
@@ -143,6 +146,28 @@ Item {
             y: 0
         }
     }
+
+    // Three agriculture controls in a dedicated card matching the mission-grid style.
+    FlyViewSprayerPanel {
+        id: sprayerPanel
+
+        sprayEnableFact: bottomBar.sprayEnableFact
+        sprayNozzleRateFact: bottomBar.sprayNozzleRateFact
+        sprayPumpRateFact: bottomBar.sprayPumpRateFact
+        onSprayerToggleRequested: bottomBar.toggleSprayer()
+
+        // FlyViewWidgetLayer already begins immediately below the main toolbar.
+        anchors.top: parent.top
+        anchors.topMargin: _toolsMargin
+        anchors.horizontalCenter: parent.horizontalCenter
+
+        visible: !_root.isViewer3DOpen
+                 && _root._activeVehicle
+                 && bottomBar.visible
+                 && sprayAvailable
+        z: QGroundControl.zOrderWidgets + 1
+    }
+
     // Reference to the action list for the panel
     FlyViewToolStripActionList {
         id: flyViewToolStripActionList
