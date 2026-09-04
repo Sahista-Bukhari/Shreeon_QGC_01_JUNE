@@ -204,6 +204,41 @@ Item {
         }
     }
 
+    readonly property bool _agricultureSprayerPlanActive: mainWindow.uploadedMissionEditor === "agricultureSpraying"
+                                                          || _planController.missionMode === "agricultureSpraying"
+
+    function applyConfirmedSprayerSettings(enabled, nozzleRate, pumpRate) {
+        var bottomBar = widgetLayer.bottomBar
+        if (!bottomBar || !bottomBar.sprayEnableFact)
+            return
+
+        bottomBar.applyPlanSprayerSettings(enabled, nozzleRate, pumpRate)
+
+        if (enabled) {
+            _planController.setSprayerSettings(enabled, nozzleRate, pumpRate)
+        } else {
+            _planController.clearSprayerSettings()
+        }
+    }
+
+    function syncSprayerSettingsToPlan() {
+        var pc = _planController
+        var bottomBar = widgetLayer.bottomBar
+        if (!bottomBar || !bottomBar.sprayEnableFact)
+            return
+
+        if (!bottomBar._sprayEnabled) {
+            pc.clearSprayerSettings()
+            return
+        }
+
+        var nozzleRate = bottomBar.sprayNozzleRateFact
+                         ? Number(bottomBar.sprayNozzleRateFact.rawValue) : NaN
+        var pumpRate = bottomBar.sprayPumpRateFact
+                       ? Number(bottomBar.sprayPumpRateFact.rawValue) : NaN
+        pc.setSprayerSettings(true, nozzleRate, pumpRate)
+    }
+
     function importFlyViewPlan(file) {
         _planController.loadFromFile(file)
         _missionController.setCurrentPlanViewSeqNum(0, true)
@@ -380,6 +415,7 @@ Item {
 
         onAcceptedForSave: (file) => {
             if (planFiles) {
+                _root.syncSprayerSettingsToPlan()
                 _planController.saveToFile(file)
             } else {
                 _planController.saveToKml(file)
@@ -1317,6 +1353,12 @@ Item {
         flyViewRoot:        _root
         planMasterController: _planController
         planEditMode:       _root.planEditMode
+        sprayEnableFact: widgetLayer.bottomBar.sprayEnableFact
+        sprayNozzleRateFact: widgetLayer.bottomBar.sprayNozzleRateFact
+        sprayPumpRateFact: widgetLayer.bottomBar.sprayPumpRateFact
+        onSprayerSettingsConfirmed: function(enabled, nozzleRate, pumpRate) {
+            _root.applyConfirmedSprayerSettings(enabled, nozzleRate, pumpRate)
+        }
         visible:            !QGroundControl.videoManager.fullScreen && _root._mainWindowIsMap
         z:                  QGroundControl.zOrderTopMost + 10
     }

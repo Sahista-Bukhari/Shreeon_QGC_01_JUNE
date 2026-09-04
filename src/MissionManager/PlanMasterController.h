@@ -4,6 +4,8 @@
 #include <QtCore/QLoggingCategory>
 #include <QtQmlIntegration/QtQmlIntegration>
 
+#include <limits>
+
 #include "MissionController.h"
 #include "GeoFenceController.h"
 #include "RallyPointController.h"
@@ -45,6 +47,10 @@ public:
     Q_PROPERTY(QString                  kmlFileExtension        READ kmlFileExtension                       CONSTANT)
     Q_PROPERTY(QString                  currentPlanFile         READ currentPlanFile                        NOTIFY currentPlanFileChanged)
     Q_PROPERTY(QString                  missionMode             READ missionMode            WRITE setMissionMode NOTIFY missionModeChanged)
+    Q_PROPERTY(bool                     sprayerConfigured       READ sprayerConfigured                       NOTIFY sprayerSettingsChanged)
+    Q_PROPERTY(bool                     sprayerEnabled          READ sprayerEnabled                          NOTIFY sprayerSettingsChanged)
+    Q_PROPERTY(double                   sprayerNozzleRate       READ sprayerNozzleRate                       NOTIFY sprayerSettingsChanged)
+    Q_PROPERTY(double                   sprayerPumpRate         READ sprayerPumpRate                         NOTIFY sprayerSettingsChanged)
     Q_PROPERTY(QStringList              loadNameFilters         READ loadNameFilters                        CONSTANT)                       ///< File filter list loading plan files
     Q_PROPERTY(QStringList              saveNameFilters         READ saveNameFilters                        CONSTANT)                       ///< File filter list saving plan files
     Q_PROPERTY(QmlObjectListModel*      planCreators            MEMBER _planCreators                        NOTIFY planCreatorsChanged)
@@ -78,6 +84,8 @@ public:
     Q_INVOKABLE void saveToCurrent();
     Q_INVOKABLE void saveToFile(const QString& filename);
     Q_INVOKABLE void saveToKml(const QString& filename);
+    Q_INVOKABLE void setSprayerSettings(bool enabled, double nozzleRate, double pumpRate);
+    Q_INVOKABLE void clearSprayerSettings(void);
     Q_INVOKABLE void removeAll(void);                       ///< Removes all from controller only, synce required to remove from vehicle
     Q_INVOKABLE void removeAllFromVehicle(void);            ///< Removes all from vehicle and controller
 
@@ -94,6 +102,10 @@ public:
     QString     kmlFileExtension(void) const;
     QString     currentPlanFile (void) const { return _currentPlanFile; }
     QString     missionMode     (void) const { return _missionMode; }
+    bool        sprayerConfigured(void) const { return _sprayerConfigured; }
+    bool        sprayerEnabled   (void) const { return _sprayerEnabled; }
+    double      sprayerNozzleRate(void) const { return _sprayerNozzleRate; }
+    double      sprayerPumpRate  (void) const { return _sprayerPumpRate; }
     QStringList loadNameFilters (void) const;
     QStringList saveNameFilters (void) const;
     bool        isEmpty         (void) const;
@@ -114,6 +126,10 @@ public:
     static constexpr const char* kJsonGeoFenceObjectKey =      "geoFence";
     static constexpr const char* kJsonRallyPointsObjectKey =   "rallyPoints";
     static constexpr const char* kJsonMissionModeKey =         "missionMode";
+    static constexpr const char* kJsonSprayerSettingsKey =     "sprayerSettings";
+    static constexpr const char* kJsonSprayerEnabledKey =      "enabled";
+    static constexpr const char* kJsonSprayerNozzleRateKey =   "nozzleRate";
+    static constexpr const char* kJsonSprayerPumpRateKey =     "pumpRate";
 
 signals:
     void containsItemsChanged               ();
@@ -122,6 +138,7 @@ signals:
     void offlineChanged                     (bool offlineEditing);
     void currentPlanFileChanged             (void);
     void missionModeChanged                 (void);
+    void sprayerSettingsChanged             (void);
     void planCreatorsChanged                (QmlObjectListModel* planCreators);
     void managerVehicleChanged              (Vehicle* managerVehicle);
     void promptForPlanUsageOnVehicleChange  (void);
@@ -141,6 +158,7 @@ private slots:
 private:
     void _commonInit                (void);
     void _showPlanFromManagerVehicle(void);
+    void _setSprayerSettings(bool configured, bool enabled, double nozzleRate, double pumpRate, bool markDirty);
 
     MultiVehicleManager*    _multiVehicleMgr =          nullptr;
     Vehicle*                _controllerVehicle =        nullptr;    ///< Offline controller vehicle
@@ -156,6 +174,10 @@ private:
     bool                    _sendRallyPoints =          false;
     QString                 _currentPlanFile;
     QString                 _missionMode;
+    bool                    _sprayerConfigured = false;
+    bool                    _sprayerEnabled = false;
+    double                  _sprayerNozzleRate = std::numeric_limits<double>::quiet_NaN();
+    double                  _sprayerPumpRate = std::numeric_limits<double>::quiet_NaN();
     bool                    _deleteWhenSendCompleted =  false;
     bool                    _previousOverallDirty =     false;
     QmlObjectListModel*     _planCreators =             nullptr;

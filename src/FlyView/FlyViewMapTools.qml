@@ -17,6 +17,11 @@ Item {
     // Properties
     required property var planMasterController
     required property var flyViewRoot
+    property var sprayEnableFact: null
+    property var sprayNozzleRateFact: null
+    property var sprayPumpRateFact: null
+
+    signal sprayerSettingsConfirmed(bool enabled, double nozzleRate, double pumpRate)
     
     // Internal shortcuts
     property var _planMasterController: planMasterController
@@ -30,6 +35,15 @@ Item {
     property bool planEditMode: false
     property bool _missionRunning: flyViewRoot ? flyViewRoot.missionRunning : false
 
+    readonly property real _toolbarIconSize: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+    readonly property real _toolbarSpacing: ScreenTools.defaultFontPixelWidth * 1.75
+
+    readonly property bool _sprayParamsAvailable: sprayEnableFact !== null
+                                                    || sprayNozzleRateFact !== null
+                                                    || sprayPumpRateFact !== null
+    // Enabled once a plan is loaded and the vehicle exposes sprayer parameters.
+    readonly property bool _sprayerControlsEnabled: _sprayParamsAvailable && _hasPlanItems
+
     // Map settings
     property var  _settingsManager:     QGroundControl.settingsManager
     property var  _mapEngineManager:    QGroundControl.mapEngineManager
@@ -37,8 +51,8 @@ Item {
     property var  _mapTypeFact:         _settingsManager.flightMapSettings.mapType
     property bool _mapSettingsVisible:  false
 
-    implicitWidth: buttonRow.width + (ScreenTools.defaultFontPixelWidth * 3.5)
-    implicitHeight: Math.round(ScreenTools.defaultFontPixelHeight * 2.8)
+    implicitWidth: buttonRow.implicitWidth + (ScreenTools.defaultFontPixelWidth * 2)
+    implicitHeight: _toolbarIconSize
 
     // Signal handlers (Copied from PlanToolBarIndicators logic)
     function _downloadClicked() {
@@ -53,6 +67,9 @@ Item {
     }
 
     function _saveButtonClicked() {
+        if (root.flyViewRoot)
+            root.flyViewRoot.syncSprayerSettingsToPlan()
+
         if(_planMasterController.currentPlanFile !== "") {
             _planMasterController.saveToCurrent()
             mainWindow.showMessageDialog(qsTr("Save"),
@@ -86,11 +103,12 @@ Item {
 
         // No background — icons float directly over the map like the reference
 
-        Row {
+        RowLayout {
             id: buttonRow
-            anchors.centerIn: parent
-            spacing: ScreenTools.defaultFontPixelWidth * 1.6
-            
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            spacing: root._toolbarSpacing
+
             // Helper component for icon buttons — bare icons with drop shadow for visibility
             component IconButton: Item {
                 property string iconSource
@@ -99,8 +117,10 @@ Item {
                 property bool isMapButton: false
                 property bool buttonEnabled: true
 
-                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
-                height: width
+                Layout.preferredWidth: root._toolbarIconSize
+                Layout.preferredHeight: root._toolbarIconSize
+                Layout.alignment: Qt.AlignVCenter
+                clip: true
                 
                 // Hide this button if it's the Map Button and we are in "Expanded Mode"
                 opacity: (isMapButton && root._mapSettingsVisible) ? 0.0 : (buttonEnabled ? 1.0 : 0.35)
@@ -145,21 +165,47 @@ Item {
                 }
             }
 
+            // Sprayer is part of this upper Fly View icon row. Clicking it
+            // opens SPRAY_EN, SPRAY_NOZ_RATE and SPRAY_PUMP_RATE controls.
             Item {
-                width: flightModePill.implicitWidth + ScreenTools.defaultFontPixelWidth * 5.4
-                height: buttonRow.height
+                Layout.preferredWidth: root._toolbarIconSize
+                Layout.preferredHeight: root._toolbarIconSize
+                Layout.alignment: Qt.AlignVCenter
+                clip: true
+
+                FlyViewSprayerPanel {
+                    anchors.centerIn: parent
+                    width: root._toolbarIconSize
+                    height: root._toolbarIconSize
+                    controlsEnabled: root._sprayerControlsEnabled
+                    planMasterController: root._planMasterController
+                    sprayEnableFact: root.sprayEnableFact
+                    sprayNozzleRateFact: root.sprayNozzleRateFact
+                    sprayPumpRateFact: root.sprayPumpRateFact
+                    onSprayerSettingsConfirmed: function(enabled, nozzleRate, pumpRate) {
+                        root.sprayerSettingsConfirmed(enabled, nozzleRate, pumpRate)
+                    }
+                }
+            }
+
+            Item {
+                Layout.preferredWidth: root._toolbarIconSize
+                Layout.preferredHeight: root._toolbarIconSize
+                Layout.alignment: Qt.AlignVCenter
+                clip: true
                 visible: QGroundControl.multiVehicleManager.activeVehicle
 
                 FlightModeIndicator {
                     id: flightModePill
                     anchors.centerIn: parent
+                    width: parent.width
+                    height: parent.height
                     fontPointSize: ScreenTools.defaultFontPointSize
                     iconRotation: 90
                     showText: false
                     visible: parent.visible
                 }
             }
-
 
             // Open / import plan (uploads to vehicle after load)
             IconButton {

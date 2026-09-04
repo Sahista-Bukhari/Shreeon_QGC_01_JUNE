@@ -762,11 +762,28 @@ Item {
     }
 
     // Saved on every successful upload so QGC can restore after restart.
+    function _syncSprayerSettingsToPlan() {
+        if (taskSettingsPanel.flushPendingWrites) {
+            taskSettingsPanel.flushPendingWrites()
+        }
+
+        if (!taskSettingsPanel._sprayParamsAvailable) {
+            _planMasterController.setSprayerSettings(true, NaN, NaN)
+            return
+        }
+
+        _planMasterController.setSprayerSettings(
+            taskSettingsPanel._sprayEnabled,
+            taskSettingsPanel._sprayNozRateFact ? Number(taskSettingsPanel._sprayNozRateFact.value) : NaN,
+            taskSettingsPanel._sprayPumpRateFact ? Number(taskSettingsPanel._sprayPumpRateFact.value) : NaN)
+    }
+
     function _persistUploadedRouteMappingPlan() {
         var planFile = _lastUploadedPlanFile()
         if (planFile === "" || !_hasMissionPlanItems) {
             return false
         }
+        _syncSprayerSettingsToPlan()
         _planMasterController.saveToFile(planFile)
         return true
     }
@@ -1004,7 +1021,8 @@ Item {
 
         var separator = savePath.endsWith("/") ? "" : "/"
         var transferPlanFile = savePath + separator + "route_mapping_transfer.plan"
-        flyPlanController.saveToFile(transferPlanFile)
+        _syncSprayerSettingsToPlan()
+        _planMasterController.saveToFile(transferPlanFile)
         return transferPlanFile
     }
 
@@ -1058,6 +1076,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _syncSprayerSettingsToPlan()
 
         if (!_surveyFinished && _canFinishRoute) {
             finishAreaRoute()
@@ -1299,6 +1318,7 @@ Item {
         var separator = savePath.endsWith("/") ? "" : "/"
         var transferPlanFile = savePath + separator + "route_mapping_transfer.plan"
 
+        _syncSprayerSettingsToPlan()
         _planMasterController.saveToFile(transferPlanFile)
         _persistUploadedRouteMappingPlan()
 
@@ -1656,6 +1676,7 @@ Item {
                                if (taskSettingsPanel.flushPendingWrites) {
                                    taskSettingsPanel.flushPendingWrites()
                                }
+                               _syncSprayerSettingsToPlan()
                                _planMasterController.saveToFile(file)
                                hideTaskSettings()
                                _savedMappingTaskName = _pendingMappingTaskName

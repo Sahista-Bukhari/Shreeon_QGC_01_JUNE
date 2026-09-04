@@ -62,6 +62,7 @@ Item {
     readonly property Fact sprayNozzleRateFact: _sprayNozRateFact
     readonly property Fact sprayPumpRateFact: _sprayPumpRateFact
     readonly property bool _sprayEnabled: _sprayEnFact !== null && Number(_sprayEnFact.rawValue) !== 0
+    property var _pendingPlanSprayerRates: null
     property bool _obstacleAvoidanceActive: _cpDistFact ? _cpDistFact.rawValue > 0 : false
     property bool _terrainFlowIconActive: false
     property bool _paramExists: paramLoader.item ? paramLoader.item.paramExists : false
@@ -189,14 +190,72 @@ Item {
         fact.value = enabled ? 1 : 0
     }
 
-    function toggleSprayer() {
+    function setSprayerEnabled(enabled) {
         if (!_sprayEnFact)
             return
 
-        var enabling = !_sprayEnabled
-        _setEnableDisableFact(_sprayEnFact, enabling)
-        if (enabling && paramLoader.item)
+        _setEnableDisableFact(_sprayEnFact, enabled)
+        if (enabled && paramLoader.item)
             paramLoader.item.requestDependentSprayFacts()
+    }
+
+    function _applyPendingPlanSprayerRates() {
+        if (!_pendingPlanSprayerRates || !_sprayEnabled)
+            return
+
+        var allApplied = true
+        if (isFinite(_pendingPlanSprayerRates.nozzleRate)) {
+            if (_sprayNozRateFact) {
+                _sprayNozRateFact.value = _pendingPlanSprayerRates.nozzleRate
+            } else {
+                allApplied = false
+            }
+        }
+        if (isFinite(_pendingPlanSprayerRates.pumpRate)) {
+            if (_sprayPumpRateFact) {
+                _sprayPumpRateFact.value = _pendingPlanSprayerRates.pumpRate
+            } else {
+                allApplied = false
+            }
+        }
+
+        if (allApplied)
+            _pendingPlanSprayerRates = null
+    }
+
+    function applyPlanSprayerSettings(enabled, nozzleRate, pumpRate) {
+        if (!_sprayEnFact)
+            return
+
+        var pendingNozzle = Number(nozzleRate)
+        var pendingPump = Number(pumpRate)
+        if (isFinite(pendingNozzle) || isFinite(pendingPump)) {
+            _pendingPlanSprayerRates = {
+                nozzleRate: isFinite(pendingNozzle) ? pendingNozzle : NaN,
+                pumpRate: isFinite(pendingPump) ? pendingPump : NaN
+            }
+        } else {
+            _pendingPlanSprayerRates = null
+        }
+
+        setSprayerEnabled(enabled)
+        _applyPendingPlanSprayerRates()
+    }
+
+    function toggleSprayer() {
+        setSprayerEnabled(!_sprayEnabled)
+    }
+
+    on_SprayNozRateFactChanged: _applyPendingPlanSprayerRates()
+    on_SprayPumpRateFactChanged: _applyPendingPlanSprayerRates()
+
+    Timer {
+        id: pendingSprayerRatesTimer
+
+        interval: 200
+        repeat: true
+        running: root._pendingPlanSprayerRates !== null && root._sprayEnabled
+        onTriggered: root._applyPendingPlanSprayerRates()
     }
 
     implicitHeight: bottomBarRow.height + root._margins * 2

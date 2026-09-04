@@ -28,7 +28,7 @@ Item {
 
     RowLayout {
         id:                     mainLayout
-        anchors.verticalCenter: parent.verticalCenter
+        anchors.centerIn:       parent
         spacing:                ScreenTools.defaultFontPixelWidth / 2
 
         QGCColoredImage {

@@ -296,18 +296,39 @@ Item {
         Component {
             id: fenceToolComponent
 
-            Column {
-                spacing: ScreenTools.defaultFontPixelHeight / 2
-                width:   parent ? parent.width : 0
-                // Match Mission list inset so card borders aren't clipped
-                leftPadding:  root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
-                rightPadding: root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
-                topPadding:   root._customMission ? ScreenTools.defaultFontPixelWidth * 0.55 : 0
+            QGCFlickable {
+                id:                    fenceEditorFlickable
+                contentWidth:          width
+                contentHeight:         geoFenceEditor.y + geoFenceEditor.height + _contentInset
+                flickableDirection:    Flickable.VerticalFlick
+                interactive:           contentHeight > height
+                clip:                  true
+
+                readonly property real _contentInset: root._customMission
+                                                        ? ScreenTools.defaultFontPixelWidth * 0.55
+                                                        : 0
 
                 GeoFenceEditor {
-                    width:                  parent.width - parent.leftPadding - parent.rightPadding
+                    id:                     geoFenceEditor
+                    x:                      fenceEditorFlickable._contentInset
+                    y:                      fenceEditorFlickable._contentInset
+                    width:                  Math.max(0, fenceEditorFlickable.width
+                                                     - (fenceEditorFlickable._contentInset * 2))
                     myGeoFenceController:   root._geoFenceController
                     flightMap:              root.editorMap
+                }
+
+                ScrollBar.vertical: ScrollBar {
+                    policy: fenceEditorFlickable.contentHeight > fenceEditorFlickable.height
+                            ? ScrollBar.AlwaysOn
+                            : ScrollBar.AlwaysOff
+                    width: Math.max(3, ScreenTools.defaultFontPixelWidth * 0.36)
+
+                    contentItem: Rectangle {
+                        implicitWidth: 3
+                        radius:        width / 2
+                        color:         root._customMission ? root._accentGreen : qgcPal.text
+                    }
                 }
             }
         }

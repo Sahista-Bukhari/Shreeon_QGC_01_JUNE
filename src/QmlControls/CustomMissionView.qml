@@ -178,7 +178,37 @@ Item {
         }
     }
 
+    function ensureTakeoffForWaypoint(coordinate) {
+        if (!_missionController.onlyInsertTakeoffValid) {
+            return true
+        }
+
+        if (!_missionController.isInsertTakeoffValid) {
+            return false
+        }
+
+        var nextIndex = _missionController.currentPlanViewVIIndex + 1
+        var takeoffItem = _missionController.insertTakeoffItem(coordinate, nextIndex, true /* makeCurrentItem */)
+        if (!takeoffItem) {
+            return false
+        }
+
+        // Keep the automatically-created takeoff at the first waypoint, matching
+        // the other custom mission pages.
+        if (takeoffItem.specifiesCoordinate) {
+            takeoffItem.coordinate = coordinate
+        }
+        takeoffItem.launchCoordinate = coordinate
+        takeoffItem.launchTakeoffAtSameLocation = true
+        _triggerSubmit = true
+        return true
+    }
+
     function insertSimpleItemAfterCurrent(coordinate) {
+        if (!ensureTakeoffForWaypoint(coordinate)) {
+            return
+        }
+
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
         _missionController.insertSimpleMissionItem(coordinate, nextIndex, true /* makeCurrentItem */)
     }
@@ -694,6 +724,8 @@ Item {
                 text: qsTr("Waypoint")
                 iconSource: "/qmlimages/MapAddMission.svg"
                 enabled: _missionController.flyThroughCommandsAllowed
+                         || (_missionController.onlyInsertTakeoffValid
+                             && _missionController.isInsertTakeoffValid)
                 visible: toolStrip._isMissionLayer
                 checkable: true
                 onTriggered: {

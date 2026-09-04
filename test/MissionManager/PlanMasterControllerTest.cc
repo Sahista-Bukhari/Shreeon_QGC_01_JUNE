@@ -94,6 +94,33 @@ void PlanMasterControllerTest::_testMissionModeGalleryMetadata(void)
     }
 }
 
+void PlanMasterControllerTest::_testSprayerSettingsSaveLoad(void)
+{
+    QTemporaryDir planDirectory;
+    QVERIFY(planDirectory.isValid());
+
+    _masterController->setMissionMode(QStringLiteral("customMission"));
+    _masterController->setSprayerSettings(true, 0.690, 1.000);
+
+    const QJsonObject savedJson = _masterController->saveToJson().object();
+    QVERIFY(savedJson.contains(PlanMasterController::kJsonSprayerSettingsKey));
+    const QJsonObject sprayerJson = savedJson.value(PlanMasterController::kJsonSprayerSettingsKey).toObject();
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerEnabledKey).toBool(), true);
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerNozzleRateKey).toDouble(), 0.690);
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerPumpRateKey).toDouble(), 1.000);
+
+    const QString planFile = planDirectory.filePath(QStringLiteral("sprayer.plan"));
+    _masterController->saveToFile(planFile);
+    _masterController->clearSprayerSettings();
+    QVERIFY(!_masterController->sprayerConfigured());
+
+    _masterController->loadFromFile(planFile);
+    QVERIFY(_masterController->sprayerConfigured());
+    QVERIFY(_masterController->sprayerEnabled());
+    QCOMPARE(_masterController->sprayerNozzleRate(), 0.690);
+    QCOMPARE(_masterController->sprayerPumpRate(), 1.000);
+}
+
 void PlanMasterControllerTest::_testActiveVehicleChanged(void) {
     // There was a defect where the PlanMasterController would, upon a new active vehicle,
     // overzelously disconnect all subscribers interested in the outgoing active vechicle.

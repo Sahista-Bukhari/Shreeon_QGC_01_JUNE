@@ -234,6 +234,10 @@ ApplicationWindow {
     // Empty means no mode has an uploaded plan currently owned on Fly View.
     property string uploadedMissionEditor: ""
 
+    // Changes for every uploaded plan, including consecutive uploads from the
+    // same editor. Fly View uses this to perform one-time payload setup.
+    property int missionPlanUploadGeneration: 0
+
     function setActiveMissionEditor(editorType) {
         if (editorType && editorType !== "") {
             activeMissionEditor = editorType
@@ -295,6 +299,7 @@ ApplicationWindow {
             return
         }
         clearOtherEditorsUploadOwnership(editorType)
+        missionPlanUploadGeneration++
         uploadedMissionEditor = editorType
         missionExecutionSettings.lastUploadedMissionEditor = editorType
         setActiveMissionEditor(editorType)
@@ -1573,14 +1578,12 @@ ApplicationWindow {
                 border.color:   "#d9d9d9"
 
                 Rectangle {
-                    anchors.left:       parent.left
-                    anchors.right:      parent.right
-                    anchors.top:        parent.top
-                    anchors.leftMargin: parent.radius
-                    anchors.rightMargin: parent.radius
-                    height:             3
-                    radius:             height / 2
-                    color:              "#00a651"
+                    anchors.left:   parent.left
+                    anchors.right:  parent.right
+                    anchors.top:    parent.top
+                    height:         4
+                    radius:         parent.radius
+                    color:          "#00a04c"
                 }
             }
 

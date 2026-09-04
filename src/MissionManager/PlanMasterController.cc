@@ -20,6 +20,8 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QFileInfo>
 
+#include <cmath>
+
 QGC_LOGGING_CATEGORY(PlanMasterControllerLog, "PlanManager.PlanMasterController")
 
 PlanMasterController::PlanMasterController(QObject* parent)
@@ -347,6 +349,11 @@ void PlanMasterController::loadFromFile(const QString& filename)
 {
     QString errorString;
     QString errorMessage = tr("Error loading Plan file (%1). %2").arg(filename).arg("%1");
+    QString loadedMissionMode;
+    bool loadedSprayerConfigured = false;
+    bool loadedSprayerEnabled = false;
+    double loadedSprayerNozzleRate = std::numeric_limits<double>::quiet_NaN();
+    double loadedSprayerPumpRate = std::numeric_limits<double>::quiet_NaN();
 
     if (filename.isEmpty()) {
         return;
@@ -378,6 +385,19 @@ void PlanMasterController::loadFromFile(const QString& filename)
         }
 
         QJsonObject json = jsonDoc.object();
+        loadedMissionMode = json.value(kJsonMissionModeKey).toString();
+        const QJsonValue sprayerValue = json.value(kJsonSprayerSettingsKey);
+        if (sprayerValue.isObject()) {
+            const QJsonObject sprayerObject = sprayerValue.toObject();
+            loadedSprayerConfigured = true;
+            loadedSprayerEnabled = sprayerObject.value(kJsonSprayerEnabledKey).toBool(false);
+            if (sprayerObject.value(kJsonSprayerNozzleRateKey).isDouble()) {
+                loadedSprayerNozzleRate = sprayerObject.value(kJsonSprayerNozzleRateKey).toDouble();
+            }
+            if (sprayerObject.value(kJsonSprayerPumpRateKey).isDouble()) {
+                loadedSprayerPumpRate = sprayerObject.value(kJsonSprayerPumpRateKey).toDouble();
+            }
+        }
         //-- Allow plugins to pre process the load
         QGCCorePlugin::instance()->preLoadFromJson(this, json);
 
@@ -410,6 +430,14 @@ void PlanMasterController::loadFromFile(const QString& filename)
 
     if(success){
         _currentPlanFile = QString::asprintf("%s/%s.%s", fileInfo.path().toLocal8Bit().data(), fileInfo.completeBaseName().toLocal8Bit().data(), AppSettings::planFileExtension);
+        if (_flyView) {
+            setMissionMode(loadedMissionMode);
+        }
+        _setSprayerSettings(loadedSprayerConfigured,
+                            loadedSprayerEnabled,
+                            loadedSprayerNozzleRate,
+                            loadedSprayerPumpRate,
+                            false /* markDirty */);
     } else {
         _currentPlanFile.clear();
     }
@@ -440,6 +468,17 @@ QJsonDocument PlanMasterController::saveToJson()
     planJson[kJsonRallyPointsObjectKey] = rallyJson;
     if (!_missionMode.isEmpty()) {
         planJson[kJsonMissionModeKey] = _missionMode;
+    }
+    if (_sprayerConfigured) {
+        QJsonObject sprayerObject;
+        sprayerObject[kJsonSprayerEnabledKey] = _sprayerEnabled;
+        if (std::isfinite(_sprayerNozzleRate)) {
+            sprayerObject[kJsonSprayerNozzleRateKey] = _sprayerNozzleRate;
+        }
+        if (std::isfinite(_sprayerPumpRate)) {
+            sprayerObject[kJsonSprayerPumpRateKey] = _sprayerPumpRate;
+        }
+        planJson[kJsonSprayerSettingsKey] = sprayerObject;
     }
     QGCCorePlugin::instance()->postSaveToJson(this, planJson);
     return QJsonDocument(planJson);
@@ -520,6 +559,14 @@ void PlanMasterController::removeAll(void)
         _rallyPointController.setDirty(false);
         _currentPlanFile.clear();
         emit currentPlanFileChanged();
+    }
+    _setSprayerSettings(false,
+                        false,
+                        std::numeric_limits<double>::quiet_NaN(),
+                        std::numeric_limits<double>::quiet_NaN(),
+                        false /* markDirty */);
+    if (_flyView) {
+        setMissionMode(QString());
     }
     setManualCreation(false);
 }
@@ -681,5 +728,55 @@ void PlanMasterController::setMissionMode(const QString& missionMode)
     if (_missionMode != missionMode) {
         _missionMode = missionMode;
         emit missionModeChanged();
+    }
+}
+
+void PlanMasterController::setSprayerSettings(bool enabled, double nozzleRate, double pumpRate)
+{
+    _setSprayerSettings(true, enabled, nozzleRate, pumpRate, true /* markDirty */);
+}
+
+void PlanMasterController::clearSprayerSettings(void)
+{
+    _setSprayerSettings(false,
+                        false,
+                        std::numeric_limits<double>::quiet_NaN(),
+                        std::numeric_limits<double>::quiet_NaN(),
+                        true /* markDirty */);
+}
+
+void PlanMasterController::_setSprayerSettings(bool configured,
+                                               bool enabled,
+                                               double nozzleRate,
+                                               double pumpRate,
+                                               bool markDirty)
+{
+    if (!std::isfinite(nozzleRate)) {
+        nozzleRate = std::numeric_limits<double>::quiet_NaN();
+    }
+    if (!std::isfinite(pumpRate)) {
+        pumpRate = std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const auto valuesMatch = [](double first, double second) {
+        return (std::isnan(first) && std::isnan(second))
+                || (std::isfinite(first) && std::isfinite(second)
+                    && qAbs(first - second) <= 0.0000001);
+    };
+    if (_sprayerConfigured == configured
+            && _sprayerEnabled == enabled
+            && valuesMatch(_sprayerNozzleRate, nozzleRate)
+            && valuesMatch(_sprayerPumpRate, pumpRate)) {
+        return;
+    }
+
+    _sprayerConfigured = configured;
+    _sprayerEnabled = enabled;
+    _sprayerNozzleRate = nozzleRate;
+    _sprayerPumpRate = pumpRate;
+    emit sprayerSettingsChanged();
+
+    if (markDirty) {
+        setDirty(true);
     }
 }

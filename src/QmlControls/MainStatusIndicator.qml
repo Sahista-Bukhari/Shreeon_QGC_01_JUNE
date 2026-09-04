@@ -190,8 +190,6 @@ RowLayout {
                 QGCButton {
                     enabled:    _armed || !_healthAndArmingChecksSupported || _activeVehicle.healthAndArmingCheckReport.canArm
                     text:       _armed ? qsTr("Disarm") : (control._allowForceArm ? qsTr("Force Arm") : qsTr("Arm"))
-                    textColor:  "#000000"
-                    lightStyle: true
                     primary:    enabled
 
                     onClicked: {
