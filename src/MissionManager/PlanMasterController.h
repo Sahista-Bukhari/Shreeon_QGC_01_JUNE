@@ -51,6 +51,10 @@ public:
     Q_PROPERTY(bool                     sprayerEnabled          READ sprayerEnabled                          NOTIFY sprayerSettingsChanged)
     Q_PROPERTY(double                   sprayerNozzleRate       READ sprayerNozzleRate                       NOTIFY sprayerSettingsChanged)
     Q_PROPERTY(double                   sprayerPumpRate         READ sprayerPumpRate                         NOTIFY sprayerSettingsChanged)
+    Q_PROPERTY(bool                     routeMappingConfigured  READ routeMappingConfigured                  NOTIFY routeMappingTelemetryChanged)
+    Q_PROPERTY(double                   routeMappingTakeoffAltitudeMeters READ routeMappingTakeoffAltitudeMeters NOTIFY routeMappingTelemetryChanged)
+    Q_PROPERTY(double                   routeMappingPatternAltitudeMeters READ routeMappingPatternAltitudeMeters NOTIFY routeMappingTelemetryChanged)
+    Q_PROPERTY(double                   routeMappingPatternSpeedMps READ routeMappingPatternSpeedMps           NOTIFY routeMappingTelemetryChanged)
     Q_PROPERTY(QStringList              loadNameFilters         READ loadNameFilters                        CONSTANT)                       ///< File filter list loading plan files
     Q_PROPERTY(QStringList              saveNameFilters         READ saveNameFilters                        CONSTANT)                       ///< File filter list saving plan files
     Q_PROPERTY(QmlObjectListModel*      planCreators            MEMBER _planCreators                        NOTIFY planCreatorsChanged)
@@ -86,7 +90,9 @@ public:
     Q_INVOKABLE void saveToKml(const QString& filename);
     Q_INVOKABLE void setSprayerSettings(bool enabled, double nozzleRate, double pumpRate);
     Q_INVOKABLE void clearSprayerSettings(void);
-    Q_INVOKABLE void removeAll(void);                       ///< Removes all from controller only, synce required to remove from vehicle
+    Q_INVOKABLE void setRouteMappingTelemetry(double takeoffAltitudeMeters, double patternAltitudeMeters, double patternSpeedMps);
+    Q_INVOKABLE void clearRouteMappingTelemetry(void);
+    Q_INVOKABLE void removeAll(bool clearSprayerSettings = true);                       ///< Removes all from controller only, sync required to remove from vehicle
     Q_INVOKABLE void removeAllFromVehicle(void);            ///< Removes all from vehicle and controller
 
     MissionController*      missionController(void)     { return &_missionController; }
@@ -106,6 +112,10 @@ public:
     bool        sprayerEnabled   (void) const { return _sprayerEnabled; }
     double      sprayerNozzleRate(void) const { return _sprayerNozzleRate; }
     double      sprayerPumpRate  (void) const { return _sprayerPumpRate; }
+    bool        routeMappingConfigured(void) const { return _routeMappingConfigured; }
+    double      routeMappingTakeoffAltitudeMeters(void) const { return _routeMappingTakeoffAltitudeMeters; }
+    double      routeMappingPatternAltitudeMeters(void) const { return _routeMappingPatternAltitudeMeters; }
+    double      routeMappingPatternSpeedMps(void) const { return _routeMappingPatternSpeedMps; }
     QStringList loadNameFilters (void) const;
     QStringList saveNameFilters (void) const;
     bool        isEmpty         (void) const;
@@ -130,6 +140,10 @@ public:
     static constexpr const char* kJsonSprayerEnabledKey =      "enabled";
     static constexpr const char* kJsonSprayerNozzleRateKey =   "nozzleRate";
     static constexpr const char* kJsonSprayerPumpRateKey =     "pumpRate";
+    static constexpr const char* kJsonRouteMappingTelemetryKey = "routeMappingTelemetry";
+    static constexpr const char* kJsonRouteMappingTakeoffAltitudeKey = "takeoffAltitudeMeters";
+    static constexpr const char* kJsonRouteMappingPatternAltitudeKey = "patternAltitudeMeters";
+    static constexpr const char* kJsonRouteMappingPatternSpeedKey = "patternSpeedMps";
 
 signals:
     void containsItemsChanged               ();
@@ -139,6 +153,7 @@ signals:
     void currentPlanFileChanged             (void);
     void missionModeChanged                 (void);
     void sprayerSettingsChanged             (void);
+    void routeMappingTelemetryChanged       (void);
     void planCreatorsChanged                (QmlObjectListModel* planCreators);
     void managerVehicleChanged              (Vehicle* managerVehicle);
     void promptForPlanUsageOnVehicleChange  (void);
@@ -159,6 +174,7 @@ private:
     void _commonInit                (void);
     void _showPlanFromManagerVehicle(void);
     void _setSprayerSettings(bool configured, bool enabled, double nozzleRate, double pumpRate, bool markDirty);
+    void _setRouteMappingTelemetry(bool configured, double takeoffAltitudeMeters, double patternAltitudeMeters, double patternSpeedMps, bool markDirty);
 
     MultiVehicleManager*    _multiVehicleMgr =          nullptr;
     Vehicle*                _controllerVehicle =        nullptr;    ///< Offline controller vehicle
@@ -178,6 +194,10 @@ private:
     bool                    _sprayerEnabled = false;
     double                  _sprayerNozzleRate = std::numeric_limits<double>::quiet_NaN();
     double                  _sprayerPumpRate = std::numeric_limits<double>::quiet_NaN();
+    bool                    _routeMappingConfigured = false;
+    double                  _routeMappingTakeoffAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    double                  _routeMappingPatternAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    double                  _routeMappingPatternSpeedMps = std::numeric_limits<double>::quiet_NaN();
     bool                    _deleteWhenSendCompleted =  false;
     bool                    _previousOverallDirty =     false;
     QmlObjectListModel*     _planCreators =             nullptr;

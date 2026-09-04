@@ -19,6 +19,9 @@ private slots:
     void _testMissionModeSaveMetadata(void);
     void _testMissionModeGalleryMetadata(void);
     void _testSprayerSettingsSaveLoad(void);
+    void _testSprayerSettingsDisabledWithRates(void);
+    void _testSprayerSettingsIntegerJsonLoad(void);
+    void _testRouteMappingTelemetrySaveLoad(void);
     void _testActiveVehicleChanged(void);
 
 private:

@@ -204,27 +204,28 @@ Item {
         }
     }
 
-    readonly property bool _agricultureSprayerPlanActive: mainWindow.uploadedMissionEditor === "agricultureSpraying"
-                                                          || _planController.missionMode === "agricultureSpraying"
-
     function applyConfirmedSprayerSettings(enabled, nozzleRate, pumpRate) {
         var bottomBar = widgetLayer.bottomBar
         if (!bottomBar || !bottomBar.sprayEnableFact)
             return
 
         bottomBar.applyPlanSprayerSettings(enabled, nozzleRate, pumpRate)
-
-        if (enabled) {
-            _planController.setSprayerSettings(enabled, nozzleRate, pumpRate)
-        } else {
-            _planController.clearSprayerSettings()
-        }
+        _planController.setSprayerSettings(enabled, nozzleRate, pumpRate)
     }
 
     function syncSprayerSettingsToPlan() {
         var pc = _planController
         var bottomBar = widgetLayer.bottomBar
-        if (!bottomBar || !bottomBar.sprayEnableFact)
+        if (!bottomBar)
+            return
+
+        // Plan metadata confirmed via OK (or loaded from file) is the source of
+        // truth for saves. Vehicle SPRAY_EN may still be off until the operator
+        // applies settings from the sprayer panel.
+        if (pc.sprayerConfigured)
+            return
+
+        if (!bottomBar.sprayEnableFact)
             return
 
         if (!bottomBar._sprayEnabled) {

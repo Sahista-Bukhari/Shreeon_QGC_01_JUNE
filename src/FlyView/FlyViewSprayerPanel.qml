@@ -58,9 +58,9 @@ Item {
     function _factMaximum(fact) {
         var minimum = _factMinimum(fact)
         if (!fact || fact.maxIsDefaultForType)
-            return 1
+            return Math.max(minimum + 1, 10)
         var number = Number(fact.max)
-        return isFinite(number) && number > minimum ? number : minimum + 1
+        return isFinite(number) && number > minimum ? number : Math.max(minimum + 1, 10)
     }
 
     function _clampRate(fact, value) {
@@ -81,7 +81,7 @@ Item {
             return
         }
 
-        _draftEnabled = false
+        _draftEnabled = sprayEnableFact && Number(sprayEnableFact.value) !== 0
         var nozzle = _factNumber(sprayNozzleRateFact)
         var pump = _factNumber(sprayPumpRateFact)
         _draftNozzleRate = isFinite(nozzle) ? nozzle : NaN

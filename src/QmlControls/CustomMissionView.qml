@@ -42,6 +42,7 @@ Item {
     property bool   _resetRegisterFlightPlan
     property bool   _addWaypointOnClick: false
     property bool   _addROIOnClick: false
+    property bool   _planUploadPending: false
 
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
@@ -91,6 +92,13 @@ Item {
             if (!_promptForPlanUsageShowing) {
                 _promptForPlanUsageShowing = true
                 promptForPlanUsageOnVehicleChangePopupComponent.createObject(mainWindow).open()
+            }
+        }
+
+        onSyncInProgressChanged: {
+            if (!_planMasterController.syncInProgress && _root._planUploadPending) {
+                _root._planUploadPending = false
+                _root._onPlanUploadComplete()
             }
         }
 
@@ -238,6 +246,45 @@ Item {
         _missionController.insertLandItem(mapCenter(), nextIndex, true /* makeCurrentItem */)
     }
 
+    function _mergeFlyViewSprayerIntoPlan() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController || !flyPlanController.sprayerConfigured) {
+            return
+        }
+
+        _planMasterController.setSprayerSettings(
+                    flyPlanController.sprayerEnabled,
+                    flyPlanController.sprayerNozzleRate,
+                    flyPlanController.sprayerPumpRate)
+    }
+
+    function _copySprayerSettingsToFlyViewPlanController() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return
+        }
+
+        if (!_planMasterController.sprayerConfigured) {
+            flyPlanController.clearSprayerSettings()
+            return
+        }
+
+        flyPlanController.setSprayerSettings(
+                    _planMasterController.sprayerEnabled,
+                    _planMasterController.sprayerNozzleRate,
+                    _planMasterController.sprayerPumpRate)
+    }
+
+    function _onPlanUploadComplete() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController || flyPlanController.offline) {
+            return
+        }
+
+        flyPlanController.showPlanFromManagerVehicle()
+        _copySprayerSettingsToFlyViewPlanController()
+    }
+
     // Re-opens the active Fly View plan inside Custom Mission when returning from Fly View.
     function resumePlanForEdit() {
         if (_planMasterController.containsItems) {
@@ -252,6 +299,7 @@ Item {
 
         if (!flyPlanController.offline) {
             _planMasterController.showPlanFromManagerVehicle()
+            _mergeFlyViewSprayerIntoPlan()
         } else if (flyPlanController.currentPlanFile && flyPlanController.currentPlanFile !== "") {
             _planMasterController.loadFromFile(flyPlanController.currentPlanFile)
             _planMasterController.fitViewportToItems()
@@ -268,6 +316,7 @@ Item {
 
         onAcceptedForSave: (file) => {
             if (planFiles) {
+                _mergeFlyViewSprayerIntoPlan()
                 _planMasterController.saveToFile(file)
             } else {
                 _planMasterController.saveToKml(file)
@@ -914,6 +963,7 @@ Item {
                 enabled: !planActionStrip._syncInProgress && planActionStrip._hasPlanItems
                 onTriggered: {
                     if (_planMasterController.currentPlanFile !== "") {
+                        _mergeFlyViewSprayerIntoPlan()
                         _planMasterController.saveToCurrent()
                         mainWindow.showMessageDialog(qsTr("Save"),
                                                      qsTr("Plan saved to `%1`").arg(_planMasterController.currentPlanFile),
@@ -939,8 +989,11 @@ Item {
                             UTMSPStateStorage.removeFlightPlanState = true
                             UTMSPStateStorage.indicatorDisplayStatus = true
                         }
+                        _planUploadPending = true
                         if (_planMasterController.upload()) {
                             mainWindow.markMissionPlanUploaded(mainWindow.activeMissionEditor)
+                        } else {
+                            _planUploadPending = false
                         }
                     })
                 }

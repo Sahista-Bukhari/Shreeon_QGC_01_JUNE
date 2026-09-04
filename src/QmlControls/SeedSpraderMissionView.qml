@@ -760,6 +760,7 @@ Item {
             loadPersistedUploadedPlan()
         }
         if (_routeMappingPlanUploaded) {
+            _loadRouteMappingPlanIntoFlyView()
             _restoreUploadedRouteMappingOverlay()
         }
     }
@@ -792,6 +793,79 @@ Item {
             return false
         }
         _planMasterController.saveToFile(planFile)
+        return true
+    }
+
+    function _snapshotRouteMappingTelemetryFromPlan() {
+        var takeoffM = NaN
+        var patternM = NaN
+        var patternSpeedMps = NaN
+
+        var takeoff = _findTakeoffItem()
+        if (takeoff && takeoff.altitude) {
+            takeoffM = Number(takeoff.altitude.rawValue)
+        }
+
+        var survey = _cachedSurveyItem || _taskSettingsSurveyItem
+        if (survey && survey.cameraCalc && survey.cameraCalc.distanceToSurface) {
+            patternM = Number(survey.cameraCalc.distanceToSurface.rawValue)
+        }
+        if (survey && survey.patternFlightSpeed) {
+            patternSpeedMps = Number(survey.patternFlightSpeed.rawValue)
+        }
+
+        if (!isFinite(takeoffM) && !isFinite(patternM) && !isFinite(patternSpeedMps)) {
+            _planMasterController.clearRouteMappingTelemetry()
+            return
+        }
+
+        _planMasterController.setRouteMappingTelemetry(takeoffM, patternM, patternSpeedMps)
+    }
+
+    function _copyRouteMappingTelemetryToFlyViewPlanController() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return
+        }
+
+        if (!_planMasterController.routeMappingConfigured) {
+            flyPlanController.clearRouteMappingTelemetry()
+            return
+        }
+
+        flyPlanController.setRouteMappingTelemetry(
+                    _planMasterController.routeMappingTakeoffAltitudeMeters,
+                    _planMasterController.routeMappingPatternAltitudeMeters,
+                    _planMasterController.routeMappingPatternSpeedMps)
+    }
+
+    // Fly View must keep the full SurveyComplexItem (altitude/speed settings).
+    // showPlanFromManagerVehicle() flattens to simple waypoints and breaks HUD values.
+    // Deferred so this runs after MissionController::_managerSendComplete reloads.
+    function _loadRouteMappingPlanIntoFlyView() {
+        Qt.callLater(_loadRouteMappingPlanIntoFlyViewNow)
+    }
+
+    function _loadRouteMappingPlanIntoFlyViewNow() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return false
+        }
+
+        var planFile = _lastUploadedPlanFile()
+        if (planFile === "" || !QGCFileDialogController.fileExists(planFile)) {
+            if (!flyPlanController.offline) {
+                flyPlanController.showPlanFromManagerVehicle()
+            }
+            _copyRouteMappingTelemetryToFlyViewPlanController()
+            return false
+        }
+
+        flyPlanController.loadFromFile(planFile)
+        if (_planMasterController.missionMode !== "") {
+            flyPlanController.missionMode = _planMasterController.missionMode
+        }
+        _copyRouteMappingTelemetryToFlyViewPlanController()
         return true
     }
 
@@ -1082,6 +1156,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
 
         if (!_surveyFinished && _canFinishRoute) {
             finishAreaRoute()
@@ -1135,16 +1210,12 @@ Item {
         _surveyFinished = false
         _routeMappingUploadPending = false
         _editBaselineSignature = _routeMappingPlanSignature()
+        _snapshotRouteMappingTelemetryFromPlan()
         _persistUploadedRouteMappingPlan()
         flyView.hideVehicleMissionForUnuploadedRoute = false
         mainWindow.markMissionPlanUploaded("seedSpreader")
 
-        // Match stock QGC: after Plan upload, Fly View reloads from the vehicle
-        // so Start Mission / containsItems stay in sync.
-        var flyPlanController = flyView.planController
-        if (flyPlanController && !flyPlanController.offline) {
-            flyPlanController.showPlanFromManagerVehicle()
-        }
+        _loadRouteMappingPlanIntoFlyView()
     }
 
     // Captures the native survey geometry for Fly View and records that this
@@ -1207,10 +1278,7 @@ Item {
             flyView.hideVehicleMissionForUnuploadedRoute = false
             // Keep Fly View's mission list in sync with the vehicle so the
             // trailing RTL/Land item is present when Start Mission runs.
-            var uploadedFlyPlanController = flyView.planController
-            if (uploadedFlyPlanController && !uploadedFlyPlanController.offline) {
-                uploadedFlyPlanController.showPlanFromManagerVehicle()
-            }
+            _loadRouteMappingPlanIntoFlyView()
             _restoreUploadedRouteMappingOverlay()
         } else {
             if (mainWindow.uploadedMissionEditor === "seedSpreader") {

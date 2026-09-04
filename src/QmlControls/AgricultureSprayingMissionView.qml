@@ -507,7 +507,7 @@ Item {
         }
         polygon.endReset()
         polygon.traceMode = false
-        polygon.interactive = false
+        polygon.interactive = true
         return true
     }
 
@@ -580,11 +580,34 @@ Item {
             if (surveyPolygon && surveyPolygon.count === fieldTracePointsModel.count) {
                 surveyPolygon.adjustVertex(pointIndex, coordinate)
                 surveyPolygon.traceMode = false
-                surveyPolygon.interactive = false
+                surveyPolygon.interactive = true
             } else {
                 _updateSurveyPolygonFromTrace(_cachedSurveyItem)
             }
         }
+    }
+
+    // Rebuilds boundary waypoints from the survey polygon (used after native center/vertex drag).
+    function _syncFieldTraceFromSurveyPolygon() {
+        if (!_cachedSurveyItem || !_cachedSurveyItem.surveyAreaPolygon) {
+            return
+        }
+
+        var polygon = _cachedSurveyItem.surveyAreaPolygon
+        if (polygon.count < 3) {
+            return
+        }
+
+        fieldTracePointsModel.clear()
+        for (var i = 0; i < polygon.count; i++) {
+            var coordinate = polygon.vertexCoordinate(i)
+            fieldTracePointsModel.append({
+                                            lat: coordinate.latitude,
+                                            lon: coordinate.longitude,
+                                            alt: coordinate.altitude
+                                        })
+        }
+        _selectedWaypointIndex = -1
     }
 
     // Starts a new area route only when no existing route/plan is present.
@@ -736,6 +759,7 @@ Item {
             loadPersistedUploadedPlan()
         }
         if (_routeMappingPlanUploaded) {
+            _loadRouteMappingPlanIntoFlyView()
             _restoreUploadedRouteMappingOverlay()
         }
     }
@@ -768,14 +792,105 @@ Item {
         }
 
         if (!taskSettingsPanel._sprayParamsAvailable) {
-            _planMasterController.setSprayerSettings(true, NaN, NaN)
             return
         }
 
         _planMasterController.setSprayerSettings(
-            taskSettingsPanel._sprayEnabled,
-            taskSettingsPanel._sprayNozRateFact ? Number(taskSettingsPanel._sprayNozRateFact.value) : NaN,
-            taskSettingsPanel._sprayPumpRateFact ? Number(taskSettingsPanel._sprayPumpRateFact.value) : NaN)
+            taskSettingsPanel.planSprayEnabled,
+            isFinite(taskSettingsPanel.planSprayNozzleRate) ? taskSettingsPanel.planSprayNozzleRate : NaN,
+            isFinite(taskSettingsPanel.planSprayPumpRate) ? taskSettingsPanel.planSprayPumpRate : NaN)
+    }
+
+    function _copySprayerSettingsToFlyViewPlanController() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return
+        }
+
+        if (!_planMasterController.sprayerConfigured) {
+            flyPlanController.clearSprayerSettings()
+            return
+        }
+
+        flyPlanController.setSprayerSettings(
+                    _planMasterController.sprayerEnabled,
+                    _planMasterController.sprayerNozzleRate,
+                    _planMasterController.sprayerPumpRate)
+    }
+
+    function _snapshotRouteMappingTelemetryFromPlan() {
+        var takeoffM = NaN
+        var patternM = NaN
+        var patternSpeedMps = NaN
+
+        var takeoff = _findTakeoffItem()
+        if (takeoff && takeoff.altitude) {
+            takeoffM = Number(takeoff.altitude.rawValue)
+        }
+
+        var survey = _cachedSurveyItem || _taskSettingsSurveyItem
+        if (survey && survey.cameraCalc && survey.cameraCalc.distanceToSurface) {
+            patternM = Number(survey.cameraCalc.distanceToSurface.rawValue)
+        }
+        if (survey && survey.patternFlightSpeed) {
+            patternSpeedMps = Number(survey.patternFlightSpeed.rawValue)
+        }
+
+        if (!isFinite(takeoffM) && !isFinite(patternM) && !isFinite(patternSpeedMps)) {
+            _planMasterController.clearRouteMappingTelemetry()
+            return
+        }
+
+        _planMasterController.setRouteMappingTelemetry(takeoffM, patternM, patternSpeedMps)
+    }
+
+    function _copyRouteMappingTelemetryToFlyViewPlanController() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return
+        }
+
+        if (!_planMasterController.routeMappingConfigured) {
+            flyPlanController.clearRouteMappingTelemetry()
+            return
+        }
+
+        flyPlanController.setRouteMappingTelemetry(
+                    _planMasterController.routeMappingTakeoffAltitudeMeters,
+                    _planMasterController.routeMappingPatternAltitudeMeters,
+                    _planMasterController.routeMappingPatternSpeedMps)
+    }
+
+    // Fly View must keep the full SurveyComplexItem (altitude/speed settings).
+    // showPlanFromManagerVehicle() flattens to simple waypoints and breaks HUD values.
+    // Deferred so this runs after MissionController::_managerSendComplete reloads.
+    function _loadRouteMappingPlanIntoFlyView() {
+        Qt.callLater(_loadRouteMappingPlanIntoFlyViewNow)
+    }
+
+    function _loadRouteMappingPlanIntoFlyViewNow() {
+        var flyPlanController = flyView.planController
+        if (!flyPlanController) {
+            return false
+        }
+
+        var planFile = _lastUploadedPlanFile()
+        if (planFile === "" || !QGCFileDialogController.fileExists(planFile)) {
+            if (!flyPlanController.offline) {
+                flyPlanController.showPlanFromManagerVehicle()
+            }
+            _copySprayerSettingsToFlyViewPlanController()
+            _copyRouteMappingTelemetryToFlyViewPlanController()
+            return false
+        }
+
+        flyPlanController.loadFromFile(planFile)
+        if (_planMasterController.missionMode !== "") {
+            flyPlanController.missionMode = _planMasterController.missionMode
+        }
+        _copySprayerSettingsToFlyViewPlanController()
+        _copyRouteMappingTelemetryToFlyViewPlanController()
+        return true
     }
 
     function _persistUploadedRouteMappingPlan() {
@@ -915,13 +1030,22 @@ Item {
         _importedMappingPlanPath = file
         _importedMappingTaskName = _taskNameFromPlanFile(file)
 
+        if (_planMasterController.sprayerConfigured) {
+            taskSettingsPanel.loadSprayerPlanDraft(
+                        _planMasterController.sprayerEnabled,
+                        _planMasterController.sprayerNozzleRate,
+                        _planMasterController.sprayerPumpRate)
+        } else if (taskSettingsPanel.resetSprayerPlanDraft) {
+            taskSettingsPanel.resetSprayerPlanDraft()
+        }
+
         _missionMapVisualsEnabled = true
         _updateCachedSurveyItem()
 
         if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
             polygon.traceMode = false
-            polygon.interactive = false
+            polygon.interactive = true
             for (var i = 0; i < polygon.count; i++) {
                 var coordinate = polygon.vertexCoordinate(i)
                 fieldTracePointsModel.append({
@@ -1076,6 +1200,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
         _syncSprayerSettingsToPlan()
 
         if (!_surveyFinished && _canFinishRoute) {
@@ -1130,16 +1255,14 @@ Item {
         _surveyFinished = false
         _routeMappingUploadPending = false
         _editBaselineSignature = _routeMappingPlanSignature()
+        _snapshotRouteMappingTelemetryFromPlan()
         _persistUploadedRouteMappingPlan()
         flyView.hideVehicleMissionForUnuploadedRoute = false
         mainWindow.markMissionPlanUploaded("agricultureSpraying")
 
         // Match stock QGC: after Plan upload, Fly View reloads from the vehicle
         // so Start Mission / containsItems stay in sync.
-        var flyPlanController = flyView.planController
-        if (flyPlanController && !flyPlanController.offline) {
-            flyPlanController.showPlanFromManagerVehicle()
-        }
+        _loadRouteMappingPlanIntoFlyView()
     }
 
     // Captures the native survey geometry for Fly View and records that this
@@ -1202,10 +1325,7 @@ Item {
             flyView.hideVehicleMissionForUnuploadedRoute = false
             // Keep Fly View's mission list in sync with the vehicle so the
             // trailing RTL/Land item is present when Start Mission runs.
-            var uploadedFlyPlanController = flyView.planController
-            if (uploadedFlyPlanController && !uploadedFlyPlanController.offline) {
-                uploadedFlyPlanController.showPlanFromManagerVehicle()
-            }
+            _loadRouteMappingPlanIntoFlyView()
             _restoreUploadedRouteMappingOverlay()
         } else {
             if (mainWindow.uploadedMissionEditor === "agricultureSpraying") {
@@ -1732,7 +1852,7 @@ Item {
             }
 
             MapItemView {
-                visible: _root._areaRouteActive
+                visible: _root._areaRouteActive && !_root._hasCalculatedSurvey
                 model: fieldTracePointsModel
 
                 delegate: MapQuickItem {
@@ -1829,16 +1949,29 @@ Item {
                 line.width: _root._showSavedMappingOverlay ? 1.5 : 2
                 path: {
                     var boundaryPoints = []
-                    for (var i = 0; i < fieldTracePointsModel.count; i++) {
-                        var point = fieldTracePointsModel.get(i)
-                        boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                    // Once the pattern exists, follow the survey polygon so vertex-drag
+                    // moves the outline and transects together.
+                    if (_root._hasCalculatedSurvey
+                            && _root._cachedSurveyItem
+                            && _root._cachedSurveyItem.surveyAreaPolygon) {
+                        var polyPath = _root._cachedSurveyItem.surveyAreaPolygon.path
+                        for (var pi = 0; pi < polyPath.length; pi++) {
+                            boundaryPoints.push(polyPath[pi])
+                        }
+                    } else {
+                        for (var i = 0; i < fieldTracePointsModel.count; i++) {
+                            var point = fieldTracePointsModel.get(i)
+                            boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                        }
                     }
                     if (boundaryPoints.length >= 3) {
                         boundaryPoints.push(boundaryPoints[0])
                     }
                     return boundaryPoints
                 }
-                visible: _root._areaRouteActive && fieldTracePointsModel.count >= 2
+                visible: _root._areaRouteActive
+                         && (_root._hasCalculatedSurvey
+                             || fieldTracePointsModel.count >= 2)
                 z: QGroundControl.zOrderMapItems + 1
             }
 
@@ -1897,6 +2030,56 @@ Item {
                       : []
                 visible: _root._hasCalculatedSurvey
                 z: QGroundControl.zOrderMapItems + 2
+            }
+
+            // Native QGC polygon editing (center + vertex handles) once the pattern exists.
+            // Keep fill/border transparent — Agriculture Sprayer draws its own boundary/transects.
+            Loader {
+                active: _root._areaRouteActive
+                        && _root._cachedSurveyItem
+                        && _root._cachedSurveyItem.surveyAreaPolygon
+                        && _root._cachedSurveyItem.surveyAreaPolygon.count >= 3
+
+                sourceComponent: Component {
+                    QGCMapPolygonVisuals {
+                        mapControl: routeMap
+                        mapPolygon: _root._cachedSurveyItem.surveyAreaPolygon
+                        interactive: true
+                        showToolsToolbar: false
+                        borderWidth: 0
+                        borderColor: "transparent"
+                        interiorColor: "transparent"
+                        interiorOpacity: 0
+                        handleSizeFactor: 0.85
+                        splitHandleSizeFactor: 0.85
+                        // Light brown handles — tinted from branding color (#7b504e).
+                        vertexHandleColor: "#e6cbc8"
+                        vertexHandleBorderColor: "#7b504e"
+                        centerHandleColor: "#e6cbc8"
+                        centerHandleBorderColor: "#7b504e"
+                        centerHandleIconColor: "#7b504e"
+                        splitIndicatorColor: "#7b504e"
+                        splitIndicatorOpacity: 0.75
+                    }
+                }
+            }
+
+            Connections {
+                target: _root._hasCalculatedSurvey && _root._cachedSurveyItem
+                        ? _root._cachedSurveyItem.surveyAreaPolygon
+                        : null
+
+                function onPathChanged() {
+                    if (target && !target.centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
+
+                function onCenterDragChanged(centerDrag) {
+                    if (!centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
             }
 
             MapQuickItem {

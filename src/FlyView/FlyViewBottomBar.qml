@@ -13,6 +13,7 @@ Item {
     property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     property var _guidedController: globals.guidedControllerFlyView
     property var blurSourceItem: null
+    property var planMasterController: null
     property real _altitude: {
         if (!_activeVehicle || !_activeVehicle.altitudeRelative)
             return 0
@@ -26,8 +27,30 @@ Item {
         return isFinite(v) ? v : 0
     }
 
-    // Flow rate (L/min) — live from tank.flowRateLpm
+    // Flow rate (L/min) — live from tank.flowRateLpm, with configured pump rate fallback.
     property real _flowRate: 0
+    property real _configuredPumpRate: {
+        if (planMasterController && planMasterController.sprayerConfigured) {
+            var planRate = Number(planMasterController.sprayerPumpRate)
+            if (isFinite(planRate))
+                return planRate
+        }
+        if (_pendingPlanSprayerRates && isFinite(_pendingPlanSprayerRates.pumpRate))
+            return _pendingPlanSprayerRates.pumpRate
+        if (_sprayPumpRateFact) {
+            var factRate = Number(_sprayPumpRateFact.rawValue)
+            if (isFinite(factRate))
+                return factRate
+        }
+        return NaN
+    }
+    property real _displayFlowRate: {
+        if (_flowRate > 0.05)
+            return _flowRate
+        if (isFinite(_configuredPumpRate))
+            return _configuredPumpRate
+        return 0
+    }
 
     Connections {
         target: (root._activeVehicle && root._activeVehicle.tank) ? root._activeVehicle.tank.flowRateLpm : null
@@ -42,10 +65,237 @@ Item {
         var v = Number(_activeVehicle.groundSpeed.rawValue)
         return isFinite(v) ? v : 0
     }
+
+    readonly property var _missionController: planMasterController
+                                              ? planMasterController.missionController
+                                              : null
+    property int _missionPlanRevision: 0
+
+    function _missionTakeoffItem() {
+        if (!_missionController)
+            return null
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var item = _missionController.visualItems.get(i)
+            if (item && item.isTakeoffItem)
+                return item
+        }
+        return null
+    }
+
+    function _missionSurveyItem() {
+        if (!_missionController)
+            return null
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var item = _missionController.visualItems.get(i)
+            if (!item)
+                continue
+            if (item.surveyAreaPolygon || item.patternFlightSpeed
+                    || (item.cameraCalc && item.cameraCalc.distanceToSurface))
+                return item
+        }
+        return null
+    }
+
+    function _missionSettingsItem() {
+        if (!_missionController || _missionController.visualItems.count === 0)
+            return null
+        var item = _missionController.visualItems.get(0)
+        return item && item.speedSection ? item : null
+    }
+
+    function _factValue(fact) {
+        if (!fact)
+            return NaN
+        var value = Number(fact.rawValue !== undefined ? fact.rawValue : fact.value)
+        return isFinite(value) ? value : NaN
+    }
+
+    function _currentVehicleMissionIndex() {
+        if (!_activeVehicle || !_activeVehicle.missionItemIndex)
+            return -1
+        var index = Number(_activeVehicle.missionItemIndex.rawValue)
+        return isFinite(index) ? index : -1
+    }
+
+    function _surveyStartSequence() {
+        var survey = _missionSurveyItem()
+        if (!survey || survey.sequenceNumber === undefined)
+            return -1
+        var sequence = Number(survey.sequenceNumber)
+        return isFinite(sequence) ? sequence : -1
+    }
+
+    readonly property bool _routeMappingInPatternPhase: {
+        if (!planMasterController || !planMasterController.routeMappingConfigured)
+            return false
+        var surveySeq = _surveyStartSequence()
+        if (surveySeq < 0)
+            return false
+        if (!_activeVehicle || !_activeVehicle.flying)
+            return false
+        var currentIdx = _currentVehicleMissionIndex()
+        if (currentIdx < 0)
+            return false
+        return currentIdx >= surveySeq
+    }
+
+    readonly property real _storedTakeoffAltitudeMeters: {
+        if (!planMasterController || !planMasterController.routeMappingConfigured)
+            return NaN
+        var value = Number(planMasterController.routeMappingTakeoffAltitudeMeters)
+        return isFinite(value) ? value : NaN
+    }
+
+    readonly property real _storedPatternAltitudeMeters: {
+        if (!planMasterController || !planMasterController.routeMappingConfigured)
+            return NaN
+        var value = Number(planMasterController.routeMappingPatternAltitudeMeters)
+        return isFinite(value) ? value : NaN
+    }
+
+    readonly property real _storedPatternSpeedMps: {
+        if (!planMasterController || !planMasterController.routeMappingConfigured)
+            return NaN
+        var value = Number(planMasterController.routeMappingPatternSpeedMps)
+        return isFinite(value) ? value : NaN
+    }
+
+    readonly property real _plannedPatternAltitude: {
+        var revision = _missionPlanRevision
+        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        if (!revision && !visualItemCount)
+            return NaN
+
+        var survey = _missionSurveyItem()
+        if (survey && survey.cameraCalc && survey.cameraCalc.distanceToSurface) {
+            var patternAlt = _factValue(survey.cameraCalc.distanceToSurface)
+            if (isFinite(patternAlt))
+                return patternAlt
+        }
+        return NaN
+    }
+
+    readonly property real _plannedTakeoffAltitude: {
+        var revision = _missionPlanRevision
+        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        if (!revision && !visualItemCount)
+            return NaN
+
+        var takeoff = _missionTakeoffItem()
+        if (takeoff && takeoff.altitude) {
+            var missionAlt = _factValue(takeoff.altitude)
+            if (isFinite(missionAlt))
+                return missionAlt
+        }
+        return NaN
+    }
+
+    readonly property real _plannedMissionAltitude: {
+        var storedTakeoffM = _storedTakeoffAltitudeMeters
+        var storedPatternM = _storedPatternAltitudeMeters
+        if (planMasterController && planMasterController.routeMappingConfigured) {
+            if (_routeMappingInPatternPhase && isFinite(storedPatternM))
+                return storedPatternM
+            if (isFinite(storedTakeoffM))
+                return storedTakeoffM
+            if (isFinite(storedPatternM))
+                return storedPatternM
+        }
+
+        var patternAlt = _plannedPatternAltitude
+        if (_routeMappingInPatternPhase && isFinite(patternAlt))
+            return patternAlt
+
+        var takeoffAlt = _plannedTakeoffAltitude
+        if (isFinite(takeoffAlt))
+            return takeoffAlt
+
+        if (isFinite(patternAlt))
+            return patternAlt
+
+        return NaN
+    }
+
+    readonly property real _plannedMissionSpeed: {
+        var revision = _missionPlanRevision
+        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        if (!revision && !visualItemCount && !planMasterController)
+            return NaN
+
+        var storedPatternSpeed = _storedPatternSpeedMps
+        if (planMasterController && planMasterController.routeMappingConfigured
+                && isFinite(storedPatternSpeed) && storedPatternSpeed > 0) {
+            return storedPatternSpeed
+        }
+
+        var survey = _missionSurveyItem()
+        if (survey && survey.patternFlightSpeed) {
+            var patternSpeed = _factValue(survey.patternFlightSpeed)
+            if (isFinite(patternSpeed) && patternSpeed > 0)
+                return patternSpeed
+        }
+
+        var takeoff = _missionTakeoffItem()
+        if (takeoff && takeoff.speedSection && takeoff.speedSection.specifyFlightSpeed) {
+            var takeoffSpeed = _factValue(takeoff.speedSection.flightSpeed)
+            if (isFinite(takeoffSpeed))
+                return takeoffSpeed
+        }
+
+        var settings = _missionSettingsItem()
+        if (settings && settings.speedSection && settings.speedSection.specifyFlightSpeed) {
+            var missionSpeed = _factValue(settings.speedSection.flightSpeed)
+            if (isFinite(missionSpeed))
+                return missionSpeed
+        }
+        return NaN
+    }
+
+    readonly property bool _hasPlannedMissionTelemetry: (planMasterController
+                                                          && planMasterController.routeMappingConfigured)
+                                                          || (_missionController
+                                                              && _missionController.containsItems)
     property bool _showCommandedAltitude: _guidedController && isFinite(_guidedController.commandedAltitudeMeters)
     property bool _showCommandedSpeed: _guidedController && isFinite(_guidedController.commandedSpeedMetersSecond)
-    property real _displayAltitude: _showCommandedAltitude ? Number(_guidedController.commandedAltitudeMeters) : _altitude
-    property real _displayGroundSpeed: _showCommandedSpeed ? Number(_guidedController.commandedSpeedMetersSecond) : _groundSpeed
+    readonly property var _unitsConversion: QGroundControl.unitsConversion
+    readonly property bool _useVerticalFeet: QGroundControl.settingsManager.unitsSettings.verticalDistanceUnits.rawValue
+                                             === UnitsSettings.VerticalDistanceUnitsFeet
+    function _metersToVerticalDisplay(meters) {
+        if (!isFinite(meters))
+            return NaN
+        return Number(_unitsConversion.metersToAppSettingsVerticalDistanceUnits(meters))
+    }
+    function _mpsToSpeedDisplay(mps) {
+        if (!isFinite(mps))
+            return NaN
+        return Number(_unitsConversion.metersSecondToAppSettingsSpeedUnits(mps))
+    }
+    function _formatVerticalDisplay(meters) {
+        if (!isFinite(meters))
+            return "0.0"
+        var displayValue = _metersToVerticalDisplay(meters)
+        return _useVerticalFeet ? displayValue.toFixed(0) : displayValue.toFixed(1)
+    }
+    function _formatSpeedDisplay(mps) {
+        if (!isFinite(mps))
+            return "0.0"
+        return _mpsToSpeedDisplay(mps).toFixed(1)
+    }
+    // These are vehicle telemetry fields. Show a newly issued Fly View target
+    // while it is pending, then return to live telemetry. A loaded mission's
+    // saved targets must not mask either value.
+    property real _displayAltitude: {
+        if (_showCommandedAltitude)
+            return Number(_guidedController.commandedAltitudeMeters)
+        return _altitude
+    }
+    property real _displayGroundSpeed: {
+        if (_showCommandedSpeed)
+            return Number(_guidedController.commandedSpeedMetersSecond)
+        return _groundSpeed
+    }
+    readonly property string _verticalUnitLabel: _unitsConversion.appSettingsVerticalDistanceUnitsString
+    readonly property string _speedUnitLabel: _unitsConversion.appSettingsSpeedUnitsString
     property real _heading: {
         if (!_activeVehicle || !_activeVehicle.heading)
             return 0
@@ -63,6 +313,8 @@ Item {
     readonly property Fact sprayPumpRateFact: _sprayPumpRateFact
     readonly property bool _sprayEnabled: _sprayEnFact !== null && Number(_sprayEnFact.rawValue) !== 0
     property var _pendingPlanSprayerRates: null
+    property int _pendingSprayerRateAttempts: 0
+    readonly property int _pendingSprayerRateMaxAttempts: 50
     property bool _obstacleAvoidanceActive: _cpDistFact ? _cpDistFact.rawValue > 0 : false
     property bool _terrainFlowIconActive: false
     property bool _paramExists: paramLoader.item ? paramLoader.item.paramExists : false
@@ -94,6 +346,28 @@ Item {
             if (root._guidedController && root._showCommandedSpeed && Math.abs(root._groundSpeed - root._guidedController.commandedSpeedMetersSecond) < 0.3) {
                 root._guidedController.commandedSpeedMetersSecond = NaN
             }
+        }
+    }
+
+    Connections {
+        target: root._missionController
+        ignoreUnknownSignals: true
+        function onVisualItemsChanged() {
+            root._missionPlanRevision++
+        }
+        function onContainsItemsChanged() {
+            root._missionPlanRevision++
+        }
+    }
+
+    Connections {
+        target: root.planMasterController
+        ignoreUnknownSignals: true
+        function onDirtyChanged() {
+            root._missionPlanRevision++
+        }
+        function onRouteMappingTelemetryChanged() {
+            root._missionPlanRevision++
         }
     }
 
@@ -219,8 +493,10 @@ Item {
             }
         }
 
-        if (allApplied)
+        if (allApplied) {
             _pendingPlanSprayerRates = null
+            _pendingSprayerRateAttempts = 0
+        }
     }
 
     function applyPlanSprayerSettings(enabled, nozzleRate, pumpRate) {
@@ -234,8 +510,10 @@ Item {
                 nozzleRate: isFinite(pendingNozzle) ? pendingNozzle : NaN,
                 pumpRate: isFinite(pendingPump) ? pendingPump : NaN
             }
+            _pendingSprayerRateAttempts = 0
         } else {
             _pendingPlanSprayerRates = null
+            _pendingSprayerRateAttempts = 0
         }
 
         setSprayerEnabled(enabled)
@@ -255,7 +533,15 @@ Item {
         interval: 200
         repeat: true
         running: root._pendingPlanSprayerRates !== null && root._sprayEnabled
-        onTriggered: root._applyPendingPlanSprayerRates()
+        onTriggered: {
+            root._pendingSprayerRateAttempts++
+            root._applyPendingPlanSprayerRates()
+            if (root._pendingPlanSprayerRates !== null
+                    && root._pendingSprayerRateAttempts >= root._pendingSprayerRateMaxAttempts) {
+                root._pendingPlanSprayerRates = null
+                root._pendingSprayerRateAttempts = 0
+            }
+        }
     }
 
     implicitHeight: bottomBarRow.height + root._margins * 2
@@ -272,6 +558,8 @@ Item {
     on_ActiveVehicleChanged: {
         console.log("TerrainFlow: Active vehicle changed, reloading controller...");
         _terrainFlowIconActive = false;
+        _pendingPlanSprayerRates = null
+        _pendingSprayerRateAttempts = 0
         paramLoader.active = false;
         paramLoader.active = true;
 
@@ -794,9 +1082,11 @@ Item {
                         item.icon = "↑";
                         item.iconColor = "#00ff88";
                         item.value = Qt.binding(function () {
-                            return root._displayAltitude.toFixed(1);
+                            return root._formatVerticalDisplay(root._displayAltitude)
                         });
-                        item.unit = "m";
+                        item.unit = Qt.binding(function () {
+                            return root._verticalUnitLabel
+                        });
                         item.clickable = Qt.binding(function () {
                             return !!(root._guidedController && root._guidedController.showChangeAlt);
                         });
@@ -818,9 +1108,11 @@ Item {
                         item.icon = "◎"; // Speedometer
                         item.iconColor = "#00ff88";
                         item.value = Qt.binding(function () {
-                            return root._displayGroundSpeed.toFixed(1);
+                            return root._formatSpeedDisplay(root._displayGroundSpeed)
                         });
-                        item.unit = "m/s";
+                        item.unit = Qt.binding(function () {
+                            return root._speedUnitLabel
+                        });
                         item.clickable = Qt.binding(function () {
                             return !!(root._guidedController && root._guidedController.showChangeSpeed);
                         });
@@ -858,7 +1150,7 @@ Item {
                         item.icon = "💧";
                         item.iconColor = "drop";
                         item.value = Qt.binding(function () {
-                            return root._flowRate.toFixed(1);
+                            return root._displayFlowRate.toFixed(1);
                         });
                         item.unit = "L/min";
                     }

@@ -41,8 +41,16 @@ Item {
     readonly property bool _sprayParamsAvailable: sprayEnableFact !== null
                                                     || sprayNozzleRateFact !== null
                                                     || sprayPumpRateFact !== null
-    // Enabled once a plan is loaded and the vehicle exposes sprayer parameters.
-    readonly property bool _sprayerControlsEnabled: _sprayParamsAvailable && _hasPlanItems
+    readonly property bool _sprayerPlanSupported: _planMasterController
+                                                    && (_planMasterController.sprayerConfigured
+                                                        || _planMasterController.missionMode === "agricultureSpraying"
+                                                        || _planMasterController.missionMode === "customMission"
+                                                        || mainWindow.uploadedMissionEditor === "agricultureSpraying"
+                                                        || mainWindow.uploadedMissionEditor === "customMission")
+    // Enabled for agriculture/custom plans once items are loaded and sprayer params exist.
+    readonly property bool _sprayerControlsEnabled: _sprayParamsAvailable
+                                                    && _hasPlanItems
+                                                    && _sprayerPlanSupported
 
     // Map settings
     property var  _settingsManager:     QGroundControl.settingsManager
@@ -81,10 +89,6 @@ Item {
     }
 
     function _clearClicked() {
-        if (_missionRunning) {
-            return
-        }
-
         if (flyViewRoot) {
             flyViewRoot.confirmAndClearPlan()
         }
@@ -235,7 +239,9 @@ Item {
             // Clear
             IconButton {
                 iconSource: "/res/modern-icons/MaterialSymbolsLightDirectorySync.svg"
-                buttonEnabled: !root._missionRunning && !root._syncInProgress
+                // Keep enabled during a mission so MainWindow can explain why
+                // clearing is blocked instead of silently ignoring the click.
+                buttonEnabled: !root._syncInProgress
                 onClicked: root._clearClicked()
             }
         }

@@ -22,6 +22,15 @@ Item {
     property real   interiorOpacity:    1
     property int    borderWidth:        0
     property color  borderColor:        "black"
+    property color  vertexHandleColor:          Qt.rgba(1, 1, 1, 0.8)
+    property color  vertexHandleBorderColor:    Qt.rgba(0, 0, 0, 0.25)
+    property color  centerHandleColor:          Qt.rgba(1, 1, 1, 0.8)
+    property color  centerHandleBorderColor:    Qt.rgba(0, 0, 0, 0.25)
+    property color  centerHandleIconColor:      Qt.rgba(0, 0, 0, 1)
+    property real   handleSizeFactor:           1.5
+    property real   splitHandleSizeFactor:      1.5
+    property color  splitIndicatorColor:        "white"
+    property real   splitIndicatorOpacity:      0.75
 
     property bool   _circleMode:                false
     property real   _circleRadius
@@ -353,8 +362,12 @@ Item {
             property int vertexIndex
 
             sourceItem: SplitIndicator {
-                z:          _zorderSplitHandle
-                onClicked:  if(_root.interactive) mapPolygon.splitPolygonSegment(mapQuickItem.vertexIndex)
+                width:          ScreenTools.defaultFontPixelHeight * _root.splitHandleSizeFactor
+                height:         width
+                indicatorColor: _root.splitIndicatorColor
+                opacity:        _root.splitIndicatorOpacity
+                z:              _zorderSplitHandle
+                onClicked:      if(_root.interactive) mapPolygon.splitPolygonSegment(mapQuickItem.vertexIndex)
             }
         }
     }
@@ -433,16 +446,16 @@ Item {
             z:              _zorderDragHandle
             sourceItem: Rectangle {
                 id:             dragHandle
-                width:          ScreenTools.defaultFontPixelHeight * 1.5
+                width:          ScreenTools.defaultFontPixelHeight * _root.handleSizeFactor
                 height:         width
                 radius:         width * 0.5
-                color:          Qt.rgba(1,1,1,0.8)
-                border.color:   Qt.rgba(0,0,0,0.25)
+                color:          _root.centerHandleColor
+                border.color:   _root.centerHandleBorderColor
                 border.width:   1
                 QGCColoredImage {
-                    width:      parent.width
+                    width:      parent.width * 0.72
                     height:     width
-                    color:      Qt.rgba(0,0,0,1)
+                    color:      _root.centerHandleIconColor
                     mipmap:     true
                     fillMode:   Image.PreserveAspectFit
                     source:     "/qmlimages/MapCenter.svg"
@@ -467,11 +480,11 @@ Item {
 
             sourceItem: Rectangle {
                 id:             dragHandle
-                width:          ScreenTools.defaultFontPixelHeight * 1.5
+                width:          ScreenTools.defaultFontPixelHeight * _root.handleSizeFactor
                 height:         width
                 radius:         width * 0.5
-                color:          Qt.rgba(1,1,1,0.8)
-                border.color:   Qt.rgba(0,0,0,0.25)
+                color:          _root.vertexHandleColor
+                border.color:   _root.vertexHandleBorderColor
                 border.width:   1
             }
         }
@@ -564,8 +577,10 @@ Item {
             }
 
             Component.onDestruction: {
-                dragHandle.destroy()
-                dragArea.destroy()
+                if (dragHandle)
+                    dragHandle.destroy()
+                if (dragArea)
+                    dragArea.destroy()
             }
         }
     }

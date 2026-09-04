@@ -22,6 +22,30 @@
 
 #include <cmath>
 
+namespace {
+double _jsonValueToDouble(const QJsonValue &value, bool *ok = nullptr)
+{
+    if (value.isDouble()) {
+        if (ok) {
+            *ok = true;
+        }
+        return value.toDouble();
+    }
+    if (value.isString()) {
+        bool parsedOk = false;
+        const double parsed = value.toString().toDouble(&parsedOk);
+        if (ok) {
+            *ok = parsedOk;
+        }
+        return parsedOk ? parsed : std::numeric_limits<double>::quiet_NaN();
+    }
+    if (ok) {
+        *ok = false;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+} // namespace
+
 QGC_LOGGING_CATEGORY(PlanMasterControllerLog, "PlanManager.PlanMasterController")
 
 PlanMasterController::PlanMasterController(QObject* parent)
@@ -354,6 +378,10 @@ void PlanMasterController::loadFromFile(const QString& filename)
     bool loadedSprayerEnabled = false;
     double loadedSprayerNozzleRate = std::numeric_limits<double>::quiet_NaN();
     double loadedSprayerPumpRate = std::numeric_limits<double>::quiet_NaN();
+    bool loadedRouteMappingConfigured = false;
+    double loadedRouteMappingTakeoffAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    double loadedRouteMappingPatternAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    double loadedRouteMappingPatternSpeedMps = std::numeric_limits<double>::quiet_NaN();
 
     if (filename.isEmpty()) {
         return;
@@ -391,11 +419,45 @@ void PlanMasterController::loadFromFile(const QString& filename)
             const QJsonObject sprayerObject = sprayerValue.toObject();
             loadedSprayerConfigured = true;
             loadedSprayerEnabled = sprayerObject.value(kJsonSprayerEnabledKey).toBool(false);
-            if (sprayerObject.value(kJsonSprayerNozzleRateKey).isDouble()) {
-                loadedSprayerNozzleRate = sprayerObject.value(kJsonSprayerNozzleRateKey).toDouble();
+            if (sprayerObject.contains(kJsonSprayerNozzleRateKey)) {
+                bool ok = false;
+                const double nozzleRate = _jsonValueToDouble(sprayerObject.value(kJsonSprayerNozzleRateKey), &ok);
+                if (ok && std::isfinite(nozzleRate)) {
+                    loadedSprayerNozzleRate = nozzleRate;
+                }
             }
-            if (sprayerObject.value(kJsonSprayerPumpRateKey).isDouble()) {
-                loadedSprayerPumpRate = sprayerObject.value(kJsonSprayerPumpRateKey).toDouble();
+            if (sprayerObject.contains(kJsonSprayerPumpRateKey)) {
+                bool ok = false;
+                const double pumpRate = _jsonValueToDouble(sprayerObject.value(kJsonSprayerPumpRateKey), &ok);
+                if (ok && std::isfinite(pumpRate)) {
+                    loadedSprayerPumpRate = pumpRate;
+                }
+            }
+        }
+        const QJsonValue routeMappingValue = json.value(kJsonRouteMappingTelemetryKey);
+        if (routeMappingValue.isObject()) {
+            const QJsonObject routeMappingObject = routeMappingValue.toObject();
+            loadedRouteMappingConfigured = true;
+            if (routeMappingObject.contains(kJsonRouteMappingTakeoffAltitudeKey)) {
+                bool ok = false;
+                const double takeoffAltitude = _jsonValueToDouble(routeMappingObject.value(kJsonRouteMappingTakeoffAltitudeKey), &ok);
+                if (ok && std::isfinite(takeoffAltitude)) {
+                    loadedRouteMappingTakeoffAltitudeMeters = takeoffAltitude;
+                }
+            }
+            if (routeMappingObject.contains(kJsonRouteMappingPatternAltitudeKey)) {
+                bool ok = false;
+                const double patternAltitude = _jsonValueToDouble(routeMappingObject.value(kJsonRouteMappingPatternAltitudeKey), &ok);
+                if (ok && std::isfinite(patternAltitude)) {
+                    loadedRouteMappingPatternAltitudeMeters = patternAltitude;
+                }
+            }
+            if (routeMappingObject.contains(kJsonRouteMappingPatternSpeedKey)) {
+                bool ok = false;
+                const double patternSpeed = _jsonValueToDouble(routeMappingObject.value(kJsonRouteMappingPatternSpeedKey), &ok);
+                if (ok && std::isfinite(patternSpeed)) {
+                    loadedRouteMappingPatternSpeedMps = patternSpeed;
+                }
             }
         }
         //-- Allow plugins to pre process the load
@@ -438,6 +500,11 @@ void PlanMasterController::loadFromFile(const QString& filename)
                             loadedSprayerNozzleRate,
                             loadedSprayerPumpRate,
                             false /* markDirty */);
+        _setRouteMappingTelemetry(loadedRouteMappingConfigured,
+                                  loadedRouteMappingTakeoffAltitudeMeters,
+                                  loadedRouteMappingPatternAltitudeMeters,
+                                  loadedRouteMappingPatternSpeedMps,
+                                  false /* markDirty */);
     } else {
         _currentPlanFile.clear();
     }
@@ -479,6 +546,19 @@ QJsonDocument PlanMasterController::saveToJson()
             sprayerObject[kJsonSprayerPumpRateKey] = _sprayerPumpRate;
         }
         planJson[kJsonSprayerSettingsKey] = sprayerObject;
+    }
+    if (_routeMappingConfigured) {
+        QJsonObject routeMappingObject;
+        if (std::isfinite(_routeMappingTakeoffAltitudeMeters)) {
+            routeMappingObject[kJsonRouteMappingTakeoffAltitudeKey] = _routeMappingTakeoffAltitudeMeters;
+        }
+        if (std::isfinite(_routeMappingPatternAltitudeMeters)) {
+            routeMappingObject[kJsonRouteMappingPatternAltitudeKey] = _routeMappingPatternAltitudeMeters;
+        }
+        if (std::isfinite(_routeMappingPatternSpeedMps)) {
+            routeMappingObject[kJsonRouteMappingPatternSpeedKey] = _routeMappingPatternSpeedMps;
+        }
+        planJson[kJsonRouteMappingTelemetryKey] = routeMappingObject;
     }
     QGCCorePlugin::instance()->postSaveToJson(this, planJson);
     return QJsonDocument(planJson);
@@ -548,7 +628,7 @@ void PlanMasterController::saveToKml(const QString& filename)
     }
 }
 
-void PlanMasterController::removeAll(void)
+void PlanMasterController::removeAll(bool clearSprayerSettings)
 {
     _missionController.removeAll();
     _geoFenceController.removeAll();
@@ -560,11 +640,18 @@ void PlanMasterController::removeAll(void)
         _currentPlanFile.clear();
         emit currentPlanFileChanged();
     }
-    _setSprayerSettings(false,
-                        false,
-                        std::numeric_limits<double>::quiet_NaN(),
-                        std::numeric_limits<double>::quiet_NaN(),
-                        false /* markDirty */);
+    if (clearSprayerSettings) {
+        _setSprayerSettings(false,
+                            false,
+                            std::numeric_limits<double>::quiet_NaN(),
+                            std::numeric_limits<double>::quiet_NaN(),
+                            false /* markDirty */);
+        _setRouteMappingTelemetry(false,
+                                  std::numeric_limits<double>::quiet_NaN(),
+                                  std::numeric_limits<double>::quiet_NaN(),
+                                  std::numeric_limits<double>::quiet_NaN(),
+                                  false /* markDirty */);
+    }
     if (_flyView) {
         setMissionMode(QString());
     }
@@ -743,6 +830,65 @@ void PlanMasterController::clearSprayerSettings(void)
                         std::numeric_limits<double>::quiet_NaN(),
                         std::numeric_limits<double>::quiet_NaN(),
                         true /* markDirty */);
+}
+
+void PlanMasterController::setRouteMappingTelemetry(double takeoffAltitudeMeters,
+                                                    double patternAltitudeMeters,
+                                                    double patternSpeedMps)
+{
+    _setRouteMappingTelemetry(true,
+                              takeoffAltitudeMeters,
+                              patternAltitudeMeters,
+                              patternSpeedMps,
+                              true /* markDirty */);
+}
+
+void PlanMasterController::clearRouteMappingTelemetry(void)
+{
+    _setRouteMappingTelemetry(false,
+                              std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN(),
+                              std::numeric_limits<double>::quiet_NaN(),
+                              true /* markDirty */);
+}
+
+void PlanMasterController::_setRouteMappingTelemetry(bool configured,
+                                                     double takeoffAltitudeMeters,
+                                                     double patternAltitudeMeters,
+                                                     double patternSpeedMps,
+                                                     bool markDirty)
+{
+    if (!std::isfinite(takeoffAltitudeMeters)) {
+        takeoffAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    }
+    if (!std::isfinite(patternAltitudeMeters)) {
+        patternAltitudeMeters = std::numeric_limits<double>::quiet_NaN();
+    }
+    if (!std::isfinite(patternSpeedMps)) {
+        patternSpeedMps = std::numeric_limits<double>::quiet_NaN();
+    }
+
+    const auto valuesMatch = [](double first, double second) {
+        return (std::isnan(first) && std::isnan(second))
+                || (std::isfinite(first) && std::isfinite(second)
+                    && qAbs(first - second) <= 0.0000001);
+    };
+    if (_routeMappingConfigured == configured
+            && valuesMatch(_routeMappingTakeoffAltitudeMeters, takeoffAltitudeMeters)
+            && valuesMatch(_routeMappingPatternAltitudeMeters, patternAltitudeMeters)
+            && valuesMatch(_routeMappingPatternSpeedMps, patternSpeedMps)) {
+        return;
+    }
+
+    _routeMappingConfigured = configured;
+    _routeMappingTakeoffAltitudeMeters = takeoffAltitudeMeters;
+    _routeMappingPatternAltitudeMeters = patternAltitudeMeters;
+    _routeMappingPatternSpeedMps = patternSpeedMps;
+    emit routeMappingTelemetryChanged();
+
+    if (markDirty) {
+        setDirty(true);
+    }
 }
 
 void PlanMasterController::_setSprayerSettings(bool configured,

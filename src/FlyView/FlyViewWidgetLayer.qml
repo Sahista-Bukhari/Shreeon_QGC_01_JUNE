@@ -103,6 +103,7 @@ Item {
     FlyViewBottomBar {
         id: bottomBar
 
+        planMasterController: _planMasterController
         actionButtonsModel: flyViewToolStripActionList.model
         blurSourceItem: mapControl
         anchors.bottom: parent.bottom

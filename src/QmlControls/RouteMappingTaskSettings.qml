@@ -51,7 +51,15 @@ Rectangle {
                                                   || _sprayNozRateFact !== null
                                                   || _sprayPumpRateFact !== null
                                                   || _misResumeExactFact !== null
-    readonly property bool _sprayEnabled: _sprayEnFact !== null && Number(_sprayEnFact.value) !== 0
+    property bool _planSprayEnabledDraft: false
+    property real _planSprayNozzleRateDraft: NaN
+    property real _planSprayPumpRateDraft: NaN
+    readonly property bool planSprayEnabled: _planSprayEnabledDraft
+    readonly property real planSprayNozzleRate: _planSprayNozzleRateDraft
+    readonly property real planSprayPumpRate: _planSprayPumpRateDraft
+    readonly property bool _sprayEnabled: root.showSpraySettings
+                                          ? root._planSprayEnabledDraft
+                                          : (_sprayEnFact !== null && Number(_sprayEnFact.value) !== 0)
     readonly property bool _misResumeExactEnabled: _misResumeExactFact !== null && Number(_misResumeExactFact.value) !== 0
 
     // Recreate with the current active vehicle (controller captures vehicle at construct time).
@@ -208,6 +216,11 @@ Rectangle {
         root._sprayNozRateFact = root._lookupSprayFact("SPRAY_NOZ_RATE")
         root._sprayPumpRateFact = root._lookupSprayFact("SPRAY_PUMP_RATE")
         root._misResumeExactFact = root._lookupSprayFact("MIS_RESUME_EXACT")
+        if (root.showSpraySettings) {
+            if (!isFinite(root._planSprayNozzleRateDraft)) {
+                root._initializeSprayerPlanDraftFromFacts()
+            }
+        }
     }
 
     function _reloadSprayParamController() {
@@ -233,6 +246,19 @@ Rectangle {
     }
 
     function _setSprayEnabled(enabled) {
+        if (root.showSpraySettings) {
+            root._planSprayEnabledDraft = enabled
+            if (enabled && paramControllerLoader.item) {
+                paramControllerLoader.item.getMissingParameters([
+                    "SPRAY_NOZ_RATE",
+                    "SPRAY_PUMP_RATE",
+                    "MIS_RESUME_EXACT"
+                ])
+                sprayFactRefreshTimer.restart()
+            }
+            return
+        }
+
         root._setEnableDisableFact(root._sprayEnFact, enabled)
         // After enable, firmware may expose dependent spray params — request/refresh them.
         if (enabled && paramControllerLoader.item) {
@@ -242,6 +268,53 @@ Rectangle {
                 "MIS_RESUME_EXACT"
             ])
             sprayFactRefreshTimer.restart()
+        }
+    }
+
+    function loadSprayerPlanDraft(enabled, nozzleRate, pumpRate) {
+        root._planSprayEnabledDraft = enabled
+        var nozzle = Number(nozzleRate)
+        var pump = Number(pumpRate)
+        root._planSprayNozzleRateDraft = isFinite(nozzle) ? nozzle : NaN
+        root._planSprayPumpRateDraft = isFinite(pump) ? pump : NaN
+    }
+
+    function resetSprayerPlanDraft() {
+        root._planSprayEnabledDraft = false
+        root._initializeSprayerPlanDraftFromFacts()
+    }
+
+    function _initializeSprayerPlanDraftFromFacts() {
+        var nozzle = root._sprayNozRateFact ? Number(root._sprayNozRateFact.value) : NaN
+        var pump = root._sprayPumpRateFact ? Number(root._sprayPumpRateFact.value) : NaN
+        root._planSprayNozzleRateDraft = isFinite(nozzle) ? nozzle : NaN
+        root._planSprayPumpRateDraft = isFinite(pump) ? pump : NaN
+    }
+
+    function _isNozzleRateFact(fact) {
+        return fact && root._sprayNozRateFact && fact === root._sprayNozRateFact
+    }
+
+    function _isPumpRateFact(fact) {
+        return fact && root._sprayPumpRateFact && fact === root._sprayPumpRateFact
+    }
+
+    function _planRateDraftValue(fact) {
+        if (root._isNozzleRateFact(fact)) {
+            return root._planSprayNozzleRateDraft
+        }
+        if (root._isPumpRateFact(fact)) {
+            return root._planSprayPumpRateDraft
+        }
+        return NaN
+    }
+
+    function _setPlanRateDraftValue(fact, value) {
+        var rounded = Math.round(Number(value) * 1000) / 1000
+        if (root._isNozzleRateFact(fact)) {
+            root._planSprayNozzleRateDraft = rounded
+        } else if (root._isPumpRateFact(fact)) {
+            root._planSprayPumpRateDraft = rounded
         }
     }
 
@@ -266,20 +339,28 @@ Rectangle {
     }
 
     function _nudgeRateFact(fact, direction) {
-        // Rates only go to the vehicle while the sprayer is enabled.
         if (!fact || !root._sprayEnabled) {
             return
         }
         var step = root._rateFactStep(fact)
-        var next = Number(fact.value) + (direction * step)
         var minV = root._rateFactMin(fact)
         var maxV = root._rateFactMax(fact)
-        next = Math.max(minV, Math.min(maxV, next))
-        fact.value = Math.round(next * 1000) / 1000
+        var current = root.showSpraySettings
+                      ? root._planRateDraftValue(fact)
+                      : Number(fact.value)
+        if (isNaN(current)) {
+            current = minV
+        }
+        var next = Math.max(minV, Math.min(maxV, current + (direction * step)))
+        next = Math.round(next * 1000) / 1000
+        if (root.showSpraySettings) {
+            root._setPlanRateDraftValue(fact, next)
+            return
+        }
+        fact.value = next
     }
 
     function _commitRateFactFromSlider(fact, value) {
-        // Rates only go to the vehicle while the sprayer is enabled.
         if (!fact || !root._sprayEnabled) {
             return
         }
@@ -291,6 +372,14 @@ Rectangle {
         var maxV = root._rateFactMax(fact)
         next = Math.max(minV, Math.min(maxV, next))
         var rounded = Math.round(next * 1000) / 1000
+        if (root.showSpraySettings) {
+            var currentDraft = root._planRateDraftValue(fact)
+            if (isFinite(currentDraft) && Math.abs(currentDraft - rounded) < 0.0005) {
+                return
+            }
+            root._setPlanRateDraftValue(fact, rounded)
+            return
+        }
         if (Math.abs(Number(fact.value) - rounded) < 0.0005) {
             return
         }
@@ -374,38 +463,16 @@ Rectangle {
     // Only commits when a write is pending or the slider differs from the Fact,
     // so an uninitialized slider cannot clobber the real altitude.
     function flushPendingWrites() {
-        if (patternAltitudeWriteTimer.running) {
-            patternAltitudeWriteTimer.stop()
+        patternAltitudeWriteTimer.stop()
+        patternSpeedWriteTimer.stop()
+        missionAltitudeWriteTimer.stop()
+
+        if (root._patternAltitudeAvailable)
             root._commitPatternAltitude(patternAltitudeSlider.value)
-        } else if (root._patternAltitudeAvailable && root._patternAltitudeFact) {
-            var patternAlt = Number(root._patternAltitudeFact.value)
-            if (!isNaN(patternAlt)
-                    && Math.abs(patternAltitudeSlider.value - patternAlt) > 0.01) {
-                root._commitPatternAltitude(patternAltitudeSlider.value)
-            }
-        }
-
-        if (patternSpeedWriteTimer.running) {
-            patternSpeedWriteTimer.stop()
+        if (root._patternSpeedAvailable)
             root._commitPatternSpeed(patternSpeedSlider.value)
-        } else if (root._patternSpeedAvailable && root._patternSpeedFact) {
-            var patternSpeed = Number(root._patternSpeedFact.value)
-            if (!isNaN(patternSpeed)
-                    && Math.abs(patternSpeedSlider.value - patternSpeed) > 0.01) {
-                root._commitPatternSpeed(patternSpeedSlider.value)
-            }
-        }
-
-        if (missionAltitudeWriteTimer.running) {
-            missionAltitudeWriteTimer.stop()
+        if (root._missionAltitudeAvailable)
             root._commitMissionAltitude(missionAltitudeSlider.value)
-        } else if (root._missionAltitudeAvailable && root._missionAltitudeFact) {
-            var missionAlt = Number(root._missionAltitudeFact.value)
-            if (!isNaN(missionAlt)
-                    && Math.abs(missionAltitudeSlider.value - missionAlt) > 0.01) {
-                root._commitMissionAltitude(missionAltitudeSlider.value)
-            }
-        }
     }
 
     function _syncPatternAltitudeSlider() {
@@ -729,7 +796,13 @@ Rectangle {
                         Binding {
                             target:   nozzleRateSlider
                             property: "value"
-                            value:    root._sprayNozRateFact ? Number(root._sprayNozRateFact.value) : nozzleRateSlider.from
+                            value:    root.showSpraySettings
+                                      ? (isFinite(root._planSprayNozzleRateDraft)
+                                         ? root._planSprayNozzleRateDraft
+                                         : nozzleRateSlider.from)
+                                      : (root._sprayNozRateFact
+                                         ? Number(root._sprayNozRateFact.value)
+                                         : nozzleRateSlider.from)
                             when:     !nozzleRateSlider.pressed
                         }
                         onMoved: root._queueNozzleRateWrite(value)
@@ -863,7 +936,13 @@ Rectangle {
                         Binding {
                             target:   pumpRateSlider
                             property: "value"
-                            value:    root._sprayPumpRateFact ? Number(root._sprayPumpRateFact.value) : pumpRateSlider.from
+                            value:    root.showSpraySettings
+                                      ? (isFinite(root._planSprayPumpRateDraft)
+                                         ? root._planSprayPumpRateDraft
+                                         : pumpRateSlider.from)
+                                      : (root._sprayPumpRateFact
+                                         ? Number(root._sprayPumpRateFact.value)
+                                         : pumpRateSlider.from)
                             when:     !pumpRateSlider.pressed
                         }
                         onMoved: root._queuePumpRateWrite(value)

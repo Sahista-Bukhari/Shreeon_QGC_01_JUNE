@@ -28,7 +28,13 @@ RowLayout {
     }
 
     function _selectCurrentIndexButton() {
-        const tabButtons = _tabButtonChildren()
+        // A queued selection may be discarded while this component is being
+        // torn down. Do not call a method on a partially destroyed context.
+        if (typeof control._tabButtonChildren !== "function") {
+            return
+        }
+
+        const tabButtons = control._tabButtonChildren()
         if (tabButtons.length > 0) {
             _preventCurrentIndexBindingLoop = true
             if (control.currentIndex == -1) {
@@ -54,9 +60,19 @@ RowLayout {
         }
     }
 
+    // Defer child selection until RowLayout has finished updating its visual
+    // children. Unlike Qt.callLater, this callback is cancelled automatically
+    // when the QGCTabBar is destroyed.
+    Timer {
+        id: selectCurrentIndexTimer
+        interval: 0
+        repeat: false
+        onTriggered: control._selectCurrentIndexButton()
+    }
+
     Component.onCompleted: _selectCurrentIndexButton()
     onCurrentIndexChanged: _selectCurrentIndexButton()
-    onChildrenChanged: Qt.callLater(_selectCurrentIndexButton)
+    onChildrenChanged: selectCurrentIndexTimer.restart()
     onVisibleChildrenChanged: _selectCurrentIndexButton()
 
     ButtonGroup {

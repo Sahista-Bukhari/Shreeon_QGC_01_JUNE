@@ -121,6 +121,74 @@ void PlanMasterControllerTest::_testSprayerSettingsSaveLoad(void)
     QCOMPARE(_masterController->sprayerPumpRate(), 1.000);
 }
 
+void PlanMasterControllerTest::_testSprayerSettingsDisabledWithRates(void)
+{
+    _masterController->setSprayerSettings(false, 0.690, 1.000);
+
+    const QJsonObject savedJson = _masterController->saveToJson().object();
+    QVERIFY(savedJson.contains(PlanMasterController::kJsonSprayerSettingsKey));
+    const QJsonObject sprayerJson = savedJson.value(PlanMasterController::kJsonSprayerSettingsKey).toObject();
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerEnabledKey).toBool(), false);
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerNozzleRateKey).toDouble(), 0.690);
+    QCOMPARE(sprayerJson.value(PlanMasterController::kJsonSprayerPumpRateKey).toDouble(), 1.000);
+    QVERIFY(_masterController->sprayerConfigured());
+    QVERIFY(!_masterController->sprayerEnabled());
+}
+
+void PlanMasterControllerTest::_testSprayerSettingsIntegerJsonLoad(void)
+{
+    QTemporaryDir planDirectory;
+    QVERIFY(planDirectory.isValid());
+
+    QJsonObject planJson = _masterController->saveToJson().object();
+    QJsonObject sprayerJson;
+    sprayerJson[PlanMasterController::kJsonSprayerEnabledKey] = true;
+    sprayerJson[PlanMasterController::kJsonSprayerNozzleRateKey] = 1;
+    sprayerJson[PlanMasterController::kJsonSprayerPumpRateKey] = 2;
+    planJson[PlanMasterController::kJsonSprayerSettingsKey] = sprayerJson;
+
+    const QString planFile = planDirectory.filePath(QStringLiteral("integer_rates.plan"));
+    QFile file(planFile);
+    QVERIFY(file.open(QIODevice::WriteOnly | QIODevice::Text));
+    const QByteArray planBytes = QJsonDocument(planJson).toJson();
+    QCOMPARE(file.write(planBytes), static_cast<qint64>(planBytes.size()));
+    file.close();
+
+    _masterController->clearSprayerSettings();
+    _masterController->loadFromFile(planFile);
+    QVERIFY(_masterController->sprayerConfigured());
+    QVERIFY(_masterController->sprayerEnabled());
+    QCOMPARE(_masterController->sprayerNozzleRate(), 1.000);
+    QCOMPARE(_masterController->sprayerPumpRate(), 2.000);
+}
+
+void PlanMasterControllerTest::_testRouteMappingTelemetrySaveLoad(void)
+{
+    QTemporaryDir planDirectory;
+    QVERIFY(planDirectory.isValid());
+
+    _masterController->setMissionMode(QStringLiteral("agricultureSpraying"));
+    _masterController->setRouteMappingTelemetry(9.144, 12.192, 6.096);
+
+    const QJsonObject savedJson = _masterController->saveToJson().object();
+    QVERIFY(savedJson.contains(PlanMasterController::kJsonRouteMappingTelemetryKey));
+    const QJsonObject telemetryJson = savedJson.value(PlanMasterController::kJsonRouteMappingTelemetryKey).toObject();
+    QCOMPARE(telemetryJson.value(PlanMasterController::kJsonRouteMappingTakeoffAltitudeKey).toDouble(), 9.144);
+    QCOMPARE(telemetryJson.value(PlanMasterController::kJsonRouteMappingPatternAltitudeKey).toDouble(), 12.192);
+    QCOMPARE(telemetryJson.value(PlanMasterController::kJsonRouteMappingPatternSpeedKey).toDouble(), 6.096);
+
+    const QString planFile = planDirectory.filePath(QStringLiteral("route_mapping_telemetry.plan"));
+    _masterController->saveToFile(planFile);
+    _masterController->clearRouteMappingTelemetry();
+    QVERIFY(!_masterController->routeMappingConfigured());
+
+    _masterController->loadFromFile(planFile);
+    QVERIFY(_masterController->routeMappingConfigured());
+    QCOMPARE(_masterController->routeMappingTakeoffAltitudeMeters(), 9.144);
+    QCOMPARE(_masterController->routeMappingPatternAltitudeMeters(), 12.192);
+    QCOMPARE(_masterController->routeMappingPatternSpeedMps(), 6.096);
+}
+
 void PlanMasterControllerTest::_testActiveVehicleChanged(void) {
     // There was a defect where the PlanMasterController would, upon a new active vehicle,
     // overzelously disconnect all subscribers interested in the outgoing active vechicle.

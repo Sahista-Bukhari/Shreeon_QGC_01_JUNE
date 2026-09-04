@@ -403,7 +403,10 @@ Rectangle {
         anchors.topMargin:   _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin
         anchors.rightMargin: _lightTheme ? ScreenTools.defaultFontPixelWidth * 1.1 : _innerMargin
         source:             _currentItem ? missionItem.editorQml : ""
-        asynchronous:       true
+        // Only the current mission item creates an editor. Loading it
+        // synchronously prevents the delegate/context from being destroyed
+        // while MissionSettingsEditor is still incubating during plan reloads.
+        asynchronous:       false
 
         property var    masterController:   _masterController
         property real   availableWidth:     _root.width - anchors.leftMargin - anchors.rightMargin ///< How wide the editor should be

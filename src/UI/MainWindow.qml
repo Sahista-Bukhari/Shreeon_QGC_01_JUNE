@@ -738,6 +738,17 @@ ApplicationWindow {
     }
 
     function confirmClearRouteMappingPlan() {
+        // Keep the Clear action clickable while a mission is active so the
+        // operator receives an explanation instead of a silent disabled/no-op
+        // button. All mission editors route their Clear action through here.
+        if (flyView && flyView.missionRunning) {
+            showMessageDialog(
+                        qsTr("Clear Plan"),
+                        qsTr("You cannot clear the plan while the mission is running. Pause or complete the mission before clearing it."),
+                        Dialog.Ok)
+            return
+        }
+
         if (!hasRouteMappingPlanToClear()) {
             showMessageDialog(
                         qsTr("Clear"),

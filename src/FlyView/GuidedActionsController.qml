@@ -278,7 +278,15 @@ Item {
         }
     }
 
-    on_ActiveVehicleChanged: _outputState()
+    on_ActiveVehicleChanged: {
+        commandedAltitudeMeters = NaN
+        commandedSpeedMetersSecond = NaN
+        _userCruiseSpeedMetersSecond = NaN
+        commandedAltitudeClearTimer.stop()
+        commandedSpeedClearTimer.stop()
+        restoreSpeedAfterAltTimer.stop()
+        _outputState()
+    }
 
     Component.onCompleted:              _outputState()
     on_VehicleArmedChanged:             _outputState()
@@ -371,7 +379,11 @@ Item {
             // We use _vehicleWasFLying to help trigger Resume Mission only if the vehicle actually flew and came back down.
             // Otherwise it may trigger during the Start Mission sequence due to signal ordering or armed and resume mission index.
             _vehicleWasFlying = true
+            commandedAltitudeMeters = NaN
+            commandedSpeedMetersSecond = NaN
             _userCruiseSpeedMetersSecond = NaN
+            commandedAltitudeClearTimer.stop()
+            commandedSpeedClearTimer.stop()
             restoreSpeedAfterAltTimer.stop()
         }
     }
