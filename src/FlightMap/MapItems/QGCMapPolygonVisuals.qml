@@ -49,10 +49,15 @@ Item {
     readonly property string _polygonToolsText: qsTr("Polygon Tools")
     readonly property string _traceText:        qsTr("Click in the map to add vertices. Click 'Done Tracing' when finished.")
 
+    function _mapControlReady() {
+        return mapControl && typeof mapControl.addMapItem === "function"
+    }
+
     function addCommonVisuals() {
-        if (_objMgrCommonVisuals.empty) {
-            _objMgrCommonVisuals.createObject(polygonComponent, mapControl, true)
+        if (!_mapControlReady() || !_objMgrCommonVisuals.empty) {
+            return
         }
+        _objMgrCommonVisuals.createObject(polygonComponent, mapControl, true)
     }
 
     function removeCommonVisuals() {
@@ -60,12 +65,13 @@ Item {
     }
 
     function addEditingVisuals() {
-        if (_objMgrEditingVisuals.empty) {
-            _objMgrEditingVisuals.createObjects(
-                [ dragHandlesComponent, splitHandlesComponent, centerDragHandleComponent, edgeLengthHandlesComponent ],
-                mapControl,
-                false /* addToMap */)
+        if (!_mapControlReady() || !_objMgrEditingVisuals.empty) {
+            return
         }
+        _objMgrEditingVisuals.createObjects(
+            [ dragHandlesComponent, splitHandlesComponent, centerDragHandleComponent, edgeLengthHandlesComponent ],
+            mapControl,
+            false /* addToMap */)
     }
 
     function removeEditingVisuals() {
@@ -73,10 +79,11 @@ Item {
     }
 
     function addToolbarVisuals() {
-        if (_objMgrToolVisuals.empty) {
-            var toolbar = _objMgrToolVisuals.createObject(toolbarComponent, mapControl)
-            toolbar.z = QGroundControl.zOrderWidgets
+        if (!_mapControlReady() || !_objMgrToolVisuals.empty) {
+            return
         }
+        var toolbar = _objMgrToolVisuals.createObject(toolbarComponent, mapControl)
+        toolbar.z = QGroundControl.zOrderWidgets
     }
 
     function removeToolVisuals() {
@@ -84,9 +91,10 @@ Item {
     }
 
     function addCircleVisuals() {
-        if (_objMgrCircleVisuals.empty) {
-            _objMgrCircleVisuals.createObject(radiusVisualsComponent, mapControl)
+        if (!_mapControlReady() || !_objMgrCircleVisuals.empty) {
+            return
         }
+        _objMgrCircleVisuals.createObject(radiusVisualsComponent, mapControl)
     }
 
     /// Calculate the default/initial 4 sided polygon
@@ -196,6 +204,9 @@ Item {
         target: mapPolygon
         function onTraceModeChanged(traceMode) {
             if (traceMode) {
+                if (!_root._mapControlReady()) {
+                    return
+                }
                 _instructionText = _traceText
                 _objMgrTraceVisuals.createObject(traceMouseAreaComponent, mapControl, false)
             } else {
@@ -335,10 +346,13 @@ Item {
                 }
 
                 Component.onCompleted: {
-                    _edgeLengthHandle = edgeLengthHandleComponent.createObject(mapControl)
+                    if (!_root._mapControlReady()) {
+                        return
+                    }
+                    _edgeLengthHandle = edgeLengthHandleComponent.createObject(_root.mapControl)
                     _edgeLengthHandle.vertexIndex = index
                     _setHandlePosition()
-                    mapControl.addMapItem(_edgeLengthHandle)
+                    _root.mapControl.addMapItem(_edgeLengthHandle)
                 }
 
                 Component.onDestruction: {
@@ -393,10 +407,13 @@ Item {
                 }
 
                 Component.onCompleted: {
-                    _splitHandle = splitHandleComponent.createObject(mapControl)
+                    if (!_root._mapControlReady()) {
+                        return
+                    }
+                    _splitHandle = splitHandleComponent.createObject(_root.mapControl)
                     _splitHandle.vertexIndex = index
                     _setHandlePosition()
-                    mapControl.addMapItem(_splitHandle)
+                    _root.mapControl.addMapItem(_splitHandle)
                 }
 
                 Component.onDestruction: {
@@ -501,11 +518,14 @@ Item {
                 property var _visuals: [ ]
 
                 Component.onCompleted: {
-                    var dragHandle = dragHandleComponent.createObject(mapControl)
+                    if (!_root._mapControlReady()) {
+                        return
+                    }
+                    var dragHandle = dragHandleComponent.createObject(_root.mapControl)
                     dragHandle.coordinate = Qt.binding(function() { return object.coordinate })
                     dragHandle.polygonVertex = Qt.binding(function() { return index })
-                    mapControl.addMapItem(dragHandle)
-                    var dragArea = dragAreaComponent.createObject(mapControl, { "itemIndicator": dragHandle, "itemCoordinate": object.coordinate })
+                    _root.mapControl.addMapItem(dragHandle)
+                    var dragArea = dragAreaComponent.createObject(_root.mapControl, { "itemIndicator": dragHandle, "itemCoordinate": object.coordinate })
                     dragArea.polygonVertex = Qt.binding(function() { return index })
                     _visuals.push(dragHandle)
                     _visuals.push(dragArea)
@@ -570,16 +590,19 @@ Item {
             property var dragArea
 
             Component.onCompleted: {
-                dragHandle = centerDragHandle.createObject(mapControl)
+                if (!_root._mapControlReady()) {
+                    return
+                }
+                dragHandle = centerDragHandle.createObject(_root.mapControl)
                 dragHandle.coordinate = Qt.binding(function() { return mapPolygon.center })
-                mapControl.addMapItem(dragHandle)
-                dragArea = centerDragAreaComponent.createObject(mapControl, { "itemIndicator": dragHandle, "itemCoordinate": mapPolygon.center })
+                _root.mapControl.addMapItem(dragHandle)
+                dragArea = centerDragAreaComponent.createObject(_root.mapControl, { "itemIndicator": dragHandle, "itemCoordinate": mapPolygon.center })
             }
 
             Component.onDestruction: {
-                if (dragHandle)
+                if (dragHandle && typeof dragHandle.destroy === "function")
                     dragHandle.destroy()
-                if (dragArea)
+                if (dragArea && typeof dragArea.destroy === "function")
                     dragArea.destroy()
             }
         }

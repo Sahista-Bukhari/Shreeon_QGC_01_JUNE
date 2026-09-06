@@ -44,12 +44,12 @@ Item {
         }
         return NaN
     }
-    property real _displayFlowRate: {
-        if (_flowRate > 0.05)
-            return _flowRate
-        if (isFinite(_configuredPumpRate))
-            return _configuredPumpRate
-        return 0
+    property real _displayFlowRate: _flowRate > 0.05 ? _flowRate : 0
+    readonly property bool _payloadHudVisible: {
+        var editor = mainWindow.uploadedMissionEditor
+        return editor === "agricultureSpraying"
+               || editor === "seedSpreader"
+               || (planMasterController && planMasterController.sprayerConfigured)
     }
 
     Connections {
@@ -71,8 +71,14 @@ Item {
                                               : null
     property int _missionPlanRevision: 0
 
+    function _visualItemCount() {
+        if (!_missionController || !_missionController.visualItems)
+            return 0
+        return _missionController.visualItems.count
+    }
+
     function _missionTakeoffItem() {
-        if (!_missionController)
+        if (!_missionController || !_missionController.visualItems)
             return null
         for (var i = 0; i < _missionController.visualItems.count; i++) {
             var item = _missionController.visualItems.get(i)
@@ -83,7 +89,7 @@ Item {
     }
 
     function _missionSurveyItem() {
-        if (!_missionController)
+        if (!_missionController || !_missionController.visualItems)
             return null
         for (var i = 0; i < _missionController.visualItems.count; i++) {
             var item = _missionController.visualItems.get(i)
@@ -97,7 +103,8 @@ Item {
     }
 
     function _missionSettingsItem() {
-        if (!_missionController || _missionController.visualItems.count === 0)
+        if (!_missionController || !_missionController.visualItems
+                || _missionController.visualItems.count === 0)
             return null
         var item = _missionController.visualItems.get(0)
         return item && item.speedSection ? item : null
@@ -162,7 +169,7 @@ Item {
 
     readonly property real _plannedPatternAltitude: {
         var revision = _missionPlanRevision
-        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        var visualItemCount = _visualItemCount()
         if (!revision && !visualItemCount)
             return NaN
 
@@ -177,7 +184,7 @@ Item {
 
     readonly property real _plannedTakeoffAltitude: {
         var revision = _missionPlanRevision
-        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        var visualItemCount = _visualItemCount()
         if (!revision && !visualItemCount)
             return NaN
 
@@ -218,7 +225,7 @@ Item {
 
     readonly property real _plannedMissionSpeed: {
         var revision = _missionPlanRevision
-        var visualItemCount = _missionController ? _missionController.visualItems.count : 0
+        var visualItemCount = _visualItemCount()
         if (!revision && !visualItemCount && !planMasterController)
             return NaN
 
@@ -474,7 +481,21 @@ Item {
     }
 
     function _applyPendingPlanSprayerRates() {
-        if (!_pendingPlanSprayerRates || !_sprayEnabled)
+        if (!_pendingPlanSprayerRates || !_sprayEnFact)
+            return
+
+        var requestedEnabled = Boolean(_pendingPlanSprayerRates.enabled)
+        if (_sprayEnabled !== requestedEnabled)
+            setSprayerEnabled(requestedEnabled)
+
+        // Disabling SPRAY_EN is sufficient to fly the unchanged route as a
+        // normal mission. Preserve the configured rates for a later re-enable.
+        if (!requestedEnabled) {
+            _pendingPlanSprayerRates = null
+            _pendingSprayerRateAttempts = 0
+            return
+        }
+        if (!_sprayEnabled)
             return
 
         var allApplied = true
@@ -500,23 +521,15 @@ Item {
     }
 
     function applyPlanSprayerSettings(enabled, nozzleRate, pumpRate) {
-        if (!_sprayEnFact)
-            return
-
         var pendingNozzle = Number(nozzleRate)
         var pendingPump = Number(pumpRate)
-        if (isFinite(pendingNozzle) || isFinite(pendingPump)) {
-            _pendingPlanSprayerRates = {
-                nozzleRate: isFinite(pendingNozzle) ? pendingNozzle : NaN,
-                pumpRate: isFinite(pendingPump) ? pendingPump : NaN
-            }
-            _pendingSprayerRateAttempts = 0
-        } else {
-            _pendingPlanSprayerRates = null
-            _pendingSprayerRateAttempts = 0
+        _pendingPlanSprayerRates = {
+            enabled: Boolean(enabled),
+            nozzleRate: isFinite(pendingNozzle) ? pendingNozzle : NaN,
+            pumpRate: isFinite(pendingPump) ? pendingPump : NaN
         }
+        _pendingSprayerRateAttempts = 0
 
-        setSprayerEnabled(enabled)
         _applyPendingPlanSprayerRates()
     }
 
@@ -524,6 +537,7 @@ Item {
         setSprayerEnabled(!_sprayEnabled)
     }
 
+    on_SprayEnFactChanged: _applyPendingPlanSprayerRates()
     on_SprayNozRateFactChanged: _applyPendingPlanSprayerRates()
     on_SprayPumpRateFactChanged: _applyPendingPlanSprayerRates()
 
@@ -532,7 +546,7 @@ Item {
 
         interval: 200
         repeat: true
-        running: root._pendingPlanSprayerRates !== null && root._sprayEnabled
+        running: root._pendingPlanSprayerRates !== null
         onTriggered: {
             root._pendingSprayerRateAttempts++
             root._applyPendingPlanSprayerRates()
@@ -540,6 +554,8 @@ Item {
                     && root._pendingSprayerRateAttempts >= root._pendingSprayerRateMaxAttempts) {
                 root._pendingPlanSprayerRates = null
                 root._pendingSprayerRateAttempts = 0
+                qgcApp().showAppMessage(
+                            qsTr("Could not apply sprayer settings to the vehicle. Check that SPRAY parameters are available."))
             }
         }
     }
@@ -1143,6 +1159,7 @@ Item {
                 // 4. FLOW RATE
                 Loader {
                     Layout.fillHeight: true
+                    visible: root._payloadHudVisible
                     sourceComponent: statItemComponent
 
                     onLoaded: {
@@ -1186,6 +1203,7 @@ Item {
                 Column {
                     Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.7
                     spacing: 2
+                    visible: root._payloadHudVisible
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter

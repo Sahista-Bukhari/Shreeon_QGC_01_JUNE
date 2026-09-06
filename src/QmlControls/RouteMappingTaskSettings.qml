@@ -33,6 +33,12 @@ Rectangle {
     property string patternSectionTitle: qsTr("Spray Pattern")
     // Live photo / resolution UI is Route Mapping only.
     property bool showPhotoSettings: true
+    // Fly View reuses this panel for the agriculture parameters only. The
+    // route-mode chooser remains owned by the mission editor.
+    property bool showRouteModeSettings: true
+    // Mission geometry cannot safely be changed while a mission is running.
+    // Vehicle sprayer and resume parameters remain available independently.
+    property bool missionSettingsEnabled: true
     // Vehicle SPRAY_* / nozzle controls are Agriculture Spraying only.
     property bool showSpraySettings: false
     property bool spraySettingsExpanded: true
@@ -51,7 +57,9 @@ Rectangle {
                                                   || _sprayNozRateFact !== null
                                                   || _sprayPumpRateFact !== null
                                                   || _misResumeExactFact !== null
-    property bool _planSprayEnabledDraft: false
+    // Agriculture Spraying plans start with their payload enabled. The Fly View
+    // confirmation popup can turn it off before the route is flown.
+    property bool _planSprayEnabledDraft: true
     property real _planSprayNozzleRateDraft: NaN
     property real _planSprayPumpRateDraft: NaN
     readonly property bool planSprayEnabled: _planSprayEnabledDraft
@@ -280,7 +288,7 @@ Rectangle {
     }
 
     function resetSprayerPlanDraft() {
-        root._planSprayEnabledDraft = false
+        root._planSprayEnabledDraft = root.showSpraySettings
         root._initializeSprayerPlanDraftFromFacts()
     }
 
@@ -466,6 +474,8 @@ Rectangle {
         patternAltitudeWriteTimer.stop()
         patternSpeedWriteTimer.stop()
         missionAltitudeWriteTimer.stop()
+        nozzleRateWriteTimer.stop()
+        pumpRateWriteTimer.stop()
 
         if (root._patternAltitudeAvailable)
             root._commitPatternAltitude(patternAltitudeSlider.value)
@@ -473,6 +483,18 @@ Rectangle {
             root._commitPatternSpeed(patternSpeedSlider.value)
         if (root._missionAltitudeAvailable)
             root._commitMissionAltitude(missionAltitudeSlider.value)
+        if (root.showSpraySettings) {
+            if (root._sprayNozRateFact !== null) {
+                root._commitRateFactFromSlider(root._sprayNozRateFact, nozzleRateSlider.value)
+            } else if (isFinite(Number(nozzleRateSlider.value))) {
+                root._planSprayNozzleRateDraft = Math.round(Number(nozzleRateSlider.value) * 1000) / 1000
+            }
+            if (root._sprayPumpRateFact !== null) {
+                root._commitRateFactFromSlider(root._sprayPumpRateFact, pumpRateSlider.value)
+            } else if (isFinite(Number(pumpRateSlider.value))) {
+                root._planSprayPumpRateDraft = Math.round(Number(pumpRateSlider.value) * 1000) / 1000
+            }
+        }
     }
 
     function _syncPatternAltitudeSlider() {
@@ -531,6 +553,7 @@ Rectangle {
                 font.weight:        Font.Medium
                 font.pointSize:     ScreenTools.mediumFontPointSize
                 horizontalAlignment: Text.AlignHCenter
+                visible:            root.showRouteModeSettings
             }
 
             QGCLabel {
@@ -539,10 +562,12 @@ Rectangle {
                 text:               qsTr("Route Mode")
                 color:              root._titleColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
+                visible:            root.showRouteModeSettings
             }
 
             Repeater {
                 id: boundarrate
+                visible: root.showRouteModeSettings
                 model: [
                     {
                         title: qsTr("Area Route"),
@@ -557,6 +582,7 @@ Rectangle {
                 Rectangle {
                     Layout.fillWidth:   true
                     Layout.preferredHeight: routeModeCardLayout.implicitHeight + root._pad * 2.4
+                    visible:            root.showRouteModeSettings
                     enabled:            index === 0 || root.boundaryRouteEnabled
                     opacity:            enabled ? 1.0 : 0.45
                     radius:             root._radius
@@ -1188,6 +1214,8 @@ Rectangle {
                 columnSpacing:       root._pad * 0.65
                 rowSpacing:          ScreenTools.defaultFontPixelHeight * 0.55
                 visible:             root._showGridAngle && root.sprayPatternExpanded
+                enabled:             root.missionSettingsEnabled
+                opacity:             enabled ? 1.0 : 0.55
 
                 QGCLabel {
                     text:       qsTr("Angle")
@@ -1198,7 +1226,7 @@ Rectangle {
                     id:                 gridAngleField
                     fact:               root.surveyItem ? root.surveyItem.gridAngle : null
                     Layout.fillWidth:   true
-                    enabled:            root._showGridAngle
+                    enabled:            root._showGridAngle && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1215,7 +1243,7 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._showGridAngle
+                    enabled:                root._showGridAngle && root.missionSettingsEnabled
                     activeColor:            "#23a800"
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1240,7 +1268,7 @@ Rectangle {
                              : root._cameraCalc.sideOverlap)
                           : null
                     Layout.fillWidth: true
-                    enabled: root._showGridAngle
+                    enabled: root._showGridAngle && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1256,7 +1284,7 @@ Rectangle {
                 FactTextField {
                     fact: root.surveyItem ? root.surveyItem.turnAroundDistance : null
                     Layout.fillWidth: true
-                    enabled: root._showGridAngle
+                    enabled: root._showGridAngle && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1275,7 +1303,7 @@ Rectangle {
                                         ? root._cameraCalc.distanceMode
                                         : QGroundControl.AltitudeModeNone
                     Layout.fillWidth:   true
-                    enabled:            root._patternAltitudeAvailable
+                    enabled:            root._patternAltitudeAvailable && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1297,7 +1325,7 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._patternAltitudeAvailable
+                    enabled:                root._patternAltitudeAvailable && root.missionSettingsEnabled
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1328,7 +1356,7 @@ Rectangle {
                 FactTextField {
                     fact:               root._patternSpeedFact
                     Layout.fillWidth:   true
-                    enabled:            root._patternSpeedAvailable
+                    enabled:            root._patternSpeedAvailable && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       true
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1350,7 +1378,7 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._patternSpeedAvailable
+                    enabled:                root._patternSpeedAvailable && root.missionSettingsEnabled
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1378,7 +1406,7 @@ Rectangle {
                 Layout.rightMargin:     root._pad
                 Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.15
                 visible:                root._showGridAngle && root.sprayPatternExpanded
-                enabled:                root._surveyPolygonValid
+                enabled:                root._surveyPolygonValid && root.missionSettingsEnabled
                 opacity:                enabled ? 1.0 : 0.45
                 color:                  rotateEntryMouseArea.pressed
                                         ? Qt.darker(root._accentGreen, 1.12)
@@ -1496,6 +1524,8 @@ Rectangle {
                 columnSpacing:      root._pad * 0.5
                 rowSpacing:         root._pad * 0.5
                 visible:            root.missionExpanded && root._missionAltitudeAvailable
+                enabled:            root.missionSettingsEnabled
+                opacity:            enabled ? 1.0 : 0.55
 
                 QGCLabel {
                     text:  qsTr("Altitude")
@@ -1508,7 +1538,7 @@ Rectangle {
                                         ? root.takeoffItem.altitudeMode
                                         : QGroundControl.AltitudeModeNone
                     Layout.fillWidth:   true
-                    enabled:            root._missionAltitudeAvailable
+                    enabled:            root._missionAltitudeAvailable && root.missionSettingsEnabled
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1532,7 +1562,7 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._missionAltitudeAvailable
+                    enabled:                root._missionAltitudeAvailable && root.missionSettingsEnabled
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true

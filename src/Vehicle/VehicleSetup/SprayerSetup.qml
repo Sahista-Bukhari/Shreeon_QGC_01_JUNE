@@ -21,21 +21,22 @@ Rectangle {
         return qgcPal.globalTheme === QGCPalette.Dark
     }
 
-    readonly property color _pageBackground:    _darkTheme ? qgcPal.window : "#FFFFFF"
-    readonly property color _titleColor:        _darkTheme ? "#AEAEB2" : "#3A3A3C"
-    readonly property color _bodyColor:         _darkTheme ? "#8E8E93" : "#3A3A3C"
+    readonly property color _pageBackground:    _darkTheme ? qgcPal.window : "#F3F4F3"
+    readonly property color _titleColor:        _darkTheme ? "#F2F2F2" : "#333333"
+    readonly property color _bodyColor:         _darkTheme ? "#B8B8B8" : "#6B6B6B"
     readonly property real  _titlePointSize:    ScreenTools.defaultFontPointSize + 1
     readonly property real  _labelPointSize:    ScreenTools.defaultFontPointSize
     readonly property real  _bodyPointSize:     ScreenTools.smallFontPointSize
-    readonly property color _dividerColor:      _darkTheme ? qgcPal.windowShade : "#EFEFEF"
-    readonly property color _accentGreen:       "#00a04c"
-    readonly property color _cardIdleBorder:    _darkTheme ? qgcPal.windowShade : "#E6E6E6"
-    readonly property color _cardIdleFill:      _darkTheme ? qgcPal.window : "#FFFFFF"
+    readonly property color _dividerColor:      _darkTheme ? Qt.rgba(1, 1, 1, 0.14) : "#E5E5E5"
+    readonly property color _accentGreen:       "#00A651"
+    readonly property color _accentGreenPressed:"#008F46"
+    readonly property color _cardIdleBorder:    _darkTheme ? Qt.rgba(1, 1, 1, 0.22) : "#D9D9D9"
+    readonly property color _cardIdleFill:      _darkTheme ? Qt.rgba(1, 1, 1, 0.06) : "#FFFFFF"
     readonly property color _cardSelectedFill:  Qt.rgba(0, 160 / 255, 76 / 255, _darkTheme ? 0.16 : 0.08)
-    readonly property color _innerIdleFill:     _darkTheme ? qgcPal.windowShade : "#F4F4F4"
+    readonly property color _innerIdleFill:     _darkTheme ? Qt.rgba(1, 1, 1, 0.10) : "#EEEEEE"
     readonly property color _innerSelectedFill: Qt.rgba(0, 160 / 255, 76 / 255, _darkTheme ? 0.22 : 0.12)
-    readonly property color _dataCardFill:      _darkTheme ? qgcPal.windowShade : "#F5F5F5"
-    readonly property color _tableLine:         _darkTheme ? qgcPal.windowShade : "#E5E5E5"
+    readonly property color _dataCardFill:      _darkTheme ? Qt.rgba(1, 1, 1, 0.10) : "#EEEEEE"
+    readonly property color _tableLine:         _darkTheme ? Qt.rgba(1, 1, 1, 0.14) : "#E5E5E5"
     readonly property color _radioIdle:         "#C7C7CC"
     readonly property real  _pagePad:           ScreenTools.defaultFontPixelWidth * 2.2
     readonly property real  _sectionGap:        ScreenTools.defaultFontPixelHeight * 1.15
@@ -353,18 +354,18 @@ Rectangle {
                     width:   okButton.width
                     height:  okButton.height
                     radius:  okButton.radius
-                    color:   "#D1D1D6"
-                    opacity: 0.45
+                    color:   "#7A7A7A"
+                    opacity: root._darkTheme ? 0.25 : 0.20
                     z:       -1
                 }
 
                 Rectangle {
                     id: okButton
                     anchors.horizontalCenter: parent.horizontalCenter
-                    height: ScreenTools.defaultFontPixelHeight * 2
-                    width:  okLabel.implicitWidth + ScreenTools.defaultFontPixelWidth * 6
-                    radius: ScreenTools.defaultFontPixelWidth * 0.45
-                    color:  okMouse.pressed ? "#f1f1f1" : "#FFFFFF"
+                    height: ScreenTools.defaultFontPixelHeight * 2.15
+                    width:  parent.width
+                    radius: height / 2
+                    color:  okMouse.pressed ? root._accentGreenPressed : root._accentGreen
                     border.width: 0
                     scale:  okMouse.pressed ? 0.96 : 1.0
 
@@ -374,7 +375,7 @@ Rectangle {
                         id:                       okLabel
                         anchors.centerIn:         parent
                         text:                     qsTr("Ok")
-                        color:                    root._accentGreen
+                        color:                    "#FFFFFF"
                         font.weight:              Font.DemiBold
                         font.pointSize:           root._labelPointSize
                         font.family:              ScreenTools.normalFontFamily
@@ -685,7 +686,7 @@ Rectangle {
                 width:  parent.width
                 height: innerColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 0.9
                 radius: ScreenTools.defaultFontPixelWidth * 0.75
-                color:  root._darkTheme ? qgcPal.windowShade : "#E8E8E8"
+                color:  root._innerIdleFill
                 border.width: 1
                 border.color: root._tableLine
                 clip:   false
@@ -1013,62 +1014,96 @@ Rectangle {
                 text: qsTr("Task Settings")
             }
 
-            Column {
-                width:   parent.width
-                spacing: ScreenTools.defaultFontPixelHeight * 0.35
+            Rectangle {
+                width:          parent.width
+                height:         sprayingSystemColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 1.25
+                radius:         root._cardRadius
+                color:          root._cardIdleFill
+                border.width:   1
+                border.color:   root._cardIdleBorder
 
-                RowLayout {
-                    width:   parent.width
-                    spacing: ScreenTools.defaultFontPixelWidth
+                Column {
+                    id:              sprayingSystemColumn
+                    anchors.left:    parent.left
+                    anchors.right:   parent.right
+                    anchors.top:     parent.top
+                    anchors.margins: ScreenTools.defaultFontPixelWidth * 1.15
+                    spacing:         ScreenTools.defaultFontPixelHeight * 0.6
 
-                    SettingLabel {
-                        Layout.fillWidth: true
-                        text:             qsTr("Spraying and Spreading Systems")
-                        wrapMode:         Text.WordWrap
+                    RowLayout {
+                        width:   parent.width
+                        spacing: ScreenTools.defaultFontPixelWidth
+
+                        SettingLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Spraying and Spreading Systems")
+                            wrapMode:         Text.WordWrap
+                        }
+
+                        QGCCheckBoxSlider {
+                            Layout.alignment: Qt.AlignVCenter
+                            checked:          root._sprayingEnabled
+                            onClicked:        root._setSprayingEnabled(checked)
+                        }
                     }
 
-                    QGCCheckBoxSlider {
-                        Layout.alignment: Qt.AlignVCenter
-                        checked:          root._sprayingEnabled
-                        onClicked:        root._setSprayingEnabled(checked)
+                    Rectangle {
+                        width:  parent.width
+                        height: 1
+                        color:  root._dividerColor
                     }
-                }
 
-                BodyLabel {
-                    width: parent.width - ScreenTools.defaultFontPixelWidth * 8
-                    text:  qsTr("Once Spraying and Spreading Systems are turned off, aircraft is unable to spray or spread. Flight route tasks can still be performed.")
+                    BodyLabel {
+                        width: parent.width
+                        text:  qsTr("Once Spraying and Spreading Systems are turned off, aircraft is unable to spray or spread. Flight route tasks can still be performed.")
+                    }
                 }
             }
 
-            SectionDivider { }
+            Rectangle {
+                width:          parent.width
+                height:         atomizedSprayColumn.implicitHeight + ScreenTools.defaultFontPixelHeight * 1.25
+                radius:         root._cardRadius
+                color:          root._cardIdleFill
+                border.width:   1
+                border.color:   root._cardIdleBorder
 
-            Column {
-                width:   parent.width
-                spacing: ScreenTools.defaultFontPixelHeight * 0.35
+                Column {
+                    id:              atomizedSprayColumn
+                    anchors.left:    parent.left
+                    anchors.right:   parent.right
+                    anchors.top:     parent.top
+                    anchors.margins: ScreenTools.defaultFontPixelWidth * 1.15
+                    spacing:         ScreenTools.defaultFontPixelHeight * 0.6
 
-                RowLayout {
-                    width:   parent.width
-                    spacing: ScreenTools.defaultFontPixelWidth
+                    RowLayout {
+                        width:   parent.width
+                        spacing: ScreenTools.defaultFontPixelWidth
 
-                    SettingLabel {
-                        Layout.fillWidth: true
-                        text:             qsTr("Atomized Spray")
+                        SettingLabel {
+                            Layout.fillWidth: true
+                            text:             qsTr("Atomized Spray")
+                        }
+
+                        QGCCheckBoxSlider {
+                            Layout.alignment: Qt.AlignVCenter
+                            checked:          sprayerSettings.atomizedSpray
+                            onClicked:        sprayerSettings.atomizedSpray = checked
+                        }
                     }
 
-                    QGCCheckBoxSlider {
-                        Layout.alignment: Qt.AlignVCenter
-                        checked:          sprayerSettings.atomizedSpray
-                        onClicked:        sprayerSettings.atomizedSpray = checked
+                    Rectangle {
+                        width:  parent.width
+                        height: 1
+                        color:  root._dividerColor
                     }
-                }
 
-                BodyLabel {
-                    width: parent.width - ScreenTools.defaultFontPixelWidth * 8
-                    text:  qsTr("When disabled, centrifugal motors will stop working when spraying. Sprinkler will spray liquid jets without atomization.")
+                    BodyLabel {
+                        width: parent.width
+                        text:  qsTr("When disabled, centrifugal motors will stop working when spraying. Sprinkler will spray liquid jets without atomization.")
+                    }
                 }
             }
-
-            SectionDivider { }
 
             HeadingLabel {
                 width: parent.width

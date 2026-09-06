@@ -15,6 +15,7 @@ Item {
     id: _root
 
     property var missionController
+    property var planMasterController
     property var confirmDialog
     property var guidedValueSlider
     property var fwdFlightGotoMapCircle
@@ -212,6 +213,38 @@ Item {
         return QGroundControl.categoryLoggingOn("GuidedActionsControllerLog")
     }
 
+    // Configured mission/pattern cruise speed (m/s). Used when resuming after
+    // mid-mission altitude change so we do not lock in the slow Hold/climb GS.
+    function _missionPlannedSpeedMps() {
+        if (planMasterController && planMasterController.routeMappingConfigured) {
+            var storedSpeed = Number(planMasterController.routeMappingPatternSpeedMps)
+            if (isFinite(storedSpeed) && storedSpeed > 0.1)
+                return storedSpeed
+        }
+        if (!missionController || !missionController.visualItems)
+            return NaN
+        for (var i = 0; i < missionController.visualItems.count; i++) {
+            var item = missionController.visualItems.get(i)
+            if (item && item.patternFlightSpeed) {
+                var patternSpeed = Number(item.patternFlightSpeed.rawValue)
+                if (isFinite(patternSpeed) && patternSpeed > 0.1)
+                    return patternSpeed
+            }
+        }
+        return NaN
+    }
+
+    function _speedForAltitudeMissionResume() {
+        if (isFinite(_userCruiseSpeedMetersSecond) && _userCruiseSpeedMetersSecond > 0.1)
+            return _userCruiseSpeedMetersSecond
+        var plannedSpeed = _missionPlannedSpeedMps()
+        if (isFinite(plannedSpeed) && plannedSpeed > 0.1)
+            return plannedSpeed
+        if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1)
+            return commandedSpeedMetersSecond
+        return NaN
+    }
+
     function _outputState() {
         if (_isGuidedActionsControllerLogEnabled()) {
             console.log(qsTr("_activeVehicle(%1) _vehicleArmed(%2) guidedModeSupported(%3) _vehicleFlying(%4) _vehicleWasFlying(%5) _vehicleInRTLMode(%6) pauseVehicleSupported(%7) _vehiclePaused(%8) _flightMode(%9) _missionItemCount(%10) roiSupported(%11) orbitSupported(%12) _missionActive(%13) _hideROI(%14) _hideOrbit(%15)").arg(_activeVehicle ? 1 : 0).arg(_vehicleArmed ? 1 : 0).arg(__guidedModeSupported ? 1 : 0).arg(_vehicleFlying ? 1 : 0).arg(_vehicleWasFlying ? 1 : 0).arg(_vehicleInRTLMode ? 1 : 0).arg(__pauseVehicleSupported ? 1 : 0).arg(_vehiclePaused ? 1 : 0).arg(_flightMode).arg(_missionItemCount).arg(__roiSupported).arg(__orbitSupported).arg(_missionActive).arg(_hideROI).arg(_hideOrbit))
@@ -250,10 +283,15 @@ Item {
                     currentSpeedMs = _userCruiseSpeedMetersSecond
                 } else if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1) {
                     currentSpeedMs = commandedSpeedMetersSecond
-                } else if (_activeVehicle.groundSpeed && _activeVehicle.groundSpeed.rawValue > 0.1) {
-                    currentSpeedMs = _activeVehicle.groundSpeed.rawValue
                 } else {
-                    currentSpeedMs = _activeVehicle.maximumHorizontalSpeedMultirotor() / 2
+                    var plannedSpeedMs = _missionPlannedSpeedMps()
+                    if (isFinite(plannedSpeedMs) && plannedSpeedMs > 0.1) {
+                        currentSpeedMs = plannedSpeedMs
+                    } else if (_activeVehicle.groundSpeed && _activeVehicle.groundSpeed.rawValue > 0.1) {
+                        currentSpeedMs = _activeVehicle.groundSpeed.rawValue
+                    } else {
+                        currentSpeedMs = _activeVehicle.maximumHorizontalSpeedMultirotor() / 2
+                    }
                 }
                 guidedValueSlider.setupSlider(
                     GuidedValueSlider.SliderType.Speed,
@@ -929,16 +967,7 @@ Item {
                 }
                 _pendingAltTargetMeters = valueInMeters
                 _pendingAltPollCount = 0
-                // Prefer the last speed the pilot set, then live commanded display, then current GS.
-                if (isFinite(_userCruiseSpeedMetersSecond) && _userCruiseSpeedMetersSecond > 0.1) {
-                    _pendingAltResumeSpeed = _userCruiseSpeedMetersSecond
-                } else if (isFinite(commandedSpeedMetersSecond) && commandedSpeedMetersSecond > 0.1) {
-                    _pendingAltResumeSpeed = commandedSpeedMetersSecond
-                } else if (_activeVehicle.groundSpeed && _activeVehicle.groundSpeed.rawValue > 0.5) {
-                    _pendingAltResumeSpeed = _activeVehicle.groundSpeed.rawValue
-                } else {
-                    _pendingAltResumeSpeed = NaN
-                }
+                _pendingAltResumeSpeed = _speedForAltitudeMissionResume()
                 altReachedPollTimer.restart()
             }
             // Hold the live vehicle position before applying the altitude target.

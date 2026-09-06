@@ -48,12 +48,41 @@ Item {
     // Once a survey overlay has been painted (transfer/import), keep its geometry
     // frozen for the whole mission. Only the drone position and progress update.
     property bool   _routeMappingOverlayLocked: false
+    property bool   _routeMappingPhotoPathWarned: false
     // Photo progress UI is Route Mapping only (not Agriculture / Seed Spreader).
     readonly property bool routeMappingPhotoProgressEnabled: mainWindow.uploadedMissionEditor === "routeMapping"
 
     readonly property bool _hasFlyViewPlanContent: _planController.containsItems
                                                    || routeMappingBoundaryPath.length > 0
                                                    || routeMappingTransectPath.length > 0
+
+    property int _lastAppliedSprayerUploadGeneration: 0
+
+    onVisibleChanged: {
+        if (visible)
+            applyUploadedSprayerSettingsTimer.restart()
+    }
+
+    Timer {
+        id: applyUploadedSprayerSettingsTimer
+
+        interval: 400
+        repeat: false
+        onTriggered: _root._tryApplyUploadedSprayerSettings()
+    }
+
+    function _tryApplyUploadedSprayerSettings() {
+        var generation = mainWindow.missionPlanUploadGeneration
+        if (generation <= _lastAppliedSprayerUploadGeneration)
+            return false
+        if (!visible)
+            return false
+        if (!applyUploadedSprayerSettings())
+            return false
+        _lastAppliedSprayerUploadGeneration = generation
+        return true
+    }
+
     function clearRouteMappingOverlay(force) {
         // Locked survey geometry must survive mission progress, MAVLink rewrites,
         // and airborne state unless the user explicitly clears the plan.
@@ -206,11 +235,40 @@ Item {
 
     function applyConfirmedSprayerSettings(enabled, nozzleRate, pumpRate) {
         var bottomBar = widgetLayer.bottomBar
-        if (!bottomBar || !bottomBar.sprayEnableFact)
-            return
-
-        bottomBar.applyPlanSprayerSettings(enabled, nozzleRate, pumpRate)
         _planController.setSprayerSettings(enabled, nozzleRate, pumpRate)
+
+        // Keep the plan settings even when this firmware does not expose its
+        // SPRAY_* parameters. When available, also apply them to the vehicle.
+        if (bottomBar) {
+            bottomBar.applyPlanSprayerSettings(enabled, nozzleRate, pumpRate)
+        }
+
+        // The mission path stays untouched. Persist only the payload state so
+        // disabling here also remains disabled after editing or reconnecting.
+        var editorType = mainWindow.uploadedMissionEditor
+        var editorView = mainWindow.missionEditorView(editorType)
+        if (editorView && editorView.applyFlyViewSprayerSettings
+                && editorView.applyFlyViewSprayerSettings(enabled, nozzleRate, pumpRate)) {
+            mainWindow.persistLastExecutedMission(editorType)
+        }
+    }
+
+    // Push the uploaded Agriculture/Seed sprayer plan metadata to the vehicle
+    // as soon as Fly View is shown — no manual sprayer icon click required.
+    function applyUploadedSprayerSettings() {
+        var editor = mainWindow.uploadedMissionEditor
+        if (editor !== "agricultureSpraying" && editor !== "seedSpreader")
+            return false
+        if (!_planController.sprayerConfigured)
+            return false
+
+        var nozzleRate = Number(_planController.sprayerNozzleRate)
+        var pumpRate = Number(_planController.sprayerPumpRate)
+        applyConfirmedSprayerSettings(
+                    _planController.sprayerEnabled,
+                    isFinite(nozzleRate) ? nozzleRate : NaN,
+                    isFinite(pumpRate) ? pumpRate : NaN)
+        return true
     }
 
     function syncSprayerSettingsToPlan() {
@@ -305,6 +363,18 @@ Item {
         repeat: false
         onTriggered: {
             _routeMappingOverlayFromMission()
+            var editorView = mainWindow.missionEditorView(mainWindow.uploadedMissionEditor)
+            if (editorView) {
+                if (editorView._restoreUploadedRouteMappingOverlay) {
+                    editorView._restoreUploadedRouteMappingOverlay()
+                }
+                if (editorView._copyRouteMappingTelemetryToFlyViewPlanController) {
+                    editorView._copyRouteMappingTelemetryToFlyViewPlanController()
+                }
+                if (editorView._copySprayerSettingsToFlyViewPlanController) {
+                    editorView._copySprayerSettingsToFlyViewPlanController()
+                }
+            }
             if (_planController.containsItems && !_planController.offline) {
                 if (_planController.readyForSaveState() === VisualMissionItem.ReadyForSave) {
                     _planController.upload()
@@ -403,6 +473,14 @@ Item {
             planFileDialog.planFiles = false
             planFileDialog.nameFilters = ShapeFileHelper.fileDialogKMLFilters
             planFileDialog.openForSave()
+        }
+    }
+
+    Connections {
+        target: _planController
+        function onSprayerSettingsChanged() {
+            if (_root.visible)
+                applyUploadedSprayerSettingsTimer.restart()
         }
     }
 
@@ -540,6 +618,11 @@ Item {
 
         var photoDirectory = QGroundControl.settingsManager.appSettings.photoSavePath
         if (!photoDirectory || photoDirectory.length === 0) {
+            if (!_routeMappingPhotoPathWarned) {
+                _routeMappingPhotoPathWarned = true
+                qgcApp().showAppMessage(
+                            qsTr("Photo save path is not configured. Set it in Application Settings to capture route mapping photos."))
+            }
             return false
         }
 
@@ -841,6 +924,13 @@ Item {
 
         _planController.showPlanFromManagerVehicle()
 
+        var editorView = mainWindow.missionEditorView(mainWindow.uploadedMissionEditor)
+        if (editorView && editorView.vehicleMissionIsStartable
+                && editorView.vehicleMissionIsStartable(_missionController)) {
+            editorView.onFlyViewMissionResyncedFromVehicle()
+            return
+        }
+
         if (routeMappingView.vehicleMissionIsStartable(_missionController)) {
             routeMappingView.onFlyViewMissionResyncedFromVehicle()
             return
@@ -1026,6 +1116,7 @@ Item {
         GuidedActionsController {
             id:                 guidedActionsController
             missionController:  _missionController
+            planMasterController: _planController
             guidedValueSlider:     _guidedValueSlider
         }
 

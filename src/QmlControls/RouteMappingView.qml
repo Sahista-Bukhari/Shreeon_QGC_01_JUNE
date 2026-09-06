@@ -121,11 +121,17 @@ Item {
     property var _uploadedRouteMappingOverlayData: null
     property bool _editingUploadedPlan: false
     property string _editBaselineSignature: ""
+    // Signature of the last plan successfully written to a user/imported file.
+    // This is separate from the upload baseline because Save and Upload are
+    // independent actions in Route Mapping.
+    property string _lastSavedPlanSignature: ""
     property bool _routeMappingUploadPending: false
 
     // Boundary waypoints stay editable after upload so the plan can be changed and re-uploaded.
+    // Once a survey pattern exists, native polygon handles remain usable even after Finish.
     readonly property bool _routeBoundaryEditable: _areaRouteActive
                                                    && (!_surveyFinished
+                                                       || _hasCalculatedSurvey
                                                        || _editingUploadedPlan
                                                        || _routeMappingUploadPending)
 
@@ -382,6 +388,7 @@ Item {
         _uploadedRouteMappingOverlayData = null
         _editingUploadedPlan = false
         _editBaselineSignature = ""
+        _lastSavedPlanSignature = ""
         _routeMappingUploadPending = false
         fieldTracePointsModel.clear()
         _planMasterController.manualCreation = false
@@ -524,8 +531,31 @@ Item {
         }
         polygon.endReset()
         polygon.traceMode = false
-        polygon.interactive = false
+        polygon.interactive = true
         return true
+    }
+
+    // Rebuilds boundary waypoints from the survey polygon (used after native center/vertex drag).
+    function _syncFieldTraceFromSurveyPolygon() {
+        if (!_cachedSurveyItem || !_cachedSurveyItem.surveyAreaPolygon) {
+            return
+        }
+
+        var polygon = _cachedSurveyItem.surveyAreaPolygon
+        if (polygon.count < 3) {
+            return
+        }
+
+        fieldTracePointsModel.clear()
+        for (var i = 0; i < polygon.count; i++) {
+            var coordinate = polygon.vertexCoordinate(i)
+            fieldTracePointsModel.append({
+                                            lat: coordinate.latitude,
+                                            lon: coordinate.longitude,
+                                            alt: coordinate.altitude
+                                        })
+        }
+        _selectedWaypointIndex = -1
     }
 
     // Empties the survey polygon vertices on the cached survey item.
@@ -597,7 +627,7 @@ Item {
             if (surveyPolygon && surveyPolygon.count === fieldTracePointsModel.count) {
                 surveyPolygon.adjustVertex(pointIndex, coordinate)
                 surveyPolygon.traceMode = false
-                surveyPolygon.interactive = false
+                surveyPolygon.interactive = true
             } else {
                 _updateSurveyPolygonFromTrace(_cachedSurveyItem)
             }
@@ -995,7 +1025,7 @@ Item {
         if (_cachedSurveyItem && _cachedSurveyItem.surveyAreaPolygon) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
             polygon.traceMode = false
-            polygon.interactive = false
+            polygon.interactive = true
             for (var i = 0; i < polygon.count; i++) {
                 var coordinate = polygon.vertexCoordinate(i)
                 fieldTracePointsModel.append({
@@ -1013,6 +1043,9 @@ Item {
         }
 
         _hasMissionPlanItems = _missionController.visualItems.count > 1
+        // An imported plan is already backed by a saved file. Its current
+        // content becomes the save baseline until the user changes the plan.
+        _lastSavedPlanSignature = _routeMappingPlanSignature()
         missionPlanRestoreTimer.restart()
     }
 
@@ -1036,6 +1069,11 @@ Item {
         _showSavedMappingOverlay = false
         _areaRouteActive = true
         _planMasterController.manualCreation = true
+
+        if (_cachedSurveyItem.surveyAreaPolygon) {
+            _cachedSurveyItem.surveyAreaPolygon.traceMode = false
+            _cachedSurveyItem.surveyAreaPolygon.interactive = true
+        }
 
         if (fieldTracePointsModel.count === 0) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
@@ -1104,6 +1142,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
 
         if (!_surveyFinished) {
             finishAreaRoute()
@@ -1125,6 +1164,17 @@ Item {
             mainWindow.showMessageDialog(
                         qsTr("Save"),
                         qsTr("Plan has incomplete items. Complete the route before saving."))
+            return
+        }
+
+        var currentSignature = _routeMappingPlanSignature()
+        if (_lastSavedPlanSignature !== ""
+                && currentSignature !== ""
+                && currentSignature === _lastSavedPlanSignature) {
+            mainWindow.showMessageDialog(
+                        qsTr("Plan Already Saved"),
+                        qsTr("This Route Mapping plan is already saved. Change the route or its settings before saving it again."),
+                        Dialog.Ok)
             return
         }
 
@@ -1182,7 +1232,34 @@ Item {
         if (!_planMasterController.upload()) {
             _routeMappingUploadPending = false
             _uploadedRouteMappingOverlayData = null
+            return
         }
+        if (!_planMasterController.syncInProgress) {
+            Qt.callLater(_root._finalizeRouteMappingUploadAfterSync)
+        }
+    }
+
+    // Runs after syncInProgress clears so MissionController can update
+    // lastSendToVehicleError before we mark the upload complete.
+    function _finalizeRouteMappingUploadAfterSync() {
+        if (!_routeMappingUploadPending || _planMasterController.syncInProgress) {
+            return
+        }
+
+        if (_missionController.lastSendToVehicleError === true) {
+            _routeMappingUploadFailed()
+        } else {
+            _markRouteMappingUploadComplete()
+        }
+    }
+
+    // Clears pending upload state after a failed vehicle mission write.
+    function _routeMappingUploadFailed() {
+        _routeMappingUploadPending = false
+        _uploadedRouteMappingOverlayData = null
+        mainWindow.showMessageDialog(
+                    qsTr("Upload"),
+                    qsTr("Mission upload to the vehicle failed. The plan was not marked as uploaded."))
     }
 
     // Called when the vehicle mission write finishes successfully.
@@ -1214,8 +1291,7 @@ Item {
     // Captures the native survey geometry for Fly View and records that this
     // version of the route has entered QGC's vehicle-upload pipeline.
     function _markRouteMappingUploadStarted() {
-        // Kept for older call sites; prefer success-gated completion.
-        _markRouteMappingUploadComplete()
+        // Legacy alias — upload completion is gated on mission send success.
     }
 
     // Re-applies the exact SurveyComplexItem geometry captured before MAVLink
@@ -1246,6 +1322,7 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
         var safeTaskName = taskName.trim().replace(new RegExp('[\\\\/:*?"<>|]', "g"), "_")
         _pendingMappingTaskName = taskName.trim()
         fileDialog.title = qsTr("Choose Where to Save Mapping Task")
@@ -1773,7 +1850,9 @@ Item {
                                if (taskSettingsPanel.flushPendingWrites) {
                                    taskSettingsPanel.flushPendingWrites()
                                }
+                               _snapshotRouteMappingTelemetryFromPlan()
                                _planMasterController.saveToFile(file)
+                               _lastSavedPlanSignature = _routeMappingPlanSignature()
                                hideTaskSettings()
                                _savedMappingTaskName = _pendingMappingTaskName
                                _importedMappingPlanPath = file
@@ -1828,7 +1907,7 @@ Item {
             }
 
             MapItemView {
-                visible: _root._areaRouteActive
+                visible: _root._areaRouteActive && !_root._hasCalculatedSurvey
                 model: fieldTracePointsModel
 
                 delegate: MapQuickItem {
@@ -1925,16 +2004,29 @@ Item {
                 line.width: _root._showSavedMappingOverlay ? 1.5 : 2
                 path: {
                     var boundaryPoints = []
-                    for (var i = 0; i < fieldTracePointsModel.count; i++) {
-                        var point = fieldTracePointsModel.get(i)
-                        boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                    // Once the pattern exists, follow the survey polygon so vertex-drag
+                    // moves the outline and transects together.
+                    if (_root._hasCalculatedSurvey
+                            && _root._cachedSurveyItem
+                            && _root._cachedSurveyItem.surveyAreaPolygon) {
+                        var polyPath = _root._cachedSurveyItem.surveyAreaPolygon.path
+                        for (var pi = 0; pi < polyPath.length; pi++) {
+                            boundaryPoints.push(polyPath[pi])
+                        }
+                    } else {
+                        for (var i = 0; i < fieldTracePointsModel.count; i++) {
+                            var point = fieldTracePointsModel.get(i)
+                            boundaryPoints.push(QtPositioning.coordinate(point.lat, point.lon, point.alt))
+                        }
                     }
                     if (boundaryPoints.length >= 3) {
                         boundaryPoints.push(boundaryPoints[0])
                     }
                     return boundaryPoints
                 }
-                visible: _root._areaRouteActive && fieldTracePointsModel.count >= 2
+                visible: _root._areaRouteActive
+                         && (_root._hasCalculatedSurvey
+                             || fieldTracePointsModel.count >= 2)
                 z: QGroundControl.zOrderMapItems + 1
             }
 
@@ -1993,6 +2085,57 @@ Item {
                       : []
                 visible: _root._hasCalculatedSurvey
                 z: QGroundControl.zOrderMapItems + 2
+            }
+
+            // Native QGC polygon editing (center + vertex handles) once the pattern exists.
+            // Keep fill/border transparent — Route Mapping draws its own boundary/transects.
+            Loader {
+                active: _root._areaRouteActive
+                        && _root._hasCalculatedSurvey
+                        && _root._cachedSurveyItem
+                        && _root._cachedSurveyItem.surveyAreaPolygon
+                        && _root._cachedSurveyItem.surveyAreaPolygon.count >= 3
+
+                sourceComponent: Component {
+                    QGCMapPolygonVisuals {
+                        mapControl: routeMap
+                        mapPolygon: _root._cachedSurveyItem.surveyAreaPolygon
+                        interactive: true
+                        showToolsToolbar: false
+                        borderWidth: 0
+                        borderColor: "transparent"
+                        interiorColor: "transparent"
+                        interiorOpacity: 0
+                        handleSizeFactor: 0.85
+                        splitHandleSizeFactor: 0.85
+                        // Light brown handles — tinted from branding color (#7b504e).
+                        vertexHandleColor: "#e6cbc8"
+                        vertexHandleBorderColor: "#7b504e"
+                        centerHandleColor: "#e6cbc8"
+                        centerHandleBorderColor: "#7b504e"
+                        centerHandleIconColor: "#7b504e"
+                        splitIndicatorColor: "#7b504e"
+                        splitIndicatorOpacity: 0.75
+                    }
+                }
+            }
+
+            Connections {
+                target: _root._hasCalculatedSurvey && _root._cachedSurveyItem
+                        ? _root._cachedSurveyItem.surveyAreaPolygon
+                        : null
+
+                function onPathChanged() {
+                    if (target && !target.centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
+
+                function onCenterDragChanged(centerDrag) {
+                    if (!centerDrag) {
+                        _root._syncFieldTraceFromSurveyPolygon()
+                    }
+                }
             }
 
             MapQuickItem {
@@ -2853,10 +2996,7 @@ Item {
                     }
                     mainToolBar._missionUploadProgressVisible = true
                 } else if (_root._routeMappingUploadPending) {
-                    // Vehicle write finished. Mark complete like stock Plan View
-                    // after sendToVehicle returns — do not require progressPct==1,
-                    // which can already be reset when syncInProgress clears.
-                    _root._markRouteMappingUploadComplete()
+                    Qt.callLater(_root._finalizeRouteMappingUploadAfterSync)
                     if (mainToolBar._missionUploadProgressVisible) {
                         mainToolBar._missionUploadProgress = 1
                         missionUploadProgressResetTimer.restart()

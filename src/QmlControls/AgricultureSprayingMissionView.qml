@@ -124,8 +124,10 @@ Item {
     property bool _routeMappingUploadPending: false
 
     // Boundary waypoints stay editable after upload so the plan can be changed and re-uploaded.
+    // Once a survey pattern exists, native polygon handles remain usable even after Finish.
     readonly property bool _routeBoundaryEditable: _areaRouteActive
                                                    && (!_surveyFinished
+                                                       || _hasCalculatedSurvey
                                                        || _editingUploadedPlan
                                                        || _routeMappingUploadPending)
 
@@ -717,6 +719,7 @@ Item {
             _clearMissionItemsIfNeeded()
             _missionController.setCurrentPlanViewSeqNum(0, true)
             resetAreaRouteState()
+            taskSettingsPanel.resetSprayerPlanDraft()
             _hasMissionPlanItems = false
             _planMasterController.dirty = false
             _clearFlyViewRouteMappingOverlay(true)
@@ -791,7 +794,7 @@ Item {
             taskSettingsPanel.flushPendingWrites()
         }
 
-        if (!taskSettingsPanel._sprayParamsAvailable) {
+        if (!taskSettingsPanel.showSpraySettings && !taskSettingsPanel._sprayParamsAvailable) {
             return
         }
 
@@ -799,6 +802,14 @@ Item {
             taskSettingsPanel.planSprayEnabled,
             isFinite(taskSettingsPanel.planSprayNozzleRate) ? taskSettingsPanel.planSprayNozzleRate : NaN,
             isFinite(taskSettingsPanel.planSprayPumpRate) ? taskSettingsPanel.planSprayPumpRate : NaN)
+    }
+
+    // Keep a Fly View confirmation authoritative for future edits, saves and
+    // reconnect recovery without changing the uploaded route geometry.
+    function applyFlyViewSprayerSettings(enabled, nozzleRate, pumpRate) {
+        taskSettingsPanel.loadSprayerPlanDraft(enabled, nozzleRate, pumpRate)
+        _planMasterController.setSprayerSettings(enabled, nozzleRate, pumpRate)
+        return true
     }
 
     function _copySprayerSettingsToFlyViewPlanController() {
@@ -1087,6 +1098,11 @@ Item {
         _areaRouteActive = true
         _planMasterController.manualCreation = true
 
+        if (_cachedSurveyItem.surveyAreaPolygon) {
+            _cachedSurveyItem.surveyAreaPolygon.traceMode = false
+            _cachedSurveyItem.surveyAreaPolygon.interactive = true
+        }
+
         if (fieldTracePointsModel.count === 0) {
             var polygon = _cachedSurveyItem.surveyAreaPolygon
             for (var i = 0; i < polygon.count; i++) {
@@ -1155,6 +1171,8 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
+        _syncSprayerSettingsToPlan()
 
         if (!_surveyFinished) {
             finishAreaRoute()
@@ -1183,8 +1201,7 @@ Item {
     }
 
     // Upload button: finish a valid route and use QGC's normal plan upload
-    // checks/pipeline. Uploading does not require saving the plan to a file and
-    // does not navigate away from Route Mapping.
+    // checks/pipeline. Stay on this page until Exit sends the plan to Fly View.
     function uploadRouteMappingPlan() {
         mainWindow.confirmUploadToFlyView("agricultureSpraying", function() {
             _root._performRouteMappingUpload()
@@ -1234,7 +1251,34 @@ Item {
         if (!_planMasterController.upload()) {
             _routeMappingUploadPending = false
             _uploadedRouteMappingOverlayData = null
+            return
         }
+        if (!_planMasterController.syncInProgress) {
+            Qt.callLater(_root._finalizeRouteMappingUploadAfterSync)
+        }
+    }
+
+    // Runs after syncInProgress clears so MissionController can update
+    // lastSendToVehicleError before we mark the upload complete.
+    function _finalizeRouteMappingUploadAfterSync() {
+        if (!_routeMappingUploadPending || _planMasterController.syncInProgress) {
+            return
+        }
+
+        if (_missionController.lastSendToVehicleError === true) {
+            _routeMappingUploadFailed()
+        } else {
+            _markRouteMappingUploadComplete()
+        }
+    }
+
+    // Clears pending upload state after a failed vehicle mission write.
+    function _routeMappingUploadFailed() {
+        _routeMappingUploadPending = false
+        _uploadedRouteMappingOverlayData = null
+        mainWindow.showMessageDialog(
+                    qsTr("Upload"),
+                    qsTr("Mission upload to the vehicle failed. The plan was not marked as uploaded."))
     }
 
     // Called when the vehicle mission write finishes successfully.
@@ -1268,8 +1312,7 @@ Item {
     // Captures the native survey geometry for Fly View and records that this
     // version of the route has entered QGC's vehicle-upload pipeline.
     function _markRouteMappingUploadStarted() {
-        // Kept for older call sites; prefer success-gated completion.
-        _markRouteMappingUploadComplete()
+        // Legacy alias — upload completion is gated on mission send success.
     }
 
     // Re-applies the exact SurveyComplexItem geometry captured before MAVLink
@@ -1300,6 +1343,8 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        _snapshotRouteMappingTelemetryFromPlan()
+        _syncSprayerSettingsToPlan()
         var safeTaskName = taskName.trim().replace(new RegExp('[\\\\/:*?"<>|]', "g"), "_")
         _pendingMappingTaskName = taskName.trim()
         fileDialog.title = qsTr("Choose Where to Save Mapping Task")
@@ -1796,6 +1841,7 @@ Item {
                                if (taskSettingsPanel.flushPendingWrites) {
                                    taskSettingsPanel.flushPendingWrites()
                                }
+                               _snapshotRouteMappingTelemetryFromPlan()
                                _syncSprayerSettingsToPlan()
                                _planMasterController.saveToFile(file)
                                hideTaskSettings()
@@ -2036,6 +2082,7 @@ Item {
             // Keep fill/border transparent — Agriculture Sprayer draws its own boundary/transects.
             Loader {
                 active: _root._areaRouteActive
+                        && _root._hasCalculatedSurvey
                         && _root._cachedSurveyItem
                         && _root._cachedSurveyItem.surveyAreaPolygon
                         && _root._cachedSurveyItem.surveyAreaPolygon.count >= 3
@@ -2940,10 +2987,7 @@ Item {
                     }
                     mainToolBar._missionUploadProgressVisible = true
                 } else if (_root._routeMappingUploadPending) {
-                    // Vehicle write finished. Mark complete like stock Plan View
-                    // after sendToVehicle returns — do not require progressPct==1,
-                    // which can already be reset when syncInProgress clears.
-                    _root._markRouteMappingUploadComplete()
+                    Qt.callLater(_root._finalizeRouteMappingUploadAfterSync)
                     if (mainToolBar._missionUploadProgressVisible) {
                         mainToolBar._missionUploadProgress = 1
                         missionUploadProgressResetTimer.restart()

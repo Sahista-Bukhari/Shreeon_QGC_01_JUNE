@@ -231,6 +231,8 @@ void MissionController::sendToVehicle(void)
         qCWarning(MissionControllerLog) << "MissionControllerLog::sendToVehicle called while syncInProgress";
     } else {
         qCDebug(MissionControllerLog) << "MissionControllerLog::sendToVehicle";
+        _lastSendToVehicleError = false;
+        emit lastSendToVehicleErrorChanged();
         if (_visualItems->count() == 1) {
             // This prevents us from sending a possibly bogus home position to the vehicle
             QmlObjectListModel emptyModel;
@@ -2316,6 +2318,11 @@ bool MissionController::showPlanFromManagerVehicle (void)
 
 void MissionController::_managerSendComplete(bool error)
 {
+    if (_lastSendToVehicleError != error) {
+        _lastSendToVehicleError = error;
+        emit lastSendToVehicleErrorChanged();
+    }
+
     // Mid-flight altitude/speed rewrites set skipPlanReloadAfterMissionWrite so
     // Fly View / PlanMapItems keep the planned survey instead of flattening to
     // vehicle waypoints (which redraws the yellow pattern as a zigzag / rotate).

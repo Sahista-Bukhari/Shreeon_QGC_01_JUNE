@@ -10,7 +10,6 @@ import QGroundControl.Controls
 import QGroundControl.FactControls
 
 // Compact Fly View entry point for the three agriculture sprayer parameters.
-// The existing Agriculture Spraying shower icon opens the editable control card.
 Item {
     id: root
 
@@ -23,8 +22,8 @@ Item {
     signal sprayerSettingsConfirmed(bool enabled, double nozzleRate, double pumpRate)
 
     readonly property bool sprayAvailable: sprayEnableFact !== null
-                                                   || sprayNozzleRateFact !== null
-                                                   || sprayPumpRateFact !== null
+                                           || sprayNozzleRateFact !== null
+                                           || sprayPumpRateFact !== null
     readonly property bool _lightTheme: mainWindow.uiThemeMode === mainWindow.themeDefault
     // Same footprint as FlyViewMapTools.IconButton.
     readonly property real _iconSize: Math.round(ScreenTools.defaultFontPixelWidth * 5)
@@ -32,6 +31,15 @@ Item {
     property bool _draftEnabled: false
     property real _draftNozzleRate: NaN
     property real _draftPumpRate: NaN
+    readonly property string _settingsTooltip: {
+        if (controlsEnabled)
+            return qsTr("Sprayer settings")
+        if (mainWindow.uploadedMissionEditor === "seedSpreader")
+            return qsTr("Load a Seed Spreader plan to use these settings")
+        if (mainWindow.uploadedMissionEditor === "agricultureSpraying")
+            return qsTr("Load an Agriculture Spraying plan to use these settings")
+        return qsTr("Load a supported spraying plan to use these settings")
+    }
 
     opacity: controlsEnabled ? 1.0 : 0.35
     Behavior on opacity { NumberAnimation { duration: 150 } }
@@ -44,7 +52,7 @@ Item {
     function _factNumber(fact) {
         if (!fact)
             return NaN
-        var number = Number(fact.rawValue)
+        var number = Number(fact.rawValue !== undefined ? fact.rawValue : fact.value)
         return isFinite(number) ? number : NaN
     }
 
@@ -64,9 +72,6 @@ Item {
     }
 
     function _clampRate(fact, value) {
-        if (!fact)
-            return NaN
-
         var minimum = _factMinimum(fact)
         var maximum = _factMaximum(fact)
         var clamped = Math.max(minimum, Math.min(maximum, Number(value)))
@@ -76,16 +81,24 @@ Item {
     function _loadSprayerDraft() {
         if (planMasterController && planMasterController.sprayerConfigured) {
             _draftEnabled = planMasterController.sprayerEnabled
-            _draftNozzleRate = planMasterController.sprayerNozzleRate
-            _draftPumpRate = planMasterController.sprayerPumpRate
+            var planNozzleRate = Number(planMasterController.sprayerNozzleRate)
+            var planPumpRate = Number(planMasterController.sprayerPumpRate)
+            var vehicleNozzleRate = _factNumber(sprayNozzleRateFact)
+            var vehiclePumpRate = _factNumber(sprayPumpRateFact)
+            _draftNozzleRate = isFinite(planNozzleRate)
+                    ? planNozzleRate
+                    : (isFinite(vehicleNozzleRate) ? vehicleNozzleRate : _factMinimum(sprayNozzleRateFact))
+            _draftPumpRate = isFinite(planPumpRate)
+                    ? planPumpRate
+                    : (isFinite(vehiclePumpRate) ? vehiclePumpRate : _factMinimum(sprayPumpRateFact))
             return
         }
 
-        _draftEnabled = sprayEnableFact && Number(sprayEnableFact.value) !== 0
-        var nozzle = _factNumber(sprayNozzleRateFact)
-        var pump = _factNumber(sprayPumpRateFact)
-        _draftNozzleRate = isFinite(nozzle) ? nozzle : NaN
-        _draftPumpRate = isFinite(pump) ? pump : NaN
+        _draftEnabled = sprayEnableFact && Number(sprayEnableFact.rawValue) !== 0
+        var nozzleRate = _factNumber(sprayNozzleRateFact)
+        var pumpRate = _factNumber(sprayPumpRateFact)
+        _draftNozzleRate = isFinite(nozzleRate) ? nozzleRate : _factMinimum(sprayNozzleRateFact)
+        _draftPumpRate = isFinite(pumpRate) ? pumpRate : _factMinimum(sprayPumpRateFact)
     }
 
     function _confirmSprayerSettings() {
@@ -93,6 +106,12 @@ Item {
         var pumpRate = isFinite(_draftPumpRate) ? _draftPumpRate : NaN
         sprayerSettingsConfirmed(_draftEnabled, nozzleRate, pumpRate)
         sprayerPopup.close()
+    }
+
+    function _discardSprayerDraft() {
+        nozzleRateControl.discardPendingChange()
+        pumpRateControl.discardPendingChange()
+        _loadSprayerDraft()
     }
 
     function _openControlPanel() {
@@ -107,22 +126,43 @@ Item {
         _loadSprayerDraft()
 
         var overlay = Overlay.overlay
-        var topPoint = root.mapToItem(overlay, root.width / 2, 0)
         var bottomPoint = root.mapToItem(overlay, root.width / 2, root.height)
         var margin = ScreenTools.defaultFontPixelWidth
         sprayerPopup.x = Math.max(margin,
                                   Math.min(overlay.width - sprayerPopup.width - margin,
                                            bottomPoint.x - sprayerPopup.width / 2))
 
+        // Always place the card below the Fly View icon row. Falling back above
+        // the icon makes the popup cover the main Fly View toolbar.
         var popupGap = ScreenTools.defaultFontPixelHeight * 0.45
-        var belowY = bottomPoint.y + popupGap
-        var aboveY = topPoint.y - sprayerPopup.height - popupGap
-        var preferredY = belowY + sprayerPopup.height <= overlay.height - margin
-                         ? belowY : aboveY
-        sprayerPopup.y = Math.max(margin,
-                                  Math.min(overlay.height - sprayerPopup.height - margin,
-                                           preferredY))
+        sprayerPopup.y = bottomPoint.y + popupGap
         sprayerPopup.open()
+    }
+
+    // Called after an Agriculture/Seed upload. Applies settings immediately and
+    // optionally opens the compact confirmation panel.
+    function applyUploadedPlanSettings() {
+        if (!controlsEnabled || !planMasterController || !planMasterController.sprayerConfigured)
+            return false
+
+        _loadSprayerDraft()
+
+        var enabled = planMasterController.sprayerEnabled
+        var nozzleRate = isFinite(_draftNozzleRate) ? _draftNozzleRate : NaN
+        var pumpRate = isFinite(_draftPumpRate) ? _draftPumpRate : NaN
+        _draftEnabled = enabled
+        sprayerSettingsConfirmed(enabled, nozzleRate, pumpRate)
+        return true
+    }
+
+    function openForUploadedPlan() {
+        if (!applyUploadedPlanSettings())
+            return false
+
+        if (!sprayerPopup.opened)
+            _openControlPanel()
+
+        return true
     }
 
     onControlsEnabledChanged: {
@@ -139,9 +179,7 @@ Item {
 
         anchors.fill: parent
         radius: width / 2
-        color: iconMouseArea.pressed
-               ? Qt.rgba(0, 0, 0, 0.20)
-               : "transparent"
+        color: iconMouseArea.pressed ? Qt.rgba(0, 0, 0, 0.20) : "transparent"
         border.width: 0
 
         Behavior on color { ColorAnimation { duration: 120 } }
@@ -193,6 +231,9 @@ Item {
             enabled: root.controlsEnabled
             cursorShape: root.controlsEnabled ? Qt.PointingHandCursor : Qt.ForbiddenCursor
             onClicked: root._openControlPanel()
+
+            ToolTip.visible: containsMouse
+            ToolTip.text: root._settingsTooltip
         }
     }
 
@@ -208,6 +249,7 @@ Item {
                         parent ? parent.width - ScreenTools.defaultFontPixelWidth * 2
                                : ScreenTools.defaultFontPixelWidth * 34)
         height: popupColumn.implicitHeight + topPadding + bottomPadding
+        onClosed: root._discardSprayerDraft()
 
         background: Rectangle {
             color: root._lightTheme ? "#ffffff" : Qt.rgba(0.07, 0.08, 0.08, 0.98)
@@ -230,12 +272,61 @@ Item {
 
             spacing: ScreenTools.defaultFontPixelHeight * 0.75
 
-            QGCLabel {
+            Item {
                 Layout.fillWidth: true
-                text: qsTr("Enable the sprayer and set rates, then click OK to apply them to this plan.")
-                color: root._lightTheme ? "#7a7a7a" : Qt.rgba(1, 1, 1, 0.68)
-                font.pointSize: ScreenTools.smallFontPointSize
-                wrapMode: Text.WordWrap
+                Layout.preferredHeight: Math.max(ScreenTools.defaultFontPixelHeight * 1.8,
+                                                 closeButton.implicitHeight)
+
+                QGCLabel {
+                    anchors.left: parent.left
+                    anchors.leftMargin: ScreenTools.defaultFontPixelWidth * 1.2
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Sprayer Settings")
+                    color: root._lightTheme ? "#333333" : "#ffffff"
+                    font.weight: Font.DemiBold
+                    font.pointSize: ScreenTools.mediumFontPointSize
+                }
+
+                Rectangle {
+                    id: closeButton
+
+                    implicitHeight: Math.max(26, ScreenTools.defaultFontPixelHeight * 1.45)
+
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    width: implicitHeight
+                    height: implicitHeight
+                    radius: width / 2
+                    color: closeMouseArea.pressed
+                           ? Qt.rgba(0, 0.65, 0.32, 0.16)
+                           : (closeMouseArea.containsMouse
+                              ? (root._lightTheme ? "#f1f1f1" : Qt.rgba(1, 1, 1, 0.12))
+                              : (root._lightTheme ? "#f7f7f7" : Qt.rgba(1, 1, 1, 0.06)))
+                    border.width: 1
+                    border.color: closeMouseArea.containsMouse
+                                  ? "#00a651"
+                                  : (root._lightTheme ? "#d9d9d9" : Qt.rgba(1, 1, 1, 0.24))
+
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        text: "×"
+                        color: closeMouseArea.containsMouse
+                               ? "#00a651"
+                               : (root._lightTheme ? "#333333" : "#ffffff")
+                        font.pixelSize: parent.height * 0.68
+                    }
+
+                    QGCMouseArea {
+                        id: closeMouseArea
+
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: sprayerPopup.close()
+                    }
+
+                    Behavior on color { ColorAnimation { duration: 120 } }
+                }
             }
 
             RowLayout {
@@ -250,15 +341,14 @@ Item {
                 }
 
                 QGCLabel {
-                    text: !root.sprayEnableFact ? qsTr("Unavailable")
-                                                : (root._draftEnabled ? qsTr("Enabled") : qsTr("Disabled"))
+                    text: root._draftEnabled ? qsTr("Enabled") : qsTr("Disabled")
                     color: root._draftEnabled ? "#00a651"
                                               : (root._lightTheme ? "#707070" : Qt.rgba(1, 1, 1, 0.65))
                 }
 
                 QGCCheckBoxSlider {
                     checked: root._draftEnabled
-                    enabled: root.sprayEnableFact !== null
+                    enabled: root.controlsEnabled
                     onClicked: root._draftEnabled = checked
                 }
             }
@@ -270,6 +360,8 @@ Item {
             }
 
             DraftRateControl {
+                id: nozzleRateControl
+
                 Layout.fillWidth: true
                 title: qsTr("Nozzle rate")
                 fact: root.sprayNozzleRateFact
@@ -278,6 +370,8 @@ Item {
             }
 
             DraftRateControl {
+                id: pumpRateControl
+
                 Layout.fillWidth: true
                 title: qsTr("Pump rate")
                 fact: root.sprayPumpRateFact
@@ -290,7 +384,7 @@ Item {
                 Layout.topMargin: ScreenTools.defaultFontPixelHeight * 0.15
                 text: qsTr("OK")
                 primary: true
-                enabled: root.sprayEnableFact !== null
+                enabled: root.controlsEnabled
                 onClicked: root._confirmSprayerSettings()
             }
         }
@@ -315,7 +409,7 @@ Item {
             return minimumValue
         }
 
-        enabled: root._draftEnabled && fact !== null
+        enabled: root._draftEnabled && root.controlsEnabled
         opacity: enabled ? 1 : 0.55
         spacing: ScreenTools.defaultFontPixelHeight * 0.2
 
@@ -323,6 +417,11 @@ Item {
             var clamped = root._clampRate(fact, value)
             if (isFinite(clamped))
                 rateControl.valueCommitted(clamped)
+            pendingValue = NaN
+        }
+
+        function discardPendingChange() {
+            rateWriteTimer.stop()
             pendingValue = NaN
         }
 
@@ -392,7 +491,7 @@ Item {
                     QGCLabel {
                         Layout.fillWidth: true
                         Layout.alignment: Qt.AlignHCenter
-                        text: rateControl.fact ? rateControl.displayValue.toFixed(3) : "—"
+                        text: rateControl.displayValue.toFixed(3)
                         color: root._lightTheme ? "#353535" : "#ffffff"
                         horizontalAlignment: Text.AlignHCenter
                     }

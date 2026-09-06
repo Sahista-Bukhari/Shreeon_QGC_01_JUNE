@@ -16,9 +16,10 @@ Rectangle {
     readonly property int _photosPercent: photosPlanned > 0
                                           ? Math.min(100, Math.floor((photosTaken / photosPlanned) * 100))
                                           : 0
-    readonly property int totalPercent: photosVisible
-                                        ? Math.floor((routePercent + _photosPercent) / 2)
-                                        : routePercent
+    readonly property int totalPercent: !photosVisible ? routePercent
+                                        : (photosTaken > 0
+                                           ? Math.floor((routePercent + _photosPercent) / 2)
+                                           : routePercent)
 
     readonly property real _hPad: ScreenTools.defaultFontPixelWidth * 1.8
     readonly property real _vPad: ScreenTools.defaultFontPixelHeight * 0.5

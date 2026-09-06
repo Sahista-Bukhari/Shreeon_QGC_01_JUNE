@@ -72,10 +72,7 @@ Item {
 
             Item {
                 id:     leftPanel
-                width:  leftPanelLayout.implicitWidth
-                        + (control._showTaskBanner
-                           ? ScreenTools.defaultFontPixelWidth * 3
-                           : control._statusBandExtra)
+                width:  leftPanelLayout.implicitWidth + control._statusBandExtra
                 height: parent.height
 
                 // Status color band (Ready / Comms Lost / Armed, etc.)
@@ -144,13 +141,14 @@ Item {
                         QGCLabel {
                             id:                 missionTaskLabel
                             Layout.fillHeight:  true
-                            leftPadding:        ScreenTools.defaultFontPixelWidth
-                            rightPadding:       ScreenTools.defaultFontPixelWidth
+                            Layout.preferredWidth: implicitWidth
+                            leftPadding:        ScreenTools.defaultFontPixelWidth * 1.4
+                            rightPadding:       ScreenTools.defaultFontPixelWidth * 1.4
                             verticalAlignment:  Text.AlignVCenter
                             text:               qsTr("Task in progress. %1 mode").arg(control._taskModeName(control._uploadedMissionEditor))
                             color:              "white"
-                            font.pointSize:     ScreenTools.defaultFontPointSize
-                            font.weight:        Font.Normal
+                            font.pointSize:     ScreenTools.mediumFontPointSize
+                            font.weight:        Font.Light
                             visible:            control._showTaskBanner
                         }
                     }
