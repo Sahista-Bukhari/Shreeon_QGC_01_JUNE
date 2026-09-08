@@ -56,7 +56,7 @@ Item {
                                                    || routeMappingBoundaryPath.length > 0
                                                    || routeMappingTransectPath.length > 0
 
-    property int _lastAppliedSprayerUploadGeneration: 0
+    property int _lastAppliedSprayerUploadGeneration: -1
 
     onVisibleChanged: {
         if (visible)
@@ -253,11 +253,10 @@ Item {
         }
     }
 
-    // Push the uploaded Agriculture/Seed sprayer plan metadata to the vehicle
-    // as soon as Fly View is shown — no manual sprayer icon click required.
+    // Push uploaded Agriculture Sprayer plan metadata to the vehicle as soon as
+    // Fly View is shown — no manual sprayer icon click required.
     function applyUploadedSprayerSettings() {
-        var editor = mainWindow.uploadedMissionEditor
-        if (editor !== "agricultureSpraying" && editor !== "seedSpreader")
+        if (mainWindow.uploadedMissionEditor !== "agricultureSpraying")
             return false
         if (!_planController.sprayerConfigured)
             return false
@@ -278,8 +277,7 @@ Item {
             return
 
         // Plan metadata confirmed via OK (or loaded from file) is the source of
-        // truth for saves. Vehicle SPRAY_EN may still be off until the operator
-        // applies settings from the sprayer panel.
+        // truth for saves. Uploaded Agriculture plans are auto-applied on entry.
         if (pc.sprayerConfigured)
             return
 
@@ -375,6 +373,7 @@ Item {
                     editorView._copySprayerSettingsToFlyViewPlanController()
                 }
             }
+            _root._tryApplyUploadedSprayerSettings()
             if (_planController.containsItems && !_planController.offline) {
                 if (_planController.readyForSaveState() === VisualMissionItem.ReadyForSave) {
                     _planController.upload()
@@ -1428,7 +1427,13 @@ Item {
             anchors.fill: parent
             cursorShape: addButton._missionRunning ? Qt.ForbiddenCursor : Qt.PointingHandCursor
             enabled: !addButton._missionRunning
-            onClicked: mainWindow.showActiveMissionEditor(addButton._hasPlan)
+            onClicked: {
+                if (addButton._hasPlan) {
+                    mainWindow.showFlyViewPlanEditor()
+                } else {
+                    mainWindow.showActiveMissionEditor(false /* forEdit */)
+                }
+            }
             onPressed: addButton.scale = 0.96
             onReleased: addButton.scale = 1.0
         }

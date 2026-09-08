@@ -1,13 +1,12 @@
 import QtQuick
 import QtQuick.Controls
 import QtQuick.Layouts
-
 import QGroundControl
 import QGroundControl.Controls
 
 Item {
     id: root
-    anchors.fill: parentm
+    anchors.fill: parent
     readonly property color _green:        "#1FAF5B"
     readonly property color _greenDeep:    "#148A45"
     readonly property color _red:          "#E53935"

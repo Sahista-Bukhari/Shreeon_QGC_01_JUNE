@@ -45,12 +45,6 @@ Item {
         return NaN
     }
     property real _displayFlowRate: _flowRate > 0.05 ? _flowRate : 0
-    readonly property bool _payloadHudVisible: {
-        var editor = mainWindow.uploadedMissionEditor
-        return editor === "agricultureSpraying"
-               || editor === "seedSpreader"
-               || (planMasterController && planMasterController.sprayerConfigured)
-    }
 
     Connections {
         target: (root._activeVehicle && root._activeVehicle.tank) ? root._activeVehicle.tank.flowRateLpm : null
@@ -1159,7 +1153,6 @@ Item {
                 // 4. FLOW RATE
                 Loader {
                     Layout.fillHeight: true
-                    visible: root._payloadHudVisible
                     sourceComponent: statItemComponent
 
                     onLoaded: {
@@ -1203,7 +1196,6 @@ Item {
                 Column {
                     Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 1.7
                     spacing: 2
-                    visible: root._payloadHudVisible
 
                     Text {
                         anchors.horizontalCenter: parent.horizontalCenter

@@ -37,84 +37,42 @@ Item {
     readonly property real _toolbarIconSize: Math.round(ScreenTools.defaultFontPixelWidth * 5)
     readonly property real _toolbarSpacing: ScreenTools.defaultFontPixelWidth * 1.75
 
-    readonly property bool _sprayerPlanSupported: _planMasterController
-                                                    && (_planMasterController.sprayerConfigured
-                                                        || _planMasterController.missionMode === "agricultureSpraying"
-                                                        || _planMasterController.missionMode === "seedSpreader"
-                                                        || _planMasterController.missionMode === "customMission"
-                                                        || mainWindow.uploadedMissionEditor === "agricultureSpraying"
-                                                        || mainWindow.uploadedMissionEditor === "seedSpreader"
-                                                        || mainWindow.uploadedMissionEditor === "customMission")
-    // The plan keeps its sprayer values even when firmware does not expose all
-    // SPRAY_* Facts, so the compact panel can still edit the saved settings.
-    readonly property bool _sprayerControlsEnabled: _sprayerPlanSupported
+    // Active only after an Agriculture Spraying plan has been uploaded to Fly View.
+    readonly property bool _sprayerControlsEnabled: _planMasterController
+                                                    && mainWindow.uploadedMissionEditor === "agricultureSpraying"
                                                     && (_hasPlanItems
-                                                        || (_planMasterController && _planMasterController.sprayerConfigured))
-    property int _pendingSprayerPopupGeneration: 0
-    property int _lastOpenedSprayerPopupGeneration: 0
-
-    function _tryOpenUploadedSprayerPlan() {
-        if (!root.flyViewRoot || !root.flyViewRoot.visible)
-            return
-
-        // Always apply saved sprayer settings when Fly View opens after upload.
-        if (root.flyViewRoot._tryApplyUploadedSprayerSettings)
-            root.flyViewRoot._tryApplyUploadedSprayerSettings()
-
-        if (_pendingSprayerPopupGeneration <= _lastOpenedSprayerPopupGeneration)
-            return
-        if (mainWindow.uploadedMissionEditor !== "agricultureSpraying"
-                && mainWindow.uploadedMissionEditor !== "seedSpreader") {
-            _pendingSprayerPopupGeneration = 0
-            return
-        }
-        if (!root.visible || !root._sprayerControlsEnabled)
-            return
-
-        var generation = _pendingSprayerPopupGeneration
-        if (sprayerPanel.openForUploadedPlan()) {
-            _lastOpenedSprayerPopupGeneration = generation
-            _pendingSprayerPopupGeneration = 0
-        }
-    }
-
-    onSprayEnableFactChanged: {
-        if (root.sprayEnableFact && root.flyViewRoot && root.flyViewRoot.visible)
-            autoOpenSprayerTimer.restart()
-    }
-
-    Timer {
-        id: autoOpenSprayerTimer
-        interval: 0
-        repeat: false
-        onTriggered: root._tryOpenUploadedSprayerPlan()
-    }
+                                                        || _planMasterController.sprayerConfigured)
 
     Connections {
         target: mainWindow
         function onMissionPlanUploadGenerationChanged() {
-            root._pendingSprayerPopupGeneration = mainWindow.missionPlanUploadGeneration
-            // markMissionPlanUploaded updates the editor immediately after the
-            // generation, so defer until both values describe the new upload.
-            autoOpenSprayerTimer.restart()
+            if (root.flyViewRoot && root.flyViewRoot._tryApplyUploadedSprayerSettings)
+                applyUploadedSprayerSettingsTimer.restart()
         }
     }
 
     Connections {
         target: root.flyViewRoot
         function onVisibleChanged() {
-            if (root.flyViewRoot.visible)
-                autoOpenSprayerTimer.restart()
+            if (root.flyViewRoot && root.flyViewRoot.visible)
+                applyUploadedSprayerSettingsTimer.restart()
         }
     }
 
     onVisibleChanged: {
         if (visible)
-            autoOpenSprayerTimer.restart()
+            applyUploadedSprayerSettingsTimer.restart()
     }
-    on_SprayerControlsEnabledChanged: {
-        if (_sprayerControlsEnabled)
-            autoOpenSprayerTimer.restart()
+
+    Timer {
+        id: applyUploadedSprayerSettingsTimer
+
+        interval: 0
+        repeat: false
+        onTriggered: {
+            if (root.flyViewRoot && root.flyViewRoot._tryApplyUploadedSprayerSettings)
+                root.flyViewRoot._tryApplyUploadedSprayerSettings()
+        }
     }
 
     // Map settings

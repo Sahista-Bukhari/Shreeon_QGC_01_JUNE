@@ -23,6 +23,27 @@ Rectangle {
 
     QGCPalette { id: qgcPal }
 
+    function _shouldReturnToModeSelection() {
+        if (typeof mainWindow === "undefined" || !mainWindow) {
+            return false
+        }
+
+        switch (mainWindow.activeMissionEditor) {
+        case "customMission":
+        case "routeMapping":
+        case "agricultureSpraying":
+        case "seedSpreader":
+            return true
+        default:
+            return false
+        }
+    }
+
+    function _returnToModeSelection(fromItem) {
+        var point = fromItem.mapToItem(mainWindow.contentItem, fromItem.width / 2, fromItem.height / 2)
+        mainWindow.showModeSelection(point)
+    }
+
     RowLayout {
         anchors.bottomMargin: 1
         anchors.leftMargin: ScreenTools.defaultFontPixelWidth
@@ -43,15 +64,6 @@ Rectangle {
                 fillMode: Image.PreserveAspectFit
                 mipmap: true
                 smooth: true
-            }
-
-            QGCMouseArea {
-                anchors.fill: parent
-                cursorShape: Qt.PointingHandCursor
-                onClicked: {
-                    var point = brandLogo.mapToItem(mainWindow.contentItem, brandLogo.width / 2, brandLogo.height / 2)
-                    mainWindow.showModeSelection(point)
-                }
             }
         }
 
@@ -87,8 +99,8 @@ Rectangle {
         Item {
             id: backButton
             Layout.alignment: Qt.AlignVCenter
-            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2.55
-            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.55
+            Layout.preferredWidth: ScreenTools.defaultFontPixelHeight * 2.0
+            Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.0
 
             Rectangle {
                 anchors.centerIn: parent
@@ -103,7 +115,7 @@ Rectangle {
 
                 QGCColoredImage {
                     anchors.centerIn: parent
-                    width: parent.width * 0.48
+                    width: parent.width * 0.42
                     height: width
                     source: "/res/chevron-double-left.svg"
                     color: "white"
@@ -115,7 +127,13 @@ Rectangle {
                 id: backMouse
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
-                onClicked: _root.exitPlanEditMode()
+                onClicked: {
+                    if (_root._shouldReturnToModeSelection()) {
+                        _root._returnToModeSelection(backButton)
+                    } else {
+                        _root.exitPlanEditMode()
+                    }
+                }
             }
         }
 

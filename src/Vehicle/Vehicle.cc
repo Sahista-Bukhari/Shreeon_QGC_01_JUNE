@@ -64,6 +64,9 @@
 
 QGC_LOGGING_CATEGORY(VehicleLog, "Vehicle.Vehicle")
 
+const MAV_AUTOPILOT Vehicle::MAV_AUTOPILOT_TRACK = static_cast<MAV_AUTOPILOT>(-1);
+const MAV_TYPE Vehicle::MAV_TYPE_TRACK = static_cast<MAV_TYPE>(-1);
+
 #define UPDATE_TIMER 50
 #define DEFAULT_LAT  38.965767f
 #define DEFAULT_LON -120.083923f

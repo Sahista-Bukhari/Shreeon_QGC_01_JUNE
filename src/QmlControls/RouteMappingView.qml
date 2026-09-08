@@ -2828,22 +2828,6 @@ Item {
                     height: width
                     fillMode: Image.PreserveAspectFit
                 }
-
-                RippleEffect {
-                    id: logoRipple
-                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
-                    clipRadius: ScreenTools.defaultFontPixelWidth * 0.5
-                }
-
-                QGCMouseArea {
-                    anchors.fill: parent
-                    cursorShape: Qt.PointingHandCursor
-                    onClicked: function(mouse) {
-                        logoRipple.tap(mouse.x, mouse.y)
-                        var point = shreeonLogoButton.mapToItem(mainWindow.contentItem, shreeonLogoButton.width / 2, shreeonLogoButton.height / 2)
-                        mainWindow.showModeSelection(point)
-                    }
-                }
             }
 
             Item {
@@ -2943,6 +2927,50 @@ Item {
                     onClicked: function(mouse) {
                         clearRipple.tap(mouse.x, mouse.y)
                         _root.clearRouteMappingPlan()
+                    }
+                }
+            }
+
+            Item {
+                width: ScreenTools.defaultFontPixelWidth * 0.5
+                height: 1
+            }
+
+            Item {
+                id: toolbarBackButton
+                width: ScreenTools.defaultFontPixelHeight * 2.0
+                height: width
+
+                Rectangle {
+                    anchors.centerIn: parent
+                    width: parent.width
+                    height: width
+                    radius: width / 2
+                    color: toolbarBackMouse.pressed
+                           ? Qt.rgba(0.18, 0.18, 0.18, 0.72)
+                           : Qt.rgba(0.12, 0.12, 0.14, 0.55)
+                    border.width: 1
+                    border.color: Qt.rgba(1, 1, 1, 0.28)
+
+                    QGCColoredImage {
+                        anchors.centerIn: parent
+                        width: parent.width * 0.42
+                        height: width
+                        source: "/res/chevron-double-left.svg"
+                        color: "white"
+                        fillMode: Image.PreserveAspectFit
+                    }
+                }
+
+                MouseArea {
+                    id: toolbarBackMouse
+                    anchors.fill: parent
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: {
+                        var point = toolbarBackButton.mapToItem(mainWindow.contentItem,
+                                                                toolbarBackButton.width / 2,
+                                                                toolbarBackButton.height / 2)
+                        mainWindow.showModeSelection(point)
                     }
                 }
             }

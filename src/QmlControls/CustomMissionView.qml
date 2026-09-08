@@ -29,6 +29,8 @@ Item {
     property var    _geoFenceController: _planMasterController.geoFenceController
     property var    _rallyPointController: _planMasterController.rallyPointController
     property var    _visualItems: _missionController.visualItems
+    readonly property var _currentPlanViewItem: _missionController.currentPlanViewItem
+    property var    _activeSurveyPolygon: null
     property bool   _lightWidgetBorders: editorMap.isSatelliteMap
     property bool   _singleComplexItem: _missionController.complexMissionItemNames.length === 1
     property int    _editingLayer: _layerMission
@@ -43,6 +45,10 @@ Item {
     property bool   _addWaypointOnClick: false
     property bool   _addROIOnClick: false
     property bool   _planUploadPending: false
+    property bool   _planUploadStarted: false
+    property var    _pendingSurveyOverlayData: null
+    property var    _uploadedSurveyOverlayData: null
+    property string _galleryPlanFile: ""
 
     readonly property int _layerMission: 1
     readonly property int _layerFence: 2
@@ -66,6 +72,43 @@ Item {
         return coordinate
     }
 
+    function _normalizedPlanFilePath(filePath) {
+        if (!filePath || filePath === "") {
+            return ""
+        }
+
+        var fileName = filePath.substring(filePath.lastIndexOf("/") + 1)
+        return fileName.indexOf(".") === -1 ? filePath + ".plan" : filePath
+    }
+
+    function _loadPersistedPlanFromFile(filePath) {
+        if (!filePath || filePath === ""
+                || !QGCFileDialogController.fileExists(filePath)) {
+            return false
+        }
+
+        _planMasterController.loadFromFile(filePath)
+        if (!_planMasterController.containsItems) {
+            return false
+        }
+
+        _galleryPlanFile = _normalizedPlanFilePath(filePath)
+        _missionController.setCurrentPlanViewSeqNum(0, true)
+        _planMasterController.fitViewportToItems()
+        _uploadedSurveyOverlayData = _customMissionSurveyOverlayData()
+        return true
+    }
+
+    // isSurveyItem is constant for each mission-item type but is not a
+    // bindable Q_PROPERTY. Update the polygon explicitly when selection changes
+    // instead of reading it from a live QML binding.
+    function _updateActiveSurveyPolygon() {
+        var currentItem = _missionController.currentPlanViewItem
+        _activeSurveyPolygon = currentItem && currentItem.isSurveyItem
+                               ? currentItem.surveyAreaPolygon
+                               : null
+    }
+
     property bool _firstMissionLoadComplete: false
     property bool _firstFenceLoadComplete: false
     property bool _firstRallyLoadComplete: false
@@ -86,6 +129,7 @@ Item {
         Component.onCompleted: {
             _planMasterController.start()
             _missionController.setCurrentPlanViewSeqNum(0, true)
+            _root._updateActiveSurveyPolygon()
         }
 
         onPromptForPlanUsageOnVehicleChange: {
@@ -94,11 +138,11 @@ Item {
                 promptForPlanUsageOnVehicleChangePopupComponent.createObject(mainWindow).open()
             }
         }
-
         onSyncInProgressChanged: {
-            if (!_planMasterController.syncInProgress && _root._planUploadPending) {
-                _root._planUploadPending = false
-                _root._onPlanUploadComplete()
+            if (_root._planUploadPending && _planMasterController.syncInProgress) {
+                _root._planUploadStarted = true
+            } else if (_root._planUploadPending && _root._planUploadStarted) {
+                Qt.callLater(_root._finishCustomMissionUpload)
             }
         }
 
@@ -123,24 +167,62 @@ Item {
             return true
         }
 
+        function _beginPlanUpload() {
+            if (offline || syncInProgress) {
+                return false
+            }
+
+            // Preserve the complex survey geometry before MAVLink converts it
+            // into the flat waypoint list stored by the vehicle.
+            _root._pendingSurveyOverlayData = _root._customMissionSurveyOverlayData()
+            _root._planUploadPending = true
+            _root._planUploadStarted = false
+            sendToVehicle()
+
+            // Detect cases where uploading could not enter the normal mission
+            // transfer pipeline.
+            Qt.callLater(function() {
+                if (_root._planUploadPending && !_root._planUploadStarted) {
+                    _root._planUploadPending = false
+                    _root._pendingSurveyOverlayData = null
+                    mainWindow.showMessageDialog(
+                                qsTr("Upload"),
+                                qsTr("Mission upload to the vehicle could not be started."))
+                }
+            })
+
+            return true
+        }
+
         function upload() {
             if (!checkReadyForSaveUpload(false /* save */)) {
-                return
+                return false
             }
+
             switch (_missionController.sendToVehiclePreCheck()) {
-                case MissionController.SendToVehiclePreCheckStateOk: sendToVehicle()
-                    break
-                case MissionController.SendToVehiclePreCheckStateActiveMission: mainWindow.showMessageDialog(qsTr("Send To Vehicle"), qsTr("Current mission must be paused prior to uploading a new Plan"))
-                    break
-                case MissionController.SendToVehiclePreCheckStateFirwmareVehicleMismatch: mainWindow.showMessageDialog(qsTr("Plan Upload"),
-                                                 qsTr("This Plan was created for a different firmware or vehicle type than the firmware/vehicle type of vehicle you are uploading to. " +
-                                                      "This can lead to errors or incorrect behavior. " +
-                                                      "It is recommended to recreate the Plan for the correct firmware/vehicle type.\n\n" +
-                                                      "Click 'Ok' to upload the Plan anyway."),
-                                                 Dialog.Ok | Dialog.Cancel,
-                                                 function() { _planMasterController.sendToVehicle() })
-                    break
+            case MissionController.SendToVehiclePreCheckStateOk:
+                return _beginPlanUpload()
+
+            case MissionController.SendToVehiclePreCheckStateActiveMission:
+                mainWindow.showMessageDialog(
+                            qsTr("Send To Vehicle"),
+                            qsTr("Current mission must be paused before uploading a new plan."))
+                return false
+
+            case MissionController.SendToVehiclePreCheckStateFirwmareVehicleMismatch:
+                mainWindow.showMessageDialog(
+                            qsTr("Plan Upload"),
+                            qsTr("This plan was created for a different firmware or vehicle type. "
+                                 + "Uploading it may cause incorrect behavior.\n\n"
+                                 + "Click OK to upload the plan anyway."),
+                            Dialog.Ok | Dialog.Cancel,
+                            function() {
+                                _planMasterController._beginPlanUpload()
+                            })
+                return false
             }
+
+            return false
         }
 
         function loadFromSelectedFile() {
@@ -178,6 +260,10 @@ Item {
     Connections {
         target: _missionController
 
+        function onCurrentPlanViewItemChanged() {
+            _root._updateActiveSurveyPolygon()
+        }
+
         function onNewItemsFromVehicle() {
             if (_visualItems && _visualItems.count !== 1) {
                 mapFitFunctions.fitMapViewportToMissionItems()
@@ -186,37 +272,7 @@ Item {
         }
     }
 
-    function ensureTakeoffForWaypoint(coordinate) {
-        if (!_missionController.onlyInsertTakeoffValid) {
-            return true
-        }
-
-        if (!_missionController.isInsertTakeoffValid) {
-            return false
-        }
-
-        var nextIndex = _missionController.currentPlanViewVIIndex + 1
-        var takeoffItem = _missionController.insertTakeoffItem(coordinate, nextIndex, true /* makeCurrentItem */)
-        if (!takeoffItem) {
-            return false
-        }
-
-        // Keep the automatically-created takeoff at the first waypoint, matching
-        // the other custom mission pages.
-        if (takeoffItem.specifiesCoordinate) {
-            takeoffItem.coordinate = coordinate
-        }
-        takeoffItem.launchCoordinate = coordinate
-        takeoffItem.launchTakeoffAtSameLocation = true
-        _triggerSubmit = true
-        return true
-    }
-
     function insertSimpleItemAfterCurrent(coordinate) {
-        if (!ensureTakeoffForWaypoint(coordinate)) {
-            return
-        }
-
         var nextIndex = _missionController.currentPlanViewVIIndex + 1
         _missionController.insertSimpleMissionItem(coordinate, nextIndex, true /* makeCurrentItem */)
     }
@@ -246,49 +302,216 @@ Item {
         _missionController.insertLandItem(mapCenter(), nextIndex, true /* makeCurrentItem */)
     }
 
-    function _mergeFlyViewSprayerIntoPlan() {
-        var flyPlanController = flyView.planController
-        if (!flyPlanController || !flyPlanController.sprayerConfigured) {
-            return
+    // Captures the first Survey item in a Custom Mission. The vehicle receives
+    // simple MAVLink waypoints, so Fly View cannot reconstruct this polygon and
+    // transect geometry after upload unless the editor preserves it here.
+    function _customMissionSurveyOverlayData() {
+        var surveyItem = null
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var visualItem = _missionController.visualItems.get(i)
+            if (visualItem && visualItem.isSurveyItem
+                    && visualItem.surveyAreaPolygon) {
+                surveyItem = visualItem
+                break
+            }
         }
 
-        _planMasterController.setSprayerSettings(
-                    flyPlanController.sprayerEnabled,
-                    flyPlanController.sprayerNozzleRate,
-                    flyPlanController.sprayerPumpRate)
+        if (!surveyItem || !surveyItem.surveyAreaPolygon) {
+            return null
+        }
+
+        function copyCoordinate(coordinate) {
+            if (!coordinate || !coordinate.isValid) {
+                return QtPositioning.coordinate()
+            }
+            return QtPositioning.coordinate(coordinate.latitude,
+                                            coordinate.longitude,
+                                            coordinate.altitude)
+        }
+
+        var boundaryPath = []
+        var polygonPath = surveyItem.surveyAreaPolygon.path
+        for (var boundaryIndex = 0; boundaryIndex < polygonPath.length; boundaryIndex++) {
+            boundaryPath.push(copyCoordinate(polygonPath[boundaryIndex]))
+        }
+        if (boundaryPath.length >= 3) {
+            boundaryPath.push(copyCoordinate(boundaryPath[0]))
+        }
+
+        var transectPath = []
+        var visualTransectPoints = surveyItem.visualTransectPoints
+        for (var transectIndex = 0;
+             transectIndex < visualTransectPoints.length;
+             transectIndex++) {
+            transectPath.push(copyCoordinate(visualTransectPoints[transectIndex]))
+        }
+
+        if (boundaryPath.length < 4 || transectPath.length < 2) {
+            return null
+        }
+
+        var takeoffCoordinate = QtPositioning.coordinate()
+        for (var itemIndex = 0; itemIndex < _missionController.visualItems.count; itemIndex++) {
+            var missionItem = _missionController.visualItems.get(itemIndex)
+            if (missionItem && missionItem.isTakeoffItem
+                    && missionItem.coordinate && missionItem.coordinate.isValid) {
+                takeoffCoordinate = copyCoordinate(missionItem.coordinate)
+                break
+            }
+        }
+
+        var entryCoordinate = copyCoordinate(surveyItem.coordinate)
+        var exitCoordinate = copyCoordinate(surveyItem.exitCoordinate)
+        var entryHeading = transectPath[0].azimuthTo(transectPath[1])
+        var exitHeading = transectPath[transectPath.length - 2].azimuthTo(
+                    transectPath[transectPath.length - 1])
+
+        return {
+            boundaryPath: boundaryPath,
+            transectPath: transectPath,
+            takeoffCoordinate: takeoffCoordinate,
+            entryCoordinate: entryCoordinate,
+            exitCoordinate: exitCoordinate,
+            entryHeading: entryHeading,
+            exitHeading: exitHeading
+        }
     }
 
-    function _copySprayerSettingsToFlyViewPlanController() {
-        var flyPlanController = flyView.planController
-        if (!flyPlanController) {
-            return
+    function _showCustomMissionSurveyOnFlyView(overlayData, replaceExisting) {
+        if (!overlayData || !overlayData.transectPath
+                || overlayData.transectPath.length < 2) {
+            return false
         }
 
-        if (!_planMasterController.sprayerConfigured) {
-            flyPlanController.clearSprayerSettings()
-            return
+        if (flyView._routeMappingOverlayLocked) {
+            if (!replaceExisting) {
+                return true
+            }
+
+            var activeVehicle = QGroundControl.multiVehicleManager.activeVehicle
+            if (activeVehicle && (activeVehicle.flying || activeVehicle.armed)) {
+                return false
+            }
         }
 
-        flyPlanController.setSprayerSettings(
-                    _planMasterController.sprayerEnabled,
-                    _planMasterController.sprayerNozzleRate,
-                    _planMasterController.sprayerPumpRate)
+        flyView.clearRouteMappingOverlay(true)
+        flyView.planEditMode = false
+        flyView._editingLayer = flyView._layerMission
+        flyView.routeMappingBoundaryPath = overlayData.boundaryPath
+        flyView.routeMappingTransectPath = overlayData.transectPath
+        flyView.routeMappingPhotoCaptureTransectPoints = []
+        flyView.routeMappingTakeoffCoordinate = overlayData.takeoffCoordinate
+        flyView.routeMappingEntryCoordinate = overlayData.entryCoordinate
+        flyView.routeMappingExitCoordinate = overlayData.exitCoordinate
+        flyView.routeMappingEntryHeading = overlayData.entryHeading
+        flyView.routeMappingExitHeading = overlayData.exitHeading
+        flyView.routeMappingPlannedPhotoCount = 0
+        flyView._routeMappingOverlayLocked = true
+
+        if (flyView.mapControl) {
+            flyView.mapControl._updateRouteMappingCoverage()
+        }
+        return true
     }
 
-    function _onPlanUploadComplete() {
-        var flyPlanController = flyView.planController
-        if (!flyPlanController || flyPlanController.offline) {
+    // This name is also used by Fly View's saved-plan restoration hook.
+    function _restoreUploadedRouteMappingOverlay() {
+        var overlayData = _uploadedSurveyOverlayData
+        if (!overlayData) {
+            overlayData = _customMissionSurveyOverlayData()
+            _uploadedSurveyOverlayData = overlayData
+        }
+        return _showCustomMissionSurveyOnFlyView(overlayData, false)
+    }
+
+    // Select and unlock the first real mission item when entering from Fly
+    // View. Sequence 0 is Mission Settings and does not expose Survey editing.
+    function _selectFirstEditablePlanItem() {
+        var firstEditableItem = null
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var visualItem = _missionController.visualItems.get(i)
+            if (!visualItem || visualItem.sequenceNumber === 0) {
+                continue
+            }
+
+            if (!firstEditableItem) {
+                firstEditableItem = visualItem
+            }
+
+            if (visualItem.isSurveyItem && visualItem.surveyAreaPolygon) {
+                visualItem.surveyAreaPolygon.traceMode = false
+                visualItem.surveyAreaPolygon.interactive = true
+                firstEditableItem = visualItem
+                break
+            }
+        }
+
+        if (firstEditableItem) {
+            _missionController.setCurrentPlanViewSeqNum(
+                        firstEditableItem.sequenceNumber, true)
+        } else {
+            _missionController.setCurrentPlanViewSeqNum(0, true)
+        }
+        _updateActiveSurveyPolygon()
+    }
+
+    function _finishCustomMissionUpload() {
+        if (!_planUploadPending || _planMasterController.syncInProgress) {
             return
         }
 
-        flyPlanController.showPlanFromManagerVehicle()
-        _copySprayerSettingsToFlyViewPlanController()
+        _planUploadPending = false
+        _planUploadStarted = false
+
+        if (_missionController.lastSendToVehicleError === true) {
+            _pendingSurveyOverlayData = null
+            mainWindow.showMessageDialog(
+                        qsTr("Upload"),
+                        qsTr("Mission upload to the vehicle failed."))
+            return
+        }
+
+        _uploadedSurveyOverlayData = _pendingSurveyOverlayData
+        _pendingSurveyOverlayData = null
+        flyView.hideVehicleMissionForUnuploadedRoute = false
+
+        var flyPlanController = flyView.planController
+        if (flyPlanController && !flyPlanController.offline) {
+            flyPlanController.showPlanFromManagerVehicle()
+            flyPlanController.missionController.setCurrentPlanViewSeqNum(0, true)
+        }
+
+        if (_uploadedSurveyOverlayData) {
+            _showCustomMissionSurveyOnFlyView(
+                        _uploadedSurveyOverlayData, true /* replaceExisting */)
+        } else {
+            flyView.clearRouteMappingOverlay(true)
+        }
+
+        mainWindow.markMissionPlanUploaded("customMission")
+    }
+
+    function exitCustomMissionPage() {
+        if (_planUploadPending || _planMasterController.syncInProgress) {
+            return
+        }
+
+        var flyPlanController = flyView.planController
+        if (flyPlanController && !flyPlanController.offline) {
+            flyPlanController.showPlanFromManagerVehicle()
+            flyPlanController.missionController.setCurrentPlanViewSeqNum(0, true)
+        }
+
+        _restoreUploadedRouteMappingOverlay()
+
+        mainWindow.showFlyView()
     }
 
     // Re-opens the active Fly View plan inside Custom Mission when returning from Fly View.
     function resumePlanForEdit() {
         if (_planMasterController.containsItems) {
-            _missionController.setCurrentPlanViewSeqNum(0, true)
+            _selectFirstEditablePlanItem()
+            _planMasterController.fitViewportToItems()
             return
         }
 
@@ -297,15 +520,26 @@ Item {
             return
         }
 
-        if (!flyPlanController.offline) {
-            _planMasterController.showPlanFromManagerVehicle()
-            _mergeFlyViewSprayerIntoPlan()
-        } else if (flyPlanController.currentPlanFile && flyPlanController.currentPlanFile !== "") {
+        // Prefer the saved Custom Mission source because it retains Survey
+        // polygons and settings. The vehicle copy contains flattened waypoints.
+        var executionPlanFile = mainWindow.lastExecutedPlanFilePath()
+        if (mainWindow.uploadedMissionEditor === "customMission"
+                && executionPlanFile !== ""
+                && QGCFileDialogController.fileExists(executionPlanFile)) {
+            _planMasterController.loadFromFile(executionPlanFile)
+            _planMasterController.fitViewportToItems()
+            _uploadedSurveyOverlayData = _customMissionSurveyOverlayData()
+        } else if (flyPlanController.currentPlanFile
+                   && flyPlanController.currentPlanFile !== ""
+                   && QGCFileDialogController.fileExists(
+                       flyPlanController.currentPlanFile)) {
             _planMasterController.loadFromFile(flyPlanController.currentPlanFile)
             _planMasterController.fitViewportToItems()
+        } else if (!flyPlanController.offline) {
+            _planMasterController.showPlanFromManagerVehicle()
         }
 
-        _missionController.setCurrentPlanViewSeqNum(0, true)
+        _selectFirstEditablePlanItem()
     }
 
     QGCFileDialog {
@@ -316,8 +550,8 @@ Item {
 
         onAcceptedForSave: (file) => {
             if (planFiles) {
-                _mergeFlyViewSprayerIntoPlan()
                 _planMasterController.saveToFile(file)
+                _galleryPlanFile = _normalizedPlanFilePath(file)
             } else {
                 _planMasterController.saveToKml(file)
             }
@@ -326,6 +560,7 @@ Item {
 
         onAcceptedForLoad: (file) => {
             _planMasterController.loadFromFile(file)
+            _galleryPlanFile = _normalizedPlanFilePath(file)
             _planMasterController.fitViewportToItems()
             _missionController.setCurrentPlanViewSeqNum(0, true)
             close()
@@ -594,6 +829,26 @@ Item {
             }
         }
 
+        // Survey trace mode uses the map center target. This restores the
+        // missing stock control which appends that position to the polygon.
+        QGCButton {
+            id: surveyTraceAddPointButton
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight * 3
+            width: ScreenTools.defaultFontPixelHeight * 6
+            height: ScreenTools.defaultFontPixelHeight * 3
+            z: QGroundControl.zOrderWidgets + 10
+            text: qsTr("+ Add Point")
+            visible: _activeSurveyPolygon && _activeSurveyPolygon.traceMode
+
+            onClicked: {
+                if (_activeSurveyPolygon) {
+                    _activeSurveyPolygon.appendVertex(mapCenter())
+                }
+            }
+        }
+
         //-----------------------------------------------------------
         // Left tool strip — Custom Mission grid:
         // Row 1: Takeoff | Row 2: Pattern + Waypoint | Row 3: ROI + Return
@@ -773,8 +1028,6 @@ Item {
                 text: qsTr("Waypoint")
                 iconSource: "/qmlimages/MapAddMission.svg"
                 enabled: _missionController.flyThroughCommandsAllowed
-                         || (_missionController.onlyInsertTakeoffValid
-                             && _missionController.isInsertTakeoffValid)
                 visible: toolStrip._isMissionLayer
                 checkable: true
                 onTriggered: {
@@ -937,6 +1190,17 @@ Item {
                     dropPanel: dropPanel
                     buttonIndex: 14
                 }
+
+                ToolStripHoverButton {
+                    width: planActionStrip._cellSize
+                    height: width
+                    radius: ScreenTools.defaultFontPixelWidth / 2
+                    fontPointSize: ScreenTools.smallFontPointSize
+                    toolStripAction: exitPlanAction
+                    glassBackgroundSource: editorMap
+                    dropPanel: dropPanel
+                    buttonIndex: 15
+                }
             }
 
             ToolStripAction {
@@ -958,15 +1222,14 @@ Item {
 
             ToolStripAction {
                 id: savePlanAction
-                text: _planMasterController.currentPlanFile === "" ? qsTr("Save As") : qsTr("Save")
+                text: _galleryPlanFile === "" ? qsTr("Save As") : qsTr("Save")
                 iconSource: "/res/modern-icons/MaterialSymbolsSave.svg"
                 enabled: !planActionStrip._syncInProgress && planActionStrip._hasPlanItems
                 onTriggered: {
-                    if (_planMasterController.currentPlanFile !== "") {
-                        _mergeFlyViewSprayerIntoPlan()
-                        _planMasterController.saveToCurrent()
+                    if (_galleryPlanFile !== "") {
+                        _planMasterController.saveToFile(_galleryPlanFile)
                         mainWindow.showMessageDialog(qsTr("Save"),
-                                                     qsTr("Plan saved to `%1`").arg(_planMasterController.currentPlanFile),
+                                                     qsTr("Plan saved to `%1`").arg(_galleryPlanFile),
                                                      Dialog.Ok)
                     } else {
                         _planMasterController.saveToSelectedFile()
@@ -983,18 +1246,13 @@ Item {
                          : (!planActionStrip._syncInProgress && planActionStrip._hasPlanItems)
                 visible: !planActionStrip._syncInProgress
                 onTriggered: {
-                    mainWindow.confirmUploadToFlyView(mainWindow.activeMissionEditor, function() {
+                    mainWindow.confirmUploadToFlyView("customMission", function() {
                         if (planActionStrip._utmspEnabled) {
                             QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(true)
                             UTMSPStateStorage.removeFlightPlanState = true
                             UTMSPStateStorage.indicatorDisplayStatus = true
                         }
-                        _planUploadPending = true
-                        if (_planMasterController.upload()) {
-                            mainWindow.markMissionPlanUploaded(mainWindow.activeMissionEditor)
-                        } else {
-                            _planUploadPending = false
-                        }
+                        _planMasterController.upload()
                     })
                 }
             }
@@ -1004,7 +1262,33 @@ Item {
                 text: qsTr("Clear")
                 iconSource: "/res/modern-icons/MaterialSymbolsDeleteRounded.svg"
                 enabled: !planActionStrip._syncInProgress
-                onTriggered: mainWindow.confirmClearRouteMappingPlan()
+                onTriggered: {
+                    if (_planMasterController.offline) {
+                        mainWindow.showMessageDialog(qsTr("Clear"),
+                                                     qsTr("Are you sure you want to remove all the items from the plan editor?"),
+                                                     Dialog.Yes | Dialog.Cancel,
+                                                     function() { _planMasterController.removeAll() })
+                    } else {
+                        mainWindow.showMessageDialog(qsTr("Clear"),
+                                                     qsTr("Are you sure you want to remove the plan from the vehicle and the plan editor?"),
+                                                     Dialog.Yes | Dialog.Cancel,
+                                                     function() {
+                                                         _planMasterController.removeAllFromVehicle()
+                                                         if (planActionStrip._utmspEnabled) {
+                                                             _resetRegisterFlightPlan = true
+                                                             QGroundControl.utmspManager.utmspVehicle.triggerActivationStatusBar(false)
+                                                             UTMSPStateStorage.startTimeStamp = ""
+                                                             UTMSPStateStorage.showActivationTab = false
+                                                             UTMSPStateStorage.flightID = ""
+                                                             UTMSPStateStorage.enableMissionUploadButton = false
+                                                             UTMSPStateStorage.indicatorPendingStatus = true
+                                                             UTMSPStateStorage.indicatorApprovedStatus = false
+                                                             UTMSPStateStorage.indicatorActivatedStatus = false
+                                                             UTMSPStateStorage.currentStateIndex = 0
+                                                         }
+                                                     })
+                    }
+                }
             }
 
             // Opens under the Menu button (not via takeoff-strip side panel)
@@ -1020,6 +1304,17 @@ Item {
                     })
                     panel.open()
                 }
+            }
+
+            ToolStripAction {
+                id: exitPlanAction
+                text: qsTr("Exit")
+                iconSource: "/res/modern-icons/MaterialSymbolsExitToAppRounded.svg"
+                enabled: mainWindow.uploadedMissionEditor === "customMission"
+                         && !_root._planUploadPending
+                         && !planActionStrip._syncInProgress
+                         && !_planMasterController.dirty
+                onTriggered: _root.exitCustomMissionPage()
             }
 
             Component {

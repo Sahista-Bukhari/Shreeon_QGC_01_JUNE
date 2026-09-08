@@ -501,7 +501,16 @@ ApplicationWindow {
     }
 
     function showActiveMissionEditor(forEdit) {
-        switch (activeMissionEditor) {
+        // Fly View's Edit button must follow the owner of the displayed plan.
+        // activeMissionEditor can point at a page visited after the upload, while
+        // uploadedMissionEditor remains the authoritative plan owner.
+        var editorType = activeMissionEditor
+        if (forEdit === true && uploadedMissionEditor !== "") {
+            editorType = uploadedMissionEditor
+            setActiveMissionEditor(editorType)
+        }
+
+        switch (editorType) {
         case "agricultureSpraying":
             showAgricultureSprayingMissionView(forEdit)
             break
@@ -520,6 +529,27 @@ ApplicationWindow {
             showRouteMappingView(forEdit)
             break
         }
+    }
+
+    // Opens the editor which owns the plan currently displayed on Fly View.
+    // Restore persisted ownership first, then fall back to plan metadata for a
+    // plan loaded directly from a file.
+    function showFlyViewPlanEditor() {
+        if (uploadedMissionEditor === "") {
+            loadLastExecutedMissionMetadata()
+        }
+
+        var editorType = uploadedMissionEditor
+        if (editorType === "" && flyView.planController
+                && flyView.planController.missionMode !== "") {
+            editorType = flyView.planController.missionMode
+        }
+        if (editorType === "") {
+            editorType = activeMissionEditor
+        }
+
+        setActiveMissionEditor(editorType)
+        showActiveMissionEditor(true /* forEdit */)
     }
 
 

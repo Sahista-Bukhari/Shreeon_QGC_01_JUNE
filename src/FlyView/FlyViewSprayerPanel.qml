@@ -12,7 +12,6 @@ import QGroundControl.FactControls
 // Compact Fly View entry point for the three agriculture sprayer parameters.
 Item {
     id: root
-
     property var sprayEnableFact: null
     property var sprayNozzleRateFact: null
     property var sprayPumpRateFact: null
@@ -31,18 +30,13 @@ Item {
     property bool _draftEnabled: false
     property real _draftNozzleRate: NaN
     property real _draftPumpRate: NaN
-    readonly property string _settingsTooltip: {
-        if (controlsEnabled)
-            return qsTr("Sprayer settings")
-        if (mainWindow.uploadedMissionEditor === "seedSpreader")
-            return qsTr("Load a Seed Spreader plan to use these settings")
-        if (mainWindow.uploadedMissionEditor === "agricultureSpraying")
-            return qsTr("Load an Agriculture Spraying plan to use these settings")
-        return qsTr("Load a supported spraying plan to use these settings")
-    }
+    readonly property string _settingsTooltip: controlsEnabled
+                                               ? qsTr("Sprayer settings")
+                                               : qsTr("Upload an Agriculture Spraying plan to use these settings")
 
     opacity: controlsEnabled ? 1.0 : 0.35
-    Behavior on opacity { NumberAnimation { duration: 150 } }
+    Behavior on opacity { NumberAnimation {
+            duration: 150 } }
 
     implicitWidth: _iconSize
     implicitHeight: _iconSize
@@ -100,7 +94,6 @@ Item {
         _draftNozzleRate = isFinite(nozzleRate) ? nozzleRate : _factMinimum(sprayNozzleRateFact)
         _draftPumpRate = isFinite(pumpRate) ? pumpRate : _factMinimum(sprayPumpRateFact)
     }
-
     function _confirmSprayerSettings() {
         var nozzleRate = isFinite(_draftNozzleRate) ? _draftNozzleRate : NaN
         var pumpRate = isFinite(_draftPumpRate) ? _draftPumpRate : NaN
@@ -124,7 +117,6 @@ Item {
         }
 
         _loadSprayerDraft()
-
         var overlay = Overlay.overlay
         var bottomPoint = root.mapToItem(overlay, root.width / 2, root.height)
         var margin = ScreenTools.defaultFontPixelWidth
@@ -139,44 +131,17 @@ Item {
         sprayerPopup.open()
     }
 
-    // Called after an Agriculture/Seed upload. Applies settings immediately and
-    // optionally opens the compact confirmation panel.
-    function applyUploadedPlanSettings() {
-        if (!controlsEnabled || !planMasterController || !planMasterController.sprayerConfigured)
-            return false
-
-        _loadSprayerDraft()
-
-        var enabled = planMasterController.sprayerEnabled
-        var nozzleRate = isFinite(_draftNozzleRate) ? _draftNozzleRate : NaN
-        var pumpRate = isFinite(_draftPumpRate) ? _draftPumpRate : NaN
-        _draftEnabled = enabled
-        sprayerSettingsConfirmed(enabled, nozzleRate, pumpRate)
-        return true
-    }
-
-    function openForUploadedPlan() {
-        if (!applyUploadedPlanSettings())
-            return false
-
-        if (!sprayerPopup.opened)
-            _openControlPanel()
-
-        return true
-    }
-
     onControlsEnabledChanged: {
         if (!controlsEnabled)
-            sprayerPopup.close()
+        sprayerPopup.close()
     }
     onVisibleChanged: {
         if (!visible)
-            sprayerPopup.close()
+        sprayerPopup.close()
     }
 
     Rectangle {
         id: iconButton
-
         anchors.fill: parent
         radius: width / 2
         color: iconMouseArea.pressed ? Qt.rgba(0, 0, 0, 0.20) : "transparent"
@@ -185,7 +150,7 @@ Item {
         Behavior on color { ColorAnimation { duration: 120 } }
 
         scale: !root.controlsEnabled ? 1
-               : (iconMouseArea.pressed ? 0.97 : (iconMouseArea.containsMouse ? 1.03 : 1))
+                                     : (iconMouseArea.pressed ? 0.97 : (iconMouseArea.containsMouse ? 1.03 : 1))
         Behavior on scale {
             NumberAnimation { duration: 150; easing.type: Easing.OutQuad }
         }
@@ -225,7 +190,6 @@ Item {
 
         MouseArea {
             id: iconMouseArea
-
             anchors.fill: parent
             hoverEnabled: root.controlsEnabled
             enabled: root.controlsEnabled
@@ -403,9 +367,9 @@ Item {
         readonly property real maximumValue: root._factMaximum(fact)
         readonly property real displayValue: {
             if (isFinite(pendingValue))
-                return pendingValue
+            return pendingValue
             if (isFinite(draftValue))
-                return draftValue
+            return draftValue
             return minimumValue
         }
 

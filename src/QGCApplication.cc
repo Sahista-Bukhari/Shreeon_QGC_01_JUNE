@@ -48,27 +48,27 @@ QGC_LOGGING_CATEGORY(QGCApplicationLog, "API.QGCApplication")
 
 QGCApplication::QGCApplication(int &argc, char *argv[], const QGCCommandLineParser::CommandLineParseResult &cli)
     : QApplication(argc, argv)
-    , _runningUnitTests(cli.runningUnitTests)
-    , _simpleBootTest(cli.simpleBootTest)
-    , _fakeMobile(cli.fakeMobile)
-    , _logOutput(cli.logOutput)
-    , _systemId(cli.systemId.value_or(0))
+      , _runningUnitTests(cli.runningUnitTests)
+      , _simpleBootTest(cli.simpleBootTest)
+      , _fakeMobile(cli.fakeMobile)
+      , _logOutput(cli.logOutput)
+      , _systemId(cli.systemId.value_or(0))
 {
     _msecsElapsedTime.start();
 
-    // Setup for network proxy support
+            // Setup for network proxy support
     QNetworkProxyFactory::setUseSystemConfiguration(true);
 
     bool fClearSettingsOptions = cli.clearSettingsOptions;  // Clear stored settings
     const bool fClearCache = cli.clearCache;                // Clear parameter/airframe caches
     const QString loggingOptions = cli.loggingOptions.value_or(QString(""));
 
-    // Set up timer for delayed missing fact display
+            // Set up timer for delayed missing fact display
     _missingParamsDelayedDisplayTimer.setSingleShot(true);
     _missingParamsDelayedDisplayTimer.setInterval(_missingParamsDelayedDisplayTimerTimeout);
     (void) connect(&_missingParamsDelayedDisplayTimer, &QTimer::timeout, this, &QGCApplication::_missingParamsDisplay);
 
-    // Set application information
+            // Set application information
     QString applicationName;
     if (_runningUnitTests || _simpleBootTest) {
         // We don't want unit tests to use the same QSettings space as the normal app. So we tweak the app
@@ -88,7 +88,7 @@ QGCApplication::QGCApplication(int &argc, char *argv[], const QGCCommandLinePars
     setOrganizationDomain(QGC_ORG_DOMAIN);
     setApplicationVersion(QString(QGC_APP_VERSION_STR));
 
-    // Set settings format
+            // Set settings format
     QSettings::setDefaultFormat(QSettings::IniFormat);
     QSettings settings;
     qCDebug(QGCApplicationLog) << "Settings location" << settings.fileName() << "Is writable?:" << settings.isWritable();
@@ -97,7 +97,7 @@ QGCApplication::QGCApplication(int &argc, char *argv[], const QGCCommandLinePars
         qCWarning(QGCApplicationLog) << "Setings location is not writable";
     }
 
-    // The setting will delete all settings on this boot
+            // The setting will delete all settings on this boot
     fClearSettingsOptions |= settings.contains(_deleteAllSettingsKey);
 
     if (_runningUnitTests || _simpleBootTest) {
@@ -109,7 +109,7 @@ QGCApplication::QGCApplication(int &argc, char *argv[], const QGCCommandLinePars
         // User requested settings to be cleared on command line
         settings.clear();
 
-        // Clear parameter cache
+                // Clear parameter cache
         QDir paramDir(ParameterManager::parameterCacheDir());
         paramDir.removeRecursively();
         paramDir.mkpath(paramDir.absolutePath());
@@ -134,13 +134,13 @@ QGCApplication::QGCApplication(int &argc, char *argv[], const QGCCommandLinePars
         parameter.remove();
     }
 
-    // Set up our logging filters
+            // Set up our logging filters
     QGCLoggingCategoryManager::instance()->setFilterRulesFromSettings(loggingOptions);
 
-    // We need to set language as early as possible prior to loading on JSON files.
+            // We need to set language as early as possible prior to loading on JSON files.
     setLanguage();
 
-    // Force old SVG Tiny 1.2 behavior for compatibility
+            // Force old SVG Tiny 1.2 behavior for compatibility
     QSvgRenderer::setDefaultOptions(QtSvg::Tiny12FeaturesOnly);
 
 #ifndef QGC_DAILY_BUILD
@@ -210,7 +210,7 @@ void QGCApplication::init()
         SettingsManager::instance()->mavlinkSettings()->gcsMavlinkSystemID()->setRawValue(_systemId);
     }
 
-    // Although this should really be in _initForNormalAppBoot putting it here allowws us to create unit tests which pop up more easily
+            // Although this should really be in _initForNormalAppBoot putting it here allowws us to create unit tests which pop up more easily
     if (QFontDatabase::addApplicationFont(":/fonts/opensans") < 0) {
         qCWarning(QGCApplicationLog) << "Could not load /fonts/opensans font";
     }
@@ -231,7 +231,7 @@ void QGCApplication::init()
 void QGCApplication::_initVideo()
 {
 #ifdef QGC_GST_STREAMING
-    // Gstreamer video playback requires OpenGL
+   // Gstreamer video playback requires OpenGL
     QQuickWindow::setGraphicsApi(QSGRendererInterface::OpenGL);
 #endif
 
@@ -258,10 +258,10 @@ void QGCApplication::_initForNormalAppBoot()
     LinkManager::instance()->init();
     VideoManager::instance()->init(mainRootWindow());
 
-    // Image provider for Optical Flow
+            // Image provider for Optical Flow
     _qmlAppEngine->addImageProvider(_qgcImageProviderId, new QGCImageProvider());
 
-    // Set the window icon now that custom plugin has a chance to override it
+        // Set the window icon now that custom plugin has a chance to override it
 #ifdef Q_OS_LINUX
     QUrl windowIcon = QUrl("qrc:/res/qgroundcontrol.ico");
     windowIcon = _qmlAppEngine->interceptUrl(windowIcon, QQmlAbstractUrlInterceptor::UrlString);
@@ -269,51 +269,51 @@ void QGCApplication::_initForNormalAppBoot()
     setWindowIcon(QIcon(":" + windowIcon.path()));
 #endif
 
-    // Safe to show popup error messages now that main window is created
+            // Safe to show popup error messages now that main window is created
     _showErrorsInToolbar = true;
 
-    #ifdef Q_OS_LINUX
-    #ifndef Q_OS_ANDROID
-    #ifndef QGC_NO_SERIAL_LINK
-        if (!_runningUnitTests) {
-            // Determine if we have the correct permissions to access USB serial devices
-            QFile permFile("/etc/group");
-            if(permFile.open(QIODevice::ReadOnly)) {
-                while(!permFile.atEnd()) {
-                    const QString line = permFile.readLine();
-                    if (line.contains("dialout") && !line.contains(getenv("USER"))) {
-                        permFile.close();
-                        showAppMessage(tr(
-                            "The current user does not have the correct permissions to access serial devices. "
-                            "You should also remove modemmanager since it also interferes.<br/><br/>"
-                            "If you are using Ubuntu, execute the following commands to fix these issues:<br/>"
-                            "<pre>sudo usermod -a -G dialout $USER<br/>"
-                            "sudo apt-get remove modemmanager</pre>"));
-                        break;
-                    }
+#ifdef Q_OS_LINUX
+#ifndef Q_OS_ANDROID
+#ifndef QGC_NO_SERIAL_LINK
+    if (!_runningUnitTests) {
+        // Determine if we have the correct permissions to access USB serial devices
+        QFile permFile("/etc/group");
+        if(permFile.open(QIODevice::ReadOnly)) {
+            while(!permFile.atEnd()) {
+                const QString line = permFile.readLine();
+                if (line.contains("dialout") && !line.contains(getenv("USER"))) {
+                    permFile.close();
+                    showAppMessage(tr(
+                        "The current user does not have the correct permissions to access serial devices. "
+                        "You should also remove modemmanager since it also interferes.<br/><br/>"
+                        "If you are using Ubuntu, execute the following commands to fix these issues:<br/>"
+                        "<pre>sudo usermod -a -G dialout $USER<br/>"
+                        "sudo apt-get remove modemmanager</pre>"));
+                    break;
                 }
-                permFile.close();
             }
+            permFile.close();
         }
-    #endif
-    #endif
-    #endif
+    }
+#endif
+#endif
+#endif
 
-    // Now that main window is up check for lost log files
+            // Now that main window is up check for lost log files
     MAVLinkProtocol::instance()->checkForLostLogFiles();
 
-    // Load known link configurations
+            // Load known link configurations
     LinkManager::instance()->loadLinkConfigurationList();
 
-    // Probe for joysticks
+            // Probe for joysticks
     JoystickManager::instance()->init();
 
     if (_settingsUpgraded) {
         showAppMessage(tr("The format for %1 saved settings has been modified. "
-                    "Your saved settings have been reset to defaults.").arg(applicationName()));
+                          "Your saved settings have been reset to defaults.").arg(applicationName()));
     }
 
-    // Connect links with flag AutoconnectLink
+            // Connect links with flag AutoconnectLink
     LinkManager::instance()->startAutoConnectedLinks();
 }
 
@@ -449,7 +449,7 @@ QQuickWindow *QGCApplication::mainRootWindow()
 void QGCApplication::showVehicleConfig()
 {
     if (_rootQmlObject()) {
-      QMetaObject::invokeMethod(_rootQmlObject(), "showVehicleConfig");
+        QMetaObject::invokeMethod(_rootQmlObject(), "showVehicleConfig");
     }
 }
 
@@ -493,8 +493,8 @@ void QGCApplication::_qgcCurrentStableVersionDownloadComplete(const QString &rem
             int majorVersion, minorVersion, buildVersion;
             if (_parseVersionText(version, majorVersion, minorVersion, buildVersion)) {
                 if (_majorVersion < majorVersion ||
-                        ((_majorVersion == majorVersion) && (_minorVersion < minorVersion)) ||
-                        ((_majorVersion == majorVersion) && (_minorVersion == minorVersion) && (_buildVersion < buildVersion))) {
+                    ((_majorVersion == majorVersion) && (_minorVersion < minorVersion)) ||
+                    ((_majorVersion == majorVersion) && (_minorVersion == minorVersion) && (_buildVersion < buildVersion))) {
                     showAppMessage(tr("There is a newer version of %1 available. You can download it from %2.").arg(applicationName()).arg(QGCCorePlugin::instance()->stableDownloadLocation()), tr("New Version Available"));
                 }
             }
@@ -591,7 +591,13 @@ void QGCApplication::removeCompressedSignal(const QMetaMethod &method)
     _compressedSignals.remove(method);
 }
 
-bool QGCApplication::compressEvent(QEvent *event, QObject *receiver, QPostEventList *postedEvents)
+// QCoreApplication::compressEvent is deprecated in Qt 6.10 and will be removed
+// in Qt 7. Keep this warning local while QGC still supports the Qt 6 event
+// compression implementation.
+QT_WARNING_PUSH
+    QT_WARNING_DISABLE_DEPRECATED
+
+    bool QGCApplication::compressEvent(QEvent *event, QObject *receiver, QPostEventList *postedEvents)
 {
     if (event->type() != QEvent::MetaCall) {
         return QApplication::compressEvent(event, receiver, postedEvents);
@@ -630,7 +636,9 @@ bool QGCApplication::compressEvent(QEvent *event, QObject *receiver, QPostEventL
     return false;
 }
 
-bool QGCApplication::event(QEvent *e)
+QT_WARNING_POP
+
+    bool QGCApplication::event(QEvent *e)
 {
     if (e->type() == QEvent::Quit) {
         // On OSX if the user selects Quit from the menu (or Command-Q) the ApplicationWindow does not signal closing. Instead you get a Quit event here only.
@@ -667,7 +675,7 @@ void QGCApplication::shutdown()
 
     QGCCorePlugin::instance()->cleanup();
 
-    // This is bad, but currently qobject inheritances are incorrect and cause crashes on exit without
+            // This is bad, but currently qobject inheritances are incorrect and cause crashes on exit without
     delete _qmlAppEngine;
 }
 
