@@ -5,5 +5,5 @@ Item {
     property var statusBarColor: []
     property var flightState: []
     property var progressPercentage: []
-    property int currentIndex: false
+    property int currentIndex: 0
 }

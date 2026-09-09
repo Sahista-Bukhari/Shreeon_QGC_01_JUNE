@@ -137,6 +137,10 @@ __pycache__/
 # ------------------------------------------------------------------------------
 *.log
 
+# Downloaded ArduPilot firmware catalog (not project source)
+manifest.json
+manifest.json.gz
+
 # Code coverage
 *.gcov
 *.gcda

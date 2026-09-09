@@ -14,11 +14,11 @@ ColumnLayout {
 
     property alias contentSpacing: _contentLayout.spacing
 
-    property string defaultBorderColor  : control._dividerColor
-    property string outerBorderColor    : defaultBorderColor
+    property color defaultBorderColor  : control._dividerColor
+    property color outerBorderColor    : defaultBorderColor
 
-    property string defaultHeadingPointSize:    ScreenTools.defaultFontPointSize + 1
-    property string headingPointSize:           defaultHeadingPointSize
+    property real defaultHeadingPointSize:    ScreenTools.defaultFontPointSize + 1
+    property real headingPointSize:           defaultHeadingPointSize
 
     property string heading
     property string headingDescription

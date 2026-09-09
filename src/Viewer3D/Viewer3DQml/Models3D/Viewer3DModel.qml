@@ -151,23 +151,21 @@ View3D {
                     fragmentShader: "/qml/QGroundControl/Viewer3D/ShaderFragment/earthMaterial.frag"
                     property TextureInput someTextureMap: TextureInput {
                         texture: Texture {
-                            textureData: _terrainTextureManager
+                            textureData: Viewer3DTerrainTexture {
+                                id: _terrainTextureManager
+                                osmParser: (viewer3DManager)?(viewer3DManager.osmParser):(null)
+
+                                onTextureGeometryDoneChanged: {
+                                    if (textureGeometryDone === true) {
+                                        terrainGeometryManager.sectorCount = tileCount.width
+                                        terrainGeometryManager.stackCount = tileCount.height
+                                        terrainGeometryManager.roiMin = roiMinCoordinate
+                                        terrainGeometryManager.roiMax = roiMaxCoordinate
+                                        terrainGeometryManager.updateEarthData()
+                                    }
+                                }
+                            }
                         }
-                    }
-                }
-            }
-
-            Viewer3DTerrainTexture {
-                id: _terrainTextureManager
-                osmParser: (viewer3DManager)?(viewer3DManager.osmParser):(null)
-
-                onTextureGeometryDoneChanged: {
-                    if(textureGeometryDone === true){
-                        terrainGeometryManager.sectorCount = tileCount.width
-                        terrainGeometryManager.stackCount = tileCount.height
-                        terrainGeometryManager.roiMin = roiMinCoordinate;
-                        terrainGeometryManager.roiMax = roiMaxCoordinate;
-                        terrainGeometryManager.updateEarthData();
                     }
                 }
             }

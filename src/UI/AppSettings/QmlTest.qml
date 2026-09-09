@@ -271,7 +271,7 @@ Rectangle {
                 Column {
                     id: editRoot
                     spacing: 5
-                    property size cellSize: "90x25"
+                    property size cellSize:Qt.size(90, 25)
 
                     // Header row
                     Row {

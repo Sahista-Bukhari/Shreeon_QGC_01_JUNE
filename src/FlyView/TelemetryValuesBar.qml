@@ -10,8 +10,8 @@ Item {
     property real extraWidth: 0 ///< Extra width to add to the background rectangle
 
     property alias factValueGrid: factValueGrid
-    property alias settingsGroup: factValueGrid.settingsGroup
-    property alias specificVehicleForCard: factValueGrid.specificVehicleForCard
+    property string settingsGroup: ""
+    property var specificVehicleForCard: null
 
     // Height is taller than content to allow gradient to fade in smoothly
     height: mainLayout.height + (ScreenTools.defaultFontPixelHeight * 3.5)
@@ -65,6 +65,8 @@ Item {
         }
         HorizontalFactValueGrid {
             id: factValueGrid
+            settingsGroup: control.settingsGroup
+            specificVehicleForCard: control.specificVehicleForCard
 
         }
     }

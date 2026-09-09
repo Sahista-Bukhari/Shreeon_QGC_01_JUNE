@@ -5,5 +5,5 @@ Item {
     property var overlay
     property var indicatorTopText: []
     property var indicatorBottomText: [ ]
-    property int currentNotificationIndex: false
+    property int currentNotificationIndex: 0
 }
