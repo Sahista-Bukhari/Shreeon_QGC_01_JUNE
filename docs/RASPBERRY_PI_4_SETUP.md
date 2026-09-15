@@ -2,6 +2,8 @@
 
 This guide installs, copies, builds, and runs this customized QGroundControl project on a Raspberry Pi 4.
 
+To **cross-compile on an x86_64 Linux PC** and copy the binary to the Pi (faster, avoids Pi OOM during build), see [CROSS_COMPILE_RASPBERRY_PI.md](CROSS_COMPILE_RASPBERRY_PI.md).
+
 ## Requirements
 
 - Raspberry Pi 4 with 4 GB RAM or more

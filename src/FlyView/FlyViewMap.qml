@@ -1513,9 +1513,9 @@ FlightMap {
         z: QGroundControl.zOrderWaypointLines + 2
     }
 
-    // Each confirmed mapping capture becomes a georeferenced camera footprint.
-    // The image is a live frame saved at CAMERA_IMAGE_CAPTURED time and scales
-    // with map zoom so successive shots form an in-progress orthomosaic strip.
+    // Each accepted mapping capture becomes a georeferenced camera footprint.
+    // Its source is refreshed when the real Pi-camera still finishes downloading,
+    // and it scales with map zoom to form the in-progress mapping strip.
     MapItemView {
         model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
 

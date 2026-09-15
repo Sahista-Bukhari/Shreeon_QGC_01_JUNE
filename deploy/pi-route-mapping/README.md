@@ -1,15 +1,20 @@
-# Raspberry Pi route-mapping capture
+# Raspberry Pi Route Mapping capture
 
-This service keeps the existing WFB H.264 stream and captures full-resolution
-4608x2592 JPEG files on the Raspberry Pi when PX4 emits a MAVLink
-`CAMERA_TRIGGER` message. A capture pauses the live video for a few seconds and
-then restarts it automatically.
+The route-mapping service keeps the existing PX4 UART/WFB MAVLink bridge alive.
+QGC invokes `shreeon-route-mapping-camera` over SSH for each requested real
+4608x2592 still image. The helper pauses `wfb-camera.service`, captures with
+`rpicam-still`, and restarts the video service in a `finally` path.
 
-Photos are stored under:
+The Pi copy exists only in volatile runtime storage while QGC transfers it:
 
 ```text
-/home/shreeon/mapping_photos/mission_YYYYMMDD_HHMMSS/
+/run/shreeon-route-mapping/photos/<qgc-request-token>.jpg
 ```
+
+QGC downloads to a local `.part` file, validates the JPEG, atomically renames
+it into QGC's configured Photo directory, and then sends an `ack` command that
+deletes the Pi copy. Repeating a capture token returns the same temporary file,
+so SSH/SCP retries cannot operate the camera or download a new photo twice.
 
 The service also bridges MAVLink between `/dev/ttyAMA0` and the WFB UDP endpoint
 at `127.0.0.1:14550`. The default serial speed is 57600 baud and can be changed
@@ -26,26 +31,41 @@ Flight-controller GND      -> Pi GND
 Do not connect a 5 V serial signal to the Pi UART. Both sides must use 3.3 V
 UART logic.
 
-For a safe manual test while disarmed:
+## Pi installation
+
+Install the helper as a root-owned executable:
 
 ```bash
-printf 'CAPTURE' | nc -u -w 1 127.0.0.1 14551
+sudo install -o root -g root -m 0755 route_mapping_camera_once.py \
+    /usr/local/libexec/shreeon-route-mapping-camera
 ```
 
-The same test can be requested without netcat:
+Allow only the fixed, root-owned helper to run without an interactive password.
+Create `/etc/sudoers.d/shreeon-route-mapping-camera` with `visudo`:
+
+```sudoers
+shreeon ALL=(root) NOPASSWD: /usr/local/libexec/shreeon-route-mapping-camera *
+```
+
+Validate the rule, then test one capture while the vehicle is disarmed:
 
 ```bash
-sudo systemctl kill --signal=SIGUSR1 route-mapping-capture.service
+sudo visudo -cf /etc/sudoers.d/shreeon-route-mapping-camera
+sudo -n /usr/local/libexec/shreeon-route-mapping-camera capture manual_001
+sudo -n /usr/local/libexec/shreeon-route-mapping-camera ack manual_001
 ```
 
-Check operation and saved files:
+Install the modified service script, default file, and systemd unit at their
+normal Pi locations, then reload and restart:
 
 ```bash
-systemctl status route-mapping-capture.service wfb-camera.service
-journalctl -u route-mapping-capture.service -n 100 --no-pager
-find /home/shreeon/mapping_photos -type f -name '*.jpg' -printf '%s %p\n'
+sudo systemctl daemon-reload
+sudo systemctl restart route-mapping-capture.service
+systemctl status route-mapping-capture.service wfb-camera.service --no-pager
 ```
 
-The automatic route-mapping trigger requires valid MAVLink bytes from PX4. If
-the service shows no telemetry, verify the crossed TX/RX wiring, shared ground,
-PX4 TELEM port selection, and the configured baud rate.
+The legacy service can still capture observed MAVLink triggers when explicitly
+started with `--capture-from-mavlink`. Do not enable that option with QGC's SSH
+capture path, because both paths would otherwise request the same camera shot.
+The option changes capture ownership only; serial/WFB MAVLink forwarding remains
+active regardless.

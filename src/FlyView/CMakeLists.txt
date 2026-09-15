@@ -82,7 +82,6 @@ qt_add_qml_module(FlyViewModule
         RoverChecklist.qml
         SavedPlanGallery.qml
         SubChecklist.qml
-        VTOLChecklist.qml
         TelemetryValuesBar.qml
         TerrainProgress.qml
         VehicleWarnings.qml
