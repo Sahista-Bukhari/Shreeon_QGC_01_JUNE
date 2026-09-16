@@ -188,6 +188,11 @@ FlightMap {
 
     function routeMappingPhotoCaptureInfo(coord) {
         var points = routeMappingPhotoCaptureTransectPoints
+        var pairStep = 2
+        if (!points || points.length < 2) {
+            points = routeMappingTransectPath
+            pairStep = 1
+        }
         if (!points || points.length < 2 || !coord || !coord.isValid) {
             return {
                 valid: false,
@@ -200,7 +205,7 @@ FlightMap {
         }
 
         var bestInfo = null
-        for (var i = 0; i + 1 < points.length; i += 2) {
+        for (var i = 0; i + 1 < points.length; i += pairStep) {
             var segmentStart = points[i]
             var segmentEnd = points[i + 1]
             if (!segmentStart || !segmentStart.isValid
@@ -213,7 +218,7 @@ FlightMap {
             if (!bestInfo || distanceToSegment < bestInfo.distanceToSegment) {
                 bestInfo = {
                     valid: true,
-                    segmentIndex: Math.floor(i / 2),
+                    segmentIndex: pairStep === 2 ? Math.floor(i / 2) : i,
                     distanceToSegment: distanceToSegment,
                     alongSegment: segmentStart.distanceTo(projected),
                     segmentLength: segmentStart.distanceTo(segmentEnd),
@@ -1513,9 +1518,7 @@ FlightMap {
         z: QGroundControl.zOrderWaypointLines + 2
     }
 
-    // Each accepted mapping capture becomes a georeferenced camera footprint.
-    // Its source is refreshed when the real Pi-camera still finishes downloading,
-    // and it scales with map zoom to form the in-progress mapping strip.
+    // Pi full-res photos (image_*.jpg) placed on the map after SCP completes.
     MapItemView {
         model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
 

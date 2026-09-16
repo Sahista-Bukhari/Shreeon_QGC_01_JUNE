@@ -28,6 +28,12 @@ target_sources(${CMAKE_PROJECT_NAME}
         QGCLogging.h
         QGCLoggingCategory.cc
         QGCLoggingCategory.h
+        RouteMappingPiPhotoCapture.cc
+        RouteMappingPiPhotoCapture.h
+        RouteMappingImageMetadata.cc
+        RouteMappingImageMetadata.h
+        RouteMappingImageCatalog.cc
+        RouteMappingImageCatalog.h
         StateMachine.cc
         StateMachine.h
 )

@@ -3,14 +3,6 @@
 # In-flight view, telemetry displays, and vehicle control UI
 # ============================================================================
 
-target_sources(${CMAKE_PROJECT_NAME}
-    PRIVATE
-        RouteMappingPiPhotoFetcher.cc
-        RouteMappingPiPhotoFetcher.h
-)
-
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
-
 qt_add_library(FlyViewModule STATIC)
 
 qt_add_qml_module(FlyViewModule
@@ -42,6 +34,7 @@ qt_add_qml_module(FlyViewModule
         FlyViewMap.qml
         FlyViewMapTools.qml
         FlyViewMappingProgressPanel.qml
+        RouteMappingTransferredImagesPanel.qml
         FlyViewMissionCompleteDialog.qml
         FlyViewMissionPanel.qml
         FlyViewPlanRightPanel.qml

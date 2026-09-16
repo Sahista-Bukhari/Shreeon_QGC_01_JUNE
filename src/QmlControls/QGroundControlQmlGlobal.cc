@@ -14,7 +14,10 @@
 #include "ADSBVehicleManager.h"
 #include "MissionCommandTree.h"
 #include "VideoManager.h"
+#include "RouteMappingPiPhotoCapture.h"
+#include "RouteMappingImageCatalog.h"
 #include "MultiVehicleManager.h"
+#include "QGCApplication.h"
 #include "QGCLoggingCategory.h"
 #ifndef QGC_NO_SERIAL_LINK
 #include "GPSManager.h"
@@ -45,6 +48,8 @@ QGroundControlQmlGlobal::QGroundControlQmlGlobal(QObject *parent)
     , _qgcPositionManager(QGCPositionManager::instance())
     , _missionCommandTree(MissionCommandTree::instance())
     , _videoManager(VideoManager::instance())
+    , _routeMappingPiPhotoCapture(RouteMappingPiPhotoCapture::instance())
+    , _routeMappingImageCatalog(RouteMappingImageCatalog::instance())
     , _linkManager(LinkManager::instance())
     , _multiVehicleManager(MultiVehicleManager::instance())
     , _settingsManager(SettingsManager::instance())
@@ -128,6 +133,11 @@ void QGroundControlQmlGlobal::speak(const QString& text)
     if (!text.trimmed().isEmpty()) {
         AudioOutput::instance()->say(text);
     }
+}
+
+void QGroundControlQmlGlobal::showAppMessage(const QString &message)
+{
+    qgcApp()->showAppMessage(message);
 }
 
 void QGroundControlQmlGlobal::startPX4MockLink(bool sendStatusText)

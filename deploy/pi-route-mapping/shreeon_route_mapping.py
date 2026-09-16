@@ -434,12 +434,6 @@ class RouteMappingService:
         *,
         from_flight_controller: bool,
     ) -> None:
-        # The QGC SSH capture helper owns the camera in the new workflow. Keep
-        # bridging MAVLink in both directions, but do not take a second photo
-        # for the same PX4 trigger unless the legacy mode is explicitly enabled.
-        if not self._arguments.capture_from_mavlink:
-            return
-
         for message in messages:
             if (
                 from_flight_controller
@@ -492,18 +486,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--wfb-port", type=int, default=14550)
     parser.add_argument("--manual-host", default="127.0.0.1")
     parser.add_argument("--manual-port", type=int, default=14551)
-    parser.add_argument(
-        "--photo-root", default="/run/shreeon-route-mapping/legacy"
-    )
+    parser.add_argument("--photo-root", default="/home/shreeon/mapping_photos")
     parser.add_argument("--capture-user", default="shreeon")
     parser.add_argument("--camera-service", default="wfb-camera.service")
     parser.add_argument("--camera-command", default="/usr/local/bin/rpicam-still")
     parser.add_argument("--capture-timeout-ms", type=int, default=2000)
-    parser.add_argument(
-        "--capture-from-mavlink",
-        action="store_true",
-        help="Enable the legacy Pi-side capture of observed MAVLink triggers",
-    )
     return parser.parse_args()
 
 

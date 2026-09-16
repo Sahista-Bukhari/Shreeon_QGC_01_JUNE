@@ -49,17 +49,13 @@ Item {
     // frozen for the whole mission. Only the drone position and progress update.
     property bool   _routeMappingOverlayLocked: false
     property bool   _routeMappingPhotoPathWarned: false
-    // Photo progress UI is Route Mapping only (not Agriculture / Seed Spreader).
-    readonly property bool routeMappingPhotoProgressEnabled: mainWindow.uploadedMissionEditor === "routeMapping"
-    // Single-photo prototype: capture a real still on the Pi and transfer it
-    // over SSH/SCP. Continuous capture is deliberately gated until this path
-    // has been verified with the real camera.
-    property bool   routeMappingPiPhotoEnabled: routeMappingPhotoProgressEnabled
-    property string routeMappingPiHost: "10.5.0.2"
-    property string routeMappingPiUser: "shreeon"
-    property bool   _routeMappingPrototypeCaptureRequested: false
-    property int    _routeMappingPrototypeRequestSequence: 0
-    property bool   _routeMappingPiErrorShown: false
+    // Route Mapping Pi capture + progress (not Agriculture / Seed Spreader).
+    readonly property bool routeMappingPhotoProgressEnabled:
+            mainWindow.uploadedMissionEditor === "routeMapping"
+            || (_routeMappingOverlayLocked
+                && routeMappingPhotoCaptureTransectPoints
+                && routeMappingPhotoCaptureTransectPoints.length >= 2)
+    property bool _routeMappingPiCaptureMissionNoticeShown: false
 
     readonly property bool _hasFlyViewPlanContent: _planController.containsItems
                                                    || routeMappingBoundaryPath.length > 0
@@ -534,52 +530,11 @@ Item {
     property int    _lastCompletedMappingPhotoSegmentIndex: -1
     property real   _mappingPhotoLastSegmentAlong: 0
     property bool   _mappingPhotoSegmentEndCaptured: false
-    property var    _routeMappingSessionPhotoFiles: []
+    property int    _pendingPiCaptureRequests: 0
+    property int    _routeMappingPiSessionCount: 0
 
     ListModel {
         id: _routeMappingLivePhotoModel
-    }
-
-    RouteMappingPiPhotoFetcher {
-        id: routeMappingPiPhotoFetcher
-
-        enabled: _root.routeMappingPiPhotoEnabled
-        piHost: _root.routeMappingPiHost
-        piUser: _root.routeMappingPiUser
-
-        onPhotoFetched: function(requestId, localFilePath, success, errorMessage) {
-            var matchingIndex = -1
-            for (var index = 0; index < _routeMappingLivePhotoModel.count; index++) {
-                var photo = _routeMappingLivePhotoModel.get(index)
-                if (Number(photo.photoSequence) === Number(requestId)) {
-                    matchingIndex = index
-                    break
-                }
-            }
-
-            if (!success) {
-                if (matchingIndex >= 0) {
-                    _routeMappingLivePhotoModel.remove(matchingIndex)
-                }
-                _root._untrackRouteMappingPhotoFile(localFilePath)
-                // The C++ worker already exhausted its safe, idempotent retries.
-                // Permit a later valid route position to start a fresh request.
-                _root._routeMappingPrototypeCaptureRequested = false
-                if (!_root._routeMappingPiErrorShown) {
-                    _root._routeMappingPiErrorShown = true
-                    qgcApp().showAppMessage(
-                                qsTr("Pi still-image capture failed: %1").arg(errorMessage))
-                }
-                return
-            }
-
-            if (matchingIndex >= 0) {
-                var refreshedSource = _root._mappingPhotoFileUrl(localFilePath)
-                        + "?ready=" + Date.now()
-                _routeMappingLivePhotoModel.setProperty(
-                            matchingIndex, "photoImageSource", refreshedSource)
-            }
-        }
     }
 
     function resetRouteMappingLivePhotos() {
@@ -591,14 +546,88 @@ Item {
         _lastCompletedMappingPhotoSegmentIndex = -1
         _mappingPhotoLastSegmentAlong = 0
         _mappingPhotoSegmentEndCaptured = false
-        _routeMappingPrototypeCaptureRequested = false
-        _routeMappingPrototypeRequestSequence = 0
-        _routeMappingPiErrorShown = false
-        routeMappingPiPhotoFetcher.resetSession()
+        _pendingPiCaptureRequests = 0
+        _routeMappingPiSessionCount = 0
         _routeMappingLivePhotoModel.clear()
+        _routeMappingPiCaptureMissionNoticeShown = false
     }
 
-    function _mappingPhotoFileUrl(filePath) {
+    function _hasRouteMappingSurveyLines() {
+        return (routeMappingPhotoCaptureTransectPoints
+                    && routeMappingPhotoCaptureTransectPoints.length >= 2)
+                || (routeMappingTransectPath && routeMappingTransectPath.length >= 2)
+    }
+
+    function _enqueuePiStillCapture() {
+        var pi = QGroundControl.routeMappingPiPhotoCapture
+        if (!pi || !pi.ensureLocalSaveDirectory()) {
+            if (!_routeMappingPhotoPathWarned) {
+                _routeMappingPhotoPathWarned = true
+                QGroundControl.showAppMessage(
+                            qsTr("Route mapping folder is missing or not writable. Expected: %1")
+                            .arg(pi ? pi.localSaveDirectory() : ""))
+            }
+            return false
+        }
+        if (pi.busy) {
+            _pendingPiCaptureRequests++
+        } else {
+            pi.captureOnePhoto()
+        }
+        return true
+    }
+
+    function _tryPiStillCaptureNearSurveyLine(coordinate) {
+        if (!coordinate || !coordinate.isValid || !routeMappingPhotoProgressEnabled) {
+            return false
+        }
+        if (!missionRunning || !_hasRouteMappingSurveyLines()) {
+            return false
+        }
+        var captureInfo = mapControl
+                ? mapControl.routeMappingPhotoCaptureInfo(coordinate) : null
+        if (!captureInfo || !captureInfo.valid
+                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()) {
+            return false
+        }
+        if (_mappingPhotoNearCoordinate(coordinate, 0) >= 0) {
+            return false
+        }
+        return _enqueuePiStillCapture()
+    }
+
+    function _beginRouteMappingPiCaptureForMission() {
+        if (!routeMappingPhotoProgressEnabled) {
+            return
+        }
+        if (!_hasRouteMappingSurveyLines()) {
+            if (!_routeMappingPhotoPathWarned) {
+                _routeMappingPhotoPathWarned = true
+                QGroundControl.showAppMessage(
+                            qsTr("Route mapping survey lines are missing on the map. Re-upload the route mapping plan, then start the mission again."))
+            }
+            return
+        }
+        var pi = QGroundControl.routeMappingPiPhotoCapture
+        if (!pi || !pi.ensureLocalSaveDirectory()) {
+            if (!_routeMappingPhotoPathWarned) {
+                _routeMappingPhotoPathWarned = true
+                QGroundControl.showAppMessage(
+                            qsTr("Route mapping folder is missing or not writable. Expected: %1")
+                            .arg(pi ? pi.localSaveDirectory() : ""))
+            }
+            return
+        }
+        if (!_routeMappingPiCaptureMissionNoticeShown) {
+            _routeMappingPiCaptureMissionNoticeShown = true
+            QGroundControl.showAppMessage(
+                        qsTr("Route mapping mission started — Pi camera will capture stills automatically along the survey."))
+        }
+        _updateAutomaticRouteMappingCapture()
+        _captureNewRouteMappingPhotos()
+    }
+
+    function _piPhotoFileUrl(filePath) {
         var normalizedPath = String(filePath).split("\\").join("/")
         if (normalizedPath.charAt(0) === "/") {
             return encodeURI("file://" + normalizedPath)
@@ -606,19 +635,71 @@ Item {
         return encodeURI("file:///" + normalizedPath)
     }
 
-    function _trackRouteMappingPhotoFile(filePath) {
-        var files = _routeMappingSessionPhotoFiles.slice()
-        files.push(filePath)
-        _routeMappingSessionPhotoFiles = files
+    function _addPiPhotoToMapDisplay(localPath) {
+        if (!localPath || localPath.length === 0) {
+            return
+        }
+        var coord = _activeVehicle ? _activeVehicle.coordinate : QtPositioning.coordinate()
+        if (!coord || !coord.isValid) {
+            return
+        }
+        var heading = mapControl
+                ? mapControl.routeMappingHeadingAtCoordinate(coord)
+                : routeMappingEntryHeading
+        var sequence = _routeMappingPiSessionCount + 1
+        _routeMappingLivePhotoModel.append({
+            photoLatitude: coord.latitude,
+            photoLongitude: coord.longitude,
+            photoAltitude: coord.altitude,
+            photoHeading: heading,
+            photoSequence: sequence,
+            photoFilePath: localPath,
+            photoImageSource: _piPhotoFileUrl(localPath),
+            photoTelemetryConfirmed: true
+        })
+        _routeMappingPiSessionCount = sequence
+        QGroundControl.routeMappingImageCatalog.refresh()
     }
 
-    function _untrackRouteMappingPhotoFile(filePath) {
-        var files = _routeMappingSessionPhotoFiles.slice()
-        var index = files.indexOf(filePath)
-        if (index >= 0) {
-            files.splice(index, 1)
-            _routeMappingSessionPhotoFiles = files
+    function _pumpPiCaptureQueue() {
+        var pi = QGroundControl.routeMappingPiPhotoCapture
+        if (!pi || pi.busy || _pendingPiCaptureRequests <= 0) {
+            return
         }
+        _pendingPiCaptureRequests--
+        _enqueuePiStillCapture()
+    }
+
+    function _queuePiPhotoCaptureAtSurveyPoint(coordinate, telemetryConfirmed, endpointCapture) {
+        if (!coordinate || !coordinate.isValid) {
+            return false
+        }
+
+        var captureInfo = mapControl
+                ? mapControl.routeMappingPhotoCaptureInfo(coordinate) : null
+        if (!captureInfo || !captureInfo.valid
+                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()
+                || captureInfo.segmentIndex <= _lastCompletedMappingPhotoSegmentIndex) {
+            return false
+        }
+
+        var matchingIndex = _mappingPhotoNearCoordinate(
+                    coordinate, endpointCapture ? 1 : 0)
+        if (matchingIndex >= 0) {
+            if (telemetryConfirmed) {
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLatitude", coordinate.latitude)
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLongitude", coordinate.longitude)
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoAltitude", coordinate.altitude)
+                _routeMappingLivePhotoModel.setProperty(
+                            matchingIndex,
+                            "photoHeading",
+                            mapControl.routeMappingHeadingAtCoordinate(coordinate))
+                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoTelemetryConfirmed", true)
+            }
+            return false
+        }
+
+        return _enqueuePiStillCapture()
     }
 
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
@@ -643,80 +724,6 @@ Item {
         return Math.max(6, Math.min(15, Number(routeMappingPhotoFootprintSide) * 0.4))
     }
 
-    function _appendRouteMappingPhoto(coordinate, telemetryConfirmed, endpointCapture) {
-        if (!coordinate || !coordinate.isValid) {
-            return false
-        }
-
-        // Prove one end-to-end still capture before enabling the existing
-        // multi-photo route logic.
-        if (_routeMappingPrototypeCaptureRequested) {
-            return false
-        }
-
-        var captureInfo = mapControl
-                ? mapControl.routeMappingPhotoCaptureInfo(coordinate) : null
-        if (!captureInfo || !captureInfo.valid
-                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()
-                || captureInfo.segmentIndex <= _lastCompletedMappingPhotoSegmentIndex) {
-            return false
-        }
-
-        // The pattern-progress capture and CAMERA_IMAGE_CAPTURED can describe
-        // the same shot. Keep one tile and prefer the telemetry coordinate.
-        var matchingIndex = _mappingPhotoNearCoordinate(
-                    coordinate, endpointCapture ? 1 : 0)
-        if (matchingIndex >= 0) {
-            if (telemetryConfirmed) {
-                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLatitude", coordinate.latitude)
-                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoLongitude", coordinate.longitude)
-                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoAltitude", coordinate.altitude)
-                _routeMappingLivePhotoModel.setProperty(
-                            matchingIndex,
-                            "photoHeading",
-                            mapControl.routeMappingHeadingAtCoordinate(coordinate))
-                _routeMappingLivePhotoModel.setProperty(matchingIndex, "photoTelemetryConfirmed", true)
-            }
-            return false
-        }
-
-        var rootPhotoDirectory = QGroundControl.settingsManager.appSettings.photoSavePath
-        if (!rootPhotoDirectory || rootPhotoDirectory.length === 0) {
-            if (!_routeMappingPhotoPathWarned) {
-                _routeMappingPhotoPathWarned = true
-                qgcApp().showAppMessage(
-                            qsTr("Photo save path is not configured. Set it in Application Settings to capture route mapping photos."))
-            }
-            return false
-        }
-
-        var rootSeparator = rootPhotoDirectory.charAt(rootPhotoDirectory.length - 1) === "/" ? "" : "/"
-        var photoDirectory = rootPhotoDirectory + rootSeparator + "RouteMapping"
-        _routeMappingPrototypeRequestSequence += 1
-        var photoNumber = _routeMappingPrototypeRequestSequence
-        var fileName = "mapping_" + Date.now() + "_" + photoNumber + ".jpg"
-        var separator = photoDirectory.charAt(photoDirectory.length - 1) === "/" ? "" : "/"
-        var filePath = photoDirectory + separator + fileName
-        var heading = mapControl
-                ? captureInfo.heading
-                : routeMappingEntryHeading
-
-        _routeMappingPrototypeCaptureRequested = true
-        _routeMappingLivePhotoModel.append({
-            photoLatitude: coordinate.latitude,
-            photoLongitude: coordinate.longitude,
-            photoAltitude: coordinate.altitude,
-            photoHeading: heading,
-            photoSequence: photoNumber,
-            photoImageSource: _mappingPhotoFileUrl(filePath),
-            photoTelemetryConfirmed: telemetryConfirmed
-        })
-
-        _trackRouteMappingPhotoFile(filePath)
-
-        routeMappingPiPhotoFetcher.capturePhoto(filePath, photoNumber)
-        return true
-    }
 
     function _captureNewRouteMappingPhotos() {
         var triggerPoints = _activeVehicle ? _activeVehicle.cameraTriggerPoints : null
@@ -745,7 +752,9 @@ Item {
                 break
             }
 
-            _appendRouteMappingPhoto(coordinate, true)
+            if (!_queuePiPhotoCaptureAtSurveyPoint(coordinate, true)) {
+                _tryPiStillCaptureNearSurveyLine(coordinate)
+            }
             if (!_mappingPatternCaptureStarted) {
                 _mappingPatternCaptureStarted = true
                 _mappingPhotoDistanceSinceCapture = 0
@@ -760,8 +769,7 @@ Item {
                 || !missionRunning
                 || !_activeVehicle
                 || !_activeVehicle.flying
-                || !routeMappingPhotoCaptureTransectPoints
-                || routeMappingPhotoCaptureTransectPoints.length < 2) {
+                || !_hasRouteMappingSurveyLines()) {
             return
         }
 
@@ -807,7 +815,7 @@ Item {
             _mappingPhotoLastSegmentAlong = captureInfo.alongSegment
             _mappingPhotoSegmentEndCaptured = false
             _lastMappingPatternCoordinate = coordinate
-            _appendRouteMappingPhoto(coordinate, false, false)
+            _queuePiPhotoCaptureAtSurveyPoint(coordinate, false, false)
             return
         }
 
@@ -822,7 +830,7 @@ Item {
         _mappingPhotoDistanceSinceCapture += stepDistance
         if (_mappingPhotoDistanceSinceCapture >= triggerDistance) {
             _mappingPhotoDistanceSinceCapture %= triggerDistance
-            _appendRouteMappingPhoto(coordinate, false, false)
+            _queuePiPhotoCaptureAtSurveyPoint(coordinate, false, false)
         }
 
         var endpointTolerance = Math.max(2, Math.min(6, triggerDistance * 0.25))
@@ -831,7 +839,7 @@ Item {
                 && coordinate.distanceTo(captureInfo.endCoordinate) <= endpointTolerance) {
             // Force a distinct endpoint frame even when the final regular
             // distance shot was close to the polygon edge.
-            _appendRouteMappingPhoto(coordinate, false, true)
+            _queuePiPhotoCaptureAtSurveyPoint(coordinate, false, true)
             _mappingPhotoSegmentEndCaptured = true
             _lastCompletedMappingPhotoSegmentIndex = captureInfo.segmentIndex
             _activeMappingPhotoSegmentIndex = -1
@@ -846,7 +854,7 @@ Item {
         // Count only captures accepted on an interior photo transect. Raw
         // vehicle feedback can include unrelated camera events during takeoff
         // or RTL and must not inflate Route Mapping progress.
-        return _routeMappingLivePhotoModel.count
+        return _routeMappingPiSessionCount
     }
 
     readonly property bool missionRunning:  _guidedController ? _guidedController._missionActive : false
@@ -918,9 +926,6 @@ Item {
 
         function onArmedChanged(armed) {
             if (armed) {
-                // Start a new capture set without deleting the previous
-                // mission's survey photographs from the configured photo path.
-                _root._routeMappingSessionPhotoFiles = []
                 _root.resetRouteMappingLivePhotos()
             }
         }
@@ -940,7 +945,25 @@ Item {
         }
     }
 
-    onMissionRunningChanged: _updateAutomaticRouteMappingCapture()
+    onMissionRunningChanged: {
+        if (missionRunning) {
+            _beginRouteMappingPiCaptureForMission()
+        } else {
+            _routeMappingPiCaptureMissionNoticeShown = false
+        }
+        _updateAutomaticRouteMappingCapture()
+    }
+
+    Timer {
+        id: routeMappingPiCapturePollTimer
+        interval: 500
+        repeat: true
+        running: _root.missionRunning && _root.routeMappingPhotoProgressEnabled
+        onTriggered: {
+            _root._updateAutomaticRouteMappingCapture()
+            _root._captureNewRouteMappingPhotos()
+        }
+    }
 
     Timer {
         id: missionResyncDebounceTimer
@@ -1056,6 +1079,26 @@ Item {
 
     function dropMainStatusIndicatorTool() {
         toolbar.dropMainStatusIndicatorTool();
+    }
+
+    Connections {
+        target: QGroundControl.routeMappingPiPhotoCapture
+
+        function onCaptureSucceeded(localPath) {
+            if (!_root.routeMappingPhotoProgressEnabled) {
+                return
+            }
+            _root._addPiPhotoToMapDisplay(localPath)
+            _root._pumpPiCaptureQueue()
+        }
+
+        function onCaptureFailed(message) {
+            if (!_root.routeMappingPhotoProgressEnabled) {
+                return
+            }
+            _root._pumpPiCaptureQueue()
+            console.warn("Route mapping Pi capture failed:", message)
+        }
     }
 
     QGCToolInsets {
@@ -1521,6 +1564,23 @@ Item {
         z:                  QGroundControl.zOrderTopMost + 10
     }
     // This is the flyviewmaiing progress bar code
+    RouteMappingTransferredImagesPanel {
+        id:                 transferredImagesPanel
+        anchors.left:       parent.left
+        anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+        anchors.bottom:     parent.bottom
+        anchors.bottomMargin: ScreenTools.defaultFontPixelHeight
+        z:                  QGroundControl.zOrderTopMost + 10
+        routeMappingActive: _root.routeMappingPhotoProgressEnabled
+                 && _root.routeMappingTransectPath
+                 && _root.routeMappingTransectPath.length >= 2
+        visible:            routeMappingActive
+                 && !QGroundControl.videoManager.fullScreen
+                 && !mainWindow.modeSelectionVisible
+                 && _root._mainWindowIsMap
+                 && !_root.planEditMode
+    }
+
     FlyViewMappingProgressPanel {
         id:                 mappingProgressPanel
         anchors.top:        mapTools.bottom

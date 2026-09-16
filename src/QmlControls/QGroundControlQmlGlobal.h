@@ -24,7 +24,8 @@ class VideoManager;
 class UTMSPManager;
 class AirLinkManager;
 class QmlObjectListModel;
-
+class RouteMappingPiPhotoCapture;
+class RouteMappingImageCatalog;
 Q_MOC_INCLUDE("ADSBVehicleManager.h")
 Q_MOC_INCLUDE("FactGroup.h")
 Q_MOC_INCLUDE("LinkManager.h")
@@ -34,6 +35,8 @@ Q_MOC_INCLUDE("QGCCorePlugin.h")
 Q_MOC_INCLUDE("QGCMapEngineManager.h")
 Q_MOC_INCLUDE("QGCPalette.h")
 Q_MOC_INCLUDE("PositionManager.h")
+Q_MOC_INCLUDE("RouteMappingPiPhotoCapture.h")
+Q_MOC_INCLUDE("RouteMappingImageCatalog.h")
 Q_MOC_INCLUDE("SettingsManager.h")
 Q_MOC_INCLUDE("VideoManager.h")
 #ifdef QGC_UTM_ADAPTER
@@ -69,6 +72,8 @@ public:
     Q_PROPERTY(QGCMapEngineManager* mapEngineManager        READ    mapEngineManager        CONSTANT)
     Q_PROPERTY(QGCPositionManager*  qgcPositionManger       READ    qgcPositionManger       CONSTANT)
     Q_PROPERTY(VideoManager*        videoManager            READ    videoManager            CONSTANT)
+    Q_PROPERTY(RouteMappingPiPhotoCapture* routeMappingPiPhotoCapture READ routeMappingPiPhotoCapture CONSTANT)
+    Q_PROPERTY(RouteMappingImageCatalog* routeMappingImageCatalog READ routeMappingImageCatalog CONSTANT)
     Q_PROPERTY(SettingsManager*     settingsManager         READ    settingsManager         CONSTANT)
     Q_PROPERTY(ADSBVehicleManager*  adsbVehicleManager      READ    adsbVehicleManager      CONSTANT)
     Q_PROPERTY(QGCCorePlugin*       corePlugin              READ    corePlugin              CONSTANT)
@@ -124,6 +129,7 @@ public:
     Q_INVOKABLE void    saveBoolGlobalSetting   (const QString& key, bool value);
     Q_INVOKABLE bool    loadBoolGlobalSetting   (const QString& key, bool defaultValue);
     Q_INVOKABLE static void speak               (const QString& text);
+    Q_INVOKABLE static void showAppMessage      (const QString& message);
 
     Q_INVOKABLE static void deleteAllSettingsNextBoot();
     Q_INVOKABLE static void clearDeleteAllSettingsNextBoot();
@@ -164,6 +170,8 @@ public:
     QGCPositionManager*     qgcPositionManger   ()  { return _qgcPositionManager; }
     MissionCommandTree*     missionCommandTree  ()  { return _missionCommandTree; }
     VideoManager*           videoManager        ()  { return _videoManager; }
+    RouteMappingPiPhotoCapture* routeMappingPiPhotoCapture() { return _routeMappingPiPhotoCapture; }
+    RouteMappingImageCatalog* routeMappingImageCatalog() { return _routeMappingImageCatalog; }
     QGCCorePlugin*          corePlugin          ()  { return _corePlugin; }
     SettingsManager*        settingsManager     ()  { return _settingsManager; }
 #ifndef QGC_NO_SERIAL_LINK
@@ -242,6 +250,8 @@ private:
     QGCPositionManager*     _qgcPositionManager     = nullptr;
     MissionCommandTree*     _missionCommandTree     = nullptr;
     VideoManager*           _videoManager           = nullptr;
+    RouteMappingPiPhotoCapture* _routeMappingPiPhotoCapture = nullptr;
+    RouteMappingImageCatalog* _routeMappingImageCatalog = nullptr;
     LinkManager*            _linkManager            = nullptr;
     MultiVehicleManager*    _multiVehicleManager    = nullptr;
     SettingsManager*        _settingsManager        = nullptr;

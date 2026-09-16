@@ -4,4 +4,4 @@ WFB_HOST=127.0.0.1
 WFB_PORT=14550
 MANUAL_HOST=127.0.0.1
 MANUAL_PORT=14551
-PHOTO_ROOT=/run/shreeon-route-mapping/legacy
+PHOTO_ROOT=/home/shreeon/mapping_photos

@@ -216,10 +216,39 @@ void VideoManager::grabImage(const QString &imageFile)
 
     emit imageFileChanged(_imageFile);
 
+    VideoReceiver *targetReceiver = nullptr;
     for (VideoReceiver *receiver : std::as_const(_videoReceivers)) {
-        receiver->takeScreenshot(_imageFile);
-        // QSharedPointer<QQuickItemGrabResult> result = receiver->widget()->grabToImage(const QSize &targetSize = QSize())
+        if (receiver->isThermal()) {
+            continue;
+        }
+        targetReceiver = receiver;
+        break;
     }
+
+    if (!targetReceiver) {
+        qCWarning(VideoManagerLog) << "grabImage: no video receiver";
+        emit screenshotFinished(_imageFile, false);
+        return;
+    }
+
+    if (!targetReceiver->started()) {
+        if (hasVideo()) {
+            _startReceiver(targetReceiver);
+        } else {
+            qCWarning(VideoManagerLog) << "grabImage: video not configured";
+            emit screenshotFinished(_imageFile, false);
+            return;
+        }
+    }
+
+    const QString savedPath = _imageFile;
+    (void) connect(targetReceiver, &VideoReceiver::onTakeScreenshotComplete, this,
+                   [this, savedPath](VideoReceiver::STATUS status) {
+                       emit screenshotFinished(savedPath, status == VideoReceiver::STATUS_OK);
+                   },
+                   Qt::SingleShotConnection);
+
+    targetReceiver->takeScreenshot(savedPath);
 }
 
 double VideoManager::aspectRatio() const

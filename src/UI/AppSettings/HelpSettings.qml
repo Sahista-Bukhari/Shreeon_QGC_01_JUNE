@@ -175,8 +175,55 @@ SettingsPage {
 
             Rectangle {
                 Layout.fillWidth:       true
-                Layout.preferredHeight: 1
-                color:                  helpPage._dividerColor
+                Layout.preferredHeight: piPhotoTestColumn.implicitHeight + helpPage._contentPad * 1.45
+                radius:                 helpPage._cardRadius * 0.75
+                color:                  helpPage._innerFill
+                border.width:           1
+                border.color:           helpPage._dividerColor
+
+                ColumnLayout {
+                    id: piPhotoTestColumn
+                    anchors.fill:        parent
+                    anchors.margins:     helpPage._contentPad
+                    spacing:             helpPage._paraGap
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        text:             qsTr("Pi camera (Route Mapping)")
+                        color:            helpPage._headingColor
+                        font.pointSize:   helpPage._sectionSize
+                        font.weight:      Font.DemiBold
+                    }
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        wrapMode:         Text.WordWrap
+                        color:            helpPage._bodyColor
+                        font.pointSize:   helpPage._bodySize
+                        text:             qsTr("Upload a Route Mapping plan to the vehicle, then start the mission from Fly View. QGC captures Pi stills automatically (survey distance and camera triggers) and saves them under Documents/QGC_RouteMapping/images/ as image_001.jpg, image_002.jpg, …")
+                    }
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        wrapMode:         Text.WordWrap
+                        color:            helpPage._bodyColor
+                        font.pointSize:   helpPage._bodySize
+                        visible:          QGroundControl.routeMappingPiPhotoCapture.busy
+                        text:             qsTr("Pi capture in progress…")
+                    }
+
+                    QGCLabel {
+                        Layout.fillWidth: true
+                        wrapMode:         Text.WordWrap
+                        color:            helpPage._bodyColor
+                        font.pointSize:   helpPage._bodySize
+                        text:             QGroundControl.routeMappingPiPhotoCapture.lastError.length > 0
+                                          ? QGroundControl.routeMappingPiPhotoCapture.lastError
+                                          : (QGroundControl.routeMappingPiPhotoCapture.lastLocalPath.length > 0
+                                             ? qsTr("Last saved: %1").arg(QGroundControl.routeMappingPiPhotoCapture.lastLocalPath)
+                                             : "")
+                    }
+                }
             }
 
             ColumnLayout {

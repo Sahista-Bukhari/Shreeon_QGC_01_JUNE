@@ -13,8 +13,10 @@
 #include "QGCLoggingCategory.h"
 
 #include <QtCore/QDateTime>
+#include <QtCore/QTimer>
 #include <QtCore/QUrl>
 #include <QtQuick/QQuickItem>
+#include <QtQuick/QQuickItemGrabResult>
 
 #include <gst/gst.h>
 
@@ -513,16 +515,47 @@ void GstVideoReceiver::stopRecording()
 
 void GstVideoReceiver::takeScreenshot(const QString &imageFile)
 {
-    if (_needDispatch()) {
-        const QString cachedImageFile = imageFile;
-        _worker->dispatch([this, cachedImageFile]() { takeScreenshot(cachedImageFile); });
+    if (isThermal()) {
+        emit onTakeScreenshotComplete(STATUS_INVALID_STATE);
         return;
     }
 
-    qCDebug(GstVideoReceiverLog) << "taking screenshot" << _uri;
+    const QString cachedImageFile = imageFile;
+    QTimer::singleShot(0, this, [this, cachedImageFile]() {
+        qCDebug(GstVideoReceiverLog) << "taking screenshot" << _uri << cachedImageFile;
 
-    // FIXME: record screenshot here
-    _dispatchSignal([this]() { emit onTakeScreenshotComplete(STATUS_NOT_IMPLEMENTED); });
+        QQuickItem *item = widget();
+        if (!item || !_decoding) {
+            qCWarning(GstVideoReceiverLog) << "screenshot unavailable (widget or decoding)";
+            emit onTakeScreenshotComplete(STATUS_FAIL);
+            return;
+        }
+
+        const QSharedPointer<QQuickItemGrabResult> grabResult = item->grabToImage();
+        if (!grabResult) {
+            qCWarning(GstVideoReceiverLog) << "grabToImage returned null";
+            emit onTakeScreenshotComplete(STATUS_FAIL);
+            return;
+        }
+
+        const auto saveGrab = [this, grabResult, cachedImageFile]() {
+            if (grabResult->saveToFile(cachedImageFile)) {
+                emit onTakeScreenshotComplete(STATUS_OK);
+            } else {
+                qCWarning(GstVideoReceiverLog) << "failed to save screenshot" << cachedImageFile;
+                emit onTakeScreenshotComplete(STATUS_FAIL);
+            }
+        };
+
+        if (!grabResult->image().isNull()) {
+            saveGrab();
+            return;
+        }
+
+        (void) connect(grabResult.data(), &QQuickItemGrabResult::ready, this, [saveGrab]() {
+            saveGrab();
+        }, Qt::SingleShotConnection);
+    });
 }
 
 void GstVideoReceiver::_watchdog()
