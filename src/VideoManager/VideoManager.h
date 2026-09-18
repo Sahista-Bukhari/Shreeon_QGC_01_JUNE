@@ -94,7 +94,6 @@ signals:
     void streamingChanged();
     void uvcVideoSourceIDChanged();
     void videoSizeChanged();
-    void screenshotFinished(const QString &imageFile, bool success);
 
 private slots:
     void _communicationLostChanged(bool communicationLost);

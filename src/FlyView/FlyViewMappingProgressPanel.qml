@@ -11,7 +11,10 @@ Rectangle {
     property int photosTaken: 0
     property int photosPlanned: 0
     property bool photosVisible: true
+    property var photoModel: null
     property string reconstructionText: qsTr("Pending")
+
+    readonly property real _thumbSize: ScreenTools.defaultFontPixelHeight * 4.2
 
     readonly property int _photosPercent: photosPlanned > 0
                                           ? Math.min(100, Math.floor((photosTaken / photosPlanned) * 100))
@@ -169,6 +172,64 @@ Rectangle {
                 iconSource: "/res/modern-icons/MappingProgressReconstruction.svg"
                 labelText: qsTr("Reconstruction")
                 valueText: root.reconstructionText
+            }
+        }
+
+        QGCLabel {
+            visible: root.photosVisible && root.photoModel && root.photoModel.count > 0
+            text: qsTr("Captured Images")
+            font.pointSize: root._labelSize
+            font.weight: Font.Medium
+            color: Qt.rgba(1, 1, 1, 0.92)
+        }
+
+        Flickable {
+            id: photoStrip
+            visible: root.photosVisible && root.photoModel && root.photoModel.count > 0
+            width: Math.min(ScreenTools.defaultFontPixelWidth * 28, metricsRow.width)
+            height: root._thumbSize + ScreenTools.defaultFontPixelHeight * 0.4
+            contentWidth: photoStripRow.width
+            clip: true
+
+            Row {
+                id: photoStripRow
+                spacing: ScreenTools.defaultFontPixelWidth * 0.5
+
+                Repeater {
+                    model: root.photoModel
+
+                    Rectangle {
+                        required property int photoSequence
+                        required property string photoImageSource
+
+                        width: root._thumbSize
+                        height: root._thumbSize
+                        radius: ScreenTools.defaultFontPixelWidth * 0.35
+                        color: "#263238"
+                        border.width: 1
+                        border.color: Qt.rgba(1, 1, 1, 0.35)
+
+                        Image {
+                            anchors.fill: parent
+                            anchors.margins: 1
+                            visible: photoImageSource.length > 0
+                            source: photoImageSource
+                            fillMode: Image.PreserveAspectCrop
+                            asynchronous: true
+                            cache: false
+                            smooth: true
+                        }
+
+                        QGCLabel {
+                            anchors.right: parent.right
+                            anchors.bottom: parent.bottom
+                            anchors.margins: 2
+                            text: String(photoSequence)
+                            font.pointSize: ScreenTools.smallFontPointSize
+                            color: "white"
+                        }
+                    }
+                }
             }
         }
     }

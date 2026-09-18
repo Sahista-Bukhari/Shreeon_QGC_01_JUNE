@@ -188,11 +188,6 @@ FlightMap {
 
     function routeMappingPhotoCaptureInfo(coord) {
         var points = routeMappingPhotoCaptureTransectPoints
-        var pairStep = 2
-        if (!points || points.length < 2) {
-            points = routeMappingTransectPath
-            pairStep = 1
-        }
         if (!points || points.length < 2 || !coord || !coord.isValid) {
             return {
                 valid: false,
@@ -205,7 +200,7 @@ FlightMap {
         }
 
         var bestInfo = null
-        for (var i = 0; i + 1 < points.length; i += pairStep) {
+        for (var i = 0; i + 1 < points.length; i += 2) {
             var segmentStart = points[i]
             var segmentEnd = points[i + 1]
             if (!segmentStart || !segmentStart.isValid
@@ -218,7 +213,7 @@ FlightMap {
             if (!bestInfo || distanceToSegment < bestInfo.distanceToSegment) {
                 bestInfo = {
                     valid: true,
-                    segmentIndex: pairStep === 2 ? Math.floor(i / 2) : i,
+                    segmentIndex: Math.floor(i / 2),
                     distanceToSegment: distanceToSegment,
                     alongSegment: segmentStart.distanceTo(projected),
                     segmentLength: segmentStart.distanceTo(segmentEnd),
@@ -1518,7 +1513,9 @@ FlightMap {
         z: QGroundControl.zOrderWaypointLines + 2
     }
 
-    // Pi full-res photos (image_*.jpg) placed on the map after SCP completes.
+    // Each confirmed mapping capture becomes a georeferenced camera footprint.
+    // The image is a live frame saved at CAMERA_IMAGE_CAPTURED time and scales
+    // with map zoom so successive shots form an in-progress orthomosaic strip.
     MapItemView {
         model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
 
@@ -1553,8 +1550,6 @@ FlightMap {
             sourceItem: Item {
                 id: mappingPhotoTile
 
-                property string stableImageSource: mappingPhotoItem.photoImageSource
-
                 width: {
                     var unusedZoom = mappingPhotoItem.mapZoom
                     var unusedCenter = mappingPhotoItem.mapCenter
@@ -1586,7 +1581,8 @@ FlightMap {
                 Image {
                     id: mappingPhotoImage
                     anchors.fill: parent
-                    source: mappingPhotoTile.stableImageSource
+                    visible: mappingPhotoItem.photoImageSource.length > 0
+                    source: mappingPhotoItem.photoImageSource
                     fillMode: Image.Stretch
                     asynchronous: true
                     cache: false
@@ -1597,24 +1593,14 @@ FlightMap {
 
                 QGCLabel {
                     anchors.centerIn: parent
-                    text: qsTr("Photo %1").arg(mappingPhotoItem.photoSequence)
+                    text: mappingPhotoItem.photoImageSource.length === 0
+                          ? qsTr("Photo %1 (waiting for Pi…)").arg(mappingPhotoItem.photoSequence)
+                          : qsTr("Photo %1").arg(mappingPhotoItem.photoSequence)
                     color: "white"
                     font.bold: true
                     font.pointSize: ScreenTools.smallFontPointSize
-                    visible: mappingPhotoImage.status !== Image.Ready
-                }
-
-                Timer {
-                    property int attempts: 0
-                    interval: 200
-                    repeat: true
-                    running: mappingPhotoImage.status !== Image.Ready && attempts < 25
-                    onTriggered: {
-                        attempts++
-                        mappingPhotoImage.source = ""
-                        mappingPhotoImage.source = mappingPhotoTile.stableImageSource
-                                + "?attempt=" + attempts
-                    }
+                    visible: mappingPhotoItem.photoImageSource.length === 0
+                             || mappingPhotoImage.status !== Image.Ready
                 }
             }
         }

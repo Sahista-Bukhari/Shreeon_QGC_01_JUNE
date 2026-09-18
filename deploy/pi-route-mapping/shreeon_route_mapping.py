@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import json
 import logging
 import os
 import pathlib
@@ -49,6 +50,7 @@ class MavlinkMessage:
 class CaptureRequest:
     source: str
     sequence: int | None = None
+    gcs_sequence: int | None = None
 
 
 def x25_crc(data: bytes, crc: int = 0xFFFF) -> int:
@@ -148,6 +150,7 @@ class CaptureWorker(threading.Thread):
         camera_service: str,
         camera_command: str,
         timeout_ms: int,
+        video_release_delay_sec: float,
     ) -> None:
         super().__init__(name="photo-capture", daemon=True)
         self._requests: queue.Queue[CaptureRequest | None] = queue.Queue(maxsize=64)
@@ -155,8 +158,13 @@ class CaptureWorker(threading.Thread):
         self._camera_service = camera_service
         self._camera_command = camera_command
         self._timeout_ms = timeout_ms
+        self._video_release_delay_sec = video_release_delay_sec
+        self._session_video_paused = False
         self._counter = 0
         self._session_directory = self._create_session_directory(photo_root)
+
+    def set_session_video_paused(self, paused: bool) -> None:
+        self._session_video_paused = paused
 
     @property
     def session_directory(self) -> pathlib.Path:
@@ -166,9 +174,10 @@ class CaptureWorker(threading.Thread):
         try:
             self._requests.put_nowait(request)
             LOGGER.info(
-                "Queued photo from %s (sequence=%s)",
+                "Queued photo from %s (sequence=%s gcs_sequence=%s)",
                 request.source,
                 request.sequence,
+                request.gcs_sequence,
             )
             return True
         except queue.Full:
@@ -202,30 +211,40 @@ class CaptureWorker(threading.Thread):
 
     def _capture(self, request: CaptureRequest) -> None:
         self._counter += 1
-        trigger_sequence = (
-            f"px4_{request.sequence:06d}"
-            if request.sequence is not None
-            else f"local_{self._counter:06d}"
-        )
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        filename = self._session_directory / (
-            f"image_{self._counter:06d}_{trigger_sequence}_{timestamp}.jpg"
-        )
+        if request.gcs_sequence is not None:
+            trigger_sequence = f"gcs_{request.gcs_sequence:04d}"
+            filename = self._session_directory / (
+                f"image_{request.gcs_sequence:04d}_{trigger_sequence}_{timestamp}.jpg"
+            )
+        else:
+            trigger_sequence = (
+                f"px4_{request.sequence:06d}"
+                if request.sequence is not None
+                else f"local_{self._counter:06d}"
+            )
+            filename = self._session_directory / (
+                f"image_{self._counter:06d}_{trigger_sequence}_{timestamp}.jpg"
+            )
         temporary_filename = filename.with_suffix(".part.jpg")
 
-        video_was_active = (
-            subprocess.run(
-                ["systemctl", "is-active", "--quiet", self._camera_service],
-                check=False,
-            ).returncode
-            == 0
-        )
+        manage_video_per_shot = not self._session_video_paused
+        video_was_active = False
+        if manage_video_per_shot:
+            video_was_active = (
+                subprocess.run(
+                    ["systemctl", "is-active", "--quiet", self._camera_service],
+                    check=False,
+                ).returncode
+                == 0
+            )
 
         try:
-            if video_was_active:
+            if manage_video_per_shot and video_was_active:
                 subprocess.run(
                     ["systemctl", "stop", self._camera_service], check=True
                 )
+                time.sleep(self._video_release_delay_sec)
 
             command = [
                 "/usr/sbin/runuser",
@@ -249,15 +268,33 @@ class CaptureWorker(threading.Thread):
                 "--output",
                 str(temporary_filename),
             ]
-            subprocess.run(command, check=True, timeout=30)
+            try:
+                subprocess.run(command, check=True, timeout=30)
+            except subprocess.CalledProcessError:
+                time.sleep(0.5)
+                subprocess.run(command, check=True, timeout=30)
             if not temporary_filename.is_file() or temporary_filename.stat().st_size == 0:
                 raise RuntimeError("rpicam-still did not create a JPEG")
             temporary_filename.replace(filename)
             LOGGER.info("Saved %s (%d bytes)", filename, filename.stat().st_size)
+            sidecar = filename.with_suffix(".json")
+            sidecar.write_text(
+                json.dumps(
+                    {
+                        "source": request.source,
+                        "gcs_sequence": request.gcs_sequence,
+                        "px4_sequence": request.sequence,
+                        "filename": filename.name,
+                        "captured_at": timestamp,
+                    },
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
         finally:
             if temporary_filename.exists():
                 temporary_filename.unlink()
-            if video_was_active:
+            if manage_video_per_shot and video_was_active:
                 subprocess.run(
                     ["systemctl", "start", self._camera_service], check=False
                 )
@@ -297,6 +334,7 @@ class RouteMappingService:
         self._last_serial_retry = 0.0
         self._seen_camera_triggers: dict[tuple[int, int, int], float] = {}
         self._suppress_next_camera_trigger_until = 0.0
+        self._ignore_uart_camera_trigger = os.environ.get("QGC_LED", "0") == "1"
 
         self._wfb_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._wfb_socket.bind(("127.0.0.1", 0))
@@ -317,7 +355,30 @@ class RouteMappingService:
             arguments.camera_service,
             arguments.camera_command,
             arguments.capture_timeout_ms,
+            arguments.video_release_delay_sec,
         )
+
+    def pause_live_video(self) -> None:
+        if (
+            subprocess.run(
+                ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
+                check=False,
+            ).returncode
+            == 0
+        ):
+            subprocess.run(
+                ["systemctl", "stop", self._arguments.camera_service], check=True
+            )
+            time.sleep(self._arguments.video_release_delay_sec)
+        self._capture_worker.set_session_video_paused(True)
+        LOGGER.info("Live video paused for mapping still session")
+
+    def resume_live_video(self) -> None:
+        self._capture_worker.set_session_video_paused(False)
+        subprocess.run(
+            ["systemctl", "start", self._arguments.camera_service], check=False
+        )
+        LOGGER.info("Live video resumed after mapping still session")
 
     def request_stop(self, _signum: int, _frame: object) -> None:
         self._stop_requested = True
@@ -418,14 +479,35 @@ class RouteMappingService:
 
     def _read_manual(self) -> None:
         data, address = self._manual_socket.recvfrom(1024)
-        command = data.strip().upper()
-        if command == b"CAPTURE":
-            queued = self._capture_worker.request(CaptureRequest("manual-udp"))
+        text = data.decode("utf-8", errors="ignore").strip()
+        parts = text.upper().split()
+        if not parts:
+            response = b"ERROR empty command\n"
+        elif parts[0] == "CAPTURE":
+            gcs_sequence = None
+            if len(parts) >= 2:
+                try:
+                    gcs_sequence = int(parts[1])
+                except ValueError:
+                    self._manual_socket.sendto(b"ERROR invalid sequence\n", address)
+                    return
+            if gcs_sequence is not None:
+                queued = self._capture_worker.request(
+                    CaptureRequest("gcs-udp", gcs_sequence=gcs_sequence)
+                )
+            else:
+                queued = self._capture_worker.request(CaptureRequest("manual-udp"))
             response = b"QUEUED\n" if queued else b"BUSY\n"
-        elif command == b"STATUS":
+        elif parts[0] == "STATUS":
             response = f"SESSION {self._capture_worker.session_directory}\n".encode()
+        elif parts[0] == "VIDEO_PAUSE":
+            self.pause_live_video()
+            response = b"OK\n"
+        elif parts[0] == "VIDEO_RESUME":
+            self.resume_live_video()
+            response = b"OK\n"
         else:
-            response = b"ERROR use CAPTURE or STATUS\n"
+            response = b"ERROR use CAPTURE [seq], STATUS, VIDEO_PAUSE, VIDEO_RESUME\n"
         self._manual_socket.sendto(response, address)
 
     def _handle_messages(
@@ -440,6 +522,8 @@ class RouteMappingService:
                 and message.message_id == MAVLINK_MSG_ID_CAMERA_TRIGGER
                 and len(message.payload) >= 12
             ):
+                if self._ignore_uart_camera_trigger:
+                    continue
                 _time_usec, sequence = struct.unpack_from("<QI", message.payload)
                 now = time.monotonic()
                 if now <= self._suppress_next_camera_trigger_until:
@@ -484,13 +568,19 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--serial-baud", type=int, default=57600)
     parser.add_argument("--wfb-host", default="127.0.0.1")
     parser.add_argument("--wfb-port", type=int, default=14550)
-    parser.add_argument("--manual-host", default="127.0.0.1")
+    parser.add_argument("--manual-host", default="0.0.0.0")
     parser.add_argument("--manual-port", type=int, default=14551)
     parser.add_argument("--photo-root", default="/home/shreeon/mapping_photos")
     parser.add_argument("--capture-user", default="shreeon")
     parser.add_argument("--camera-service", default="wfb-camera.service")
     parser.add_argument("--camera-command", default="/usr/local/bin/rpicam-still")
     parser.add_argument("--capture-timeout-ms", type=int, default=2000)
+    parser.add_argument(
+        "--video-release-delay-sec",
+        type=float,
+        default=2.0,
+        help="Wait after stopping wfb-camera before rpicam-still",
+    )
     return parser.parse_args()
 
 

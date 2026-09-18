@@ -32,6 +32,26 @@ For a safe manual test while disarmed:
 printf 'CAPTURE' | nc -u -w 1 127.0.0.1 14551
 ```
 
+QGroundControl (GCS-led capture) sends sequenced triggers over the WFB LAN:
+
+```bash
+printf 'CAPTURE 1' | nc -u -w 1 10.5.0.2 14551
+```
+
+Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the active
+`mission_*` session directory. Set `MANUAL_HOST=0.0.0.0` and `QGC_LED=1` in
+`/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551 and UART
+`CAMERA_TRIGGER` does not double-capture.
+
+During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
+starts (stops `wfb-camera.service` for the whole session so `rpicam-still` can
+use the sensor) and `VIDEO_RESUME` when the session ends:
+
+```bash
+printf 'VIDEO_PAUSE' | nc -u -w 1 10.5.0.2 14551
+printf 'VIDEO_RESUME' | nc -u -w 1 10.5.0.2 14551
+```
+
 The same test can be requested without netcat:
 
 ```bash
