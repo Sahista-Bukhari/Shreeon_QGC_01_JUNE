@@ -1,4 +1,4 @@
-    import QtQuick
+import QtQuick
 import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
@@ -534,6 +534,8 @@ Item {
     property bool   _mappingPhotoSegmentEndCaptured: false
     property real   _lastTransectPathCaptureDistance: -1
     property var    _routeMappingSessionPhotoFiles: []
+    property int    _routeMappingPhotosRetrieved: 0
+    property bool   _routeMappingGcsSessionPathAnnounced: false
 
     ListModel {
         id: _routeMappingLivePhotoModel
@@ -549,9 +551,16 @@ Item {
 
         onPhotoFetched: function(requestId, localFilePath, success, errorMessage) {
             if (!success) {
+                for (var failedIndex = 0; failedIndex < _routeMappingLivePhotoModel.count; failedIndex++) {
+                    if (Number(_routeMappingLivePhotoModel.get(failedIndex).photoSequence) === Number(requestId)) {
+                        _routeMappingLivePhotoModel.setProperty(failedIndex, "photoFetchFailed", true)
+                        break
+                    }
+                }
                 if (!_root._routeMappingPiFetchErrorShown) {
                     _root._routeMappingPiFetchErrorShown = true
-                    qgcApp().showAppMessage(
+                    mainWindow.showMessageDialog(
+                                QGroundControl.appName,
                                 qsTr("Route Mapping Pi photo fetch failed: %1").arg(errorMessage))
                 }
                 return
@@ -562,17 +571,75 @@ Item {
                 if (Number(photo.photoSequence) !== Number(requestId)) {
                     continue
                 }
+                if (!photo.photoReady) {
+                    _root._routeMappingPhotosRetrieved++
+                }
                 var refreshedUrl = _root._mappingPhotoFileUrl(localFilePath)
                         + "?ready=" + Date.now()
                 _routeMappingLivePhotoModel.setProperty(i, "photoImageSource", refreshedUrl)
+                _routeMappingLivePhotoModel.setProperty(i, "photoReady", true)
+                _routeMappingLivePhotoModel.setProperty(i, "photoFetchFailed", false)
                 break
             }
+        }
+
+        onFetchQueueDrained: {
+            if (!routeMappingPhotoController.sessionActive && _root.routeMappingPiPhotoFetchEnabled) {
+                routeMappingPiPhotoFetcher.resumeLiveVideo()
+            }
+        }
+
+        onSshPrecheckFailed: function(errorMessage) {
+            if (_root._routeMappingPiFetchErrorShown) {
+                return
+            }
+            _root._routeMappingPiFetchErrorShown = true
+            var detail = errorMessage && String(errorMessage).length > 0
+                    ? String(errorMessage)
+                    : qsTr("Unknown SSH error")
+            var hint = qsTr(
+                        "If this is the first time on this GCS, install your SSH key:\n"
+                        + "  ssh-copy-id %1@%2\n\n"
+                        + "If the vehicle link is down, connect Wi‑Fi/WFB so %2 is reachable, then retry.")
+                    .arg(_root.routeMappingPiUser)
+                    .arg(_root.routeMappingPiHost)
+            mainWindow.showMessageDialog(
+                        qsTr("Route Mapping Photo Transfer Blocked"),
+                        qsTr("SSH to the Raspberry Pi failed — photos will not transfer.\n\n%1\n\n%2")
+                            .arg(detail)
+                            .arg(hint))
+        }
+
+        onSessionStartFailed: function(errorMessage) {
+            if (_root._routeMappingPiFetchErrorShown) {
+                return
+            }
+            _root._routeMappingPiFetchErrorShown = true
+            mainWindow.showMessageDialog(
+                        qsTr("Route Mapping Photo Session Failed"),
+                        qsTr("The Raspberry Pi did not create a photo session. Photos will not transfer.\n\n%1")
+                            .arg(errorMessage))
         }
     }
 
     RouteMappingPhotoController {
         id: routeMappingPhotoController
         Component.onCompleted: setPhotoFetcher(routeMappingPiPhotoFetcher)
+
+        onGcsSessionStartFailed: function(errorMessage) {
+            mainWindow.showMessageDialog(QGroundControl.appName, errorMessage)
+        }
+
+        onSessionActiveChanged: {
+            if (!routeMappingPhotoController.sessionActive || _root._routeMappingGcsSessionPathAnnounced) {
+                return
+            }
+            _root._routeMappingGcsSessionPathAnnounced = true
+            console.info(
+                        "[RouteMapping] Photos save to",
+                        routeMappingPhotoController.sessionDirectory,
+                        "(see latest_mission_session.txt under Photo/RouteMapping)")
+        }
     }
 
     function resetRouteMappingLivePhotos() {
@@ -587,7 +654,9 @@ Item {
         _lastTransectPathCaptureDistance = -1
         _routeMappingPiFetchErrorShown = false
         _routeMappingCaptureSetupWarned = false
-        routeMappingPiPhotoFetcher.resetSession()
+        _routeMappingPhotosRetrieved = 0
+        _routeMappingGcsSessionPathAnnounced = false
+        routeMappingPhotoController.cancelSession()
         if (routeMappingPiPhotoFetchEnabled) {
             routeMappingPiPhotoFetcher.resumeLiveVideo()
         }
@@ -598,18 +667,18 @@ Item {
         if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled) {
             return
         }
-        routeMappingPiPhotoFetcher.pauseLiveVideo()
         routeMappingPhotoController.captureEnabled = true
-        routeMappingPhotoController.beginSession()
-        routeMappingPiPhotoFetcher.resetSession()
+        if (!routeMappingPhotoController.beginSession()) {
+            routeMappingPhotoController.captureEnabled = false
+            routeMappingPiPhotoFetcher.resumeLiveVideo()
+            return false
+        }
+        return true
     }
 
     function _endRouteMappingPhotoSession() {
         routeMappingPhotoController.captureEnabled = false
         routeMappingPhotoController.endSession()
-        if (routeMappingPiPhotoFetchEnabled) {
-            routeMappingPiPhotoFetcher.resumeLiveVideo()
-        }
     }
 
     function _mappingPhotoFileUrl(filePath) {
@@ -656,7 +725,8 @@ Item {
         if (!routeMappingTransectPath || routeMappingTransectPath.length < 2) {
             if (!_routeMappingCaptureSetupWarned) {
                 _routeMappingCaptureSetupWarned = true
-                qgcApp().showAppMessage(
+                mainWindow.showMessageDialog(
+                            QGroundControl.appName,
                             qsTr("Route Mapping photos need an uploaded survey overlay. Upload the plan from Route Mapping, then return to Fly View."))
             }
             return false
@@ -774,7 +844,8 @@ Item {
             if (!photoDirectory || photoDirectory.length === 0) {
                 if (!_routeMappingPhotoPathWarned) {
                     _routeMappingPhotoPathWarned = true
-                    qgcApp().showAppMessage(
+                    mainWindow.showMessageDialog(
+                                QGroundControl.appName,
                                 qsTr("Photo save path is not configured. Set it in Application Settings to capture route mapping photos."))
                 }
                 return false
@@ -782,6 +853,16 @@ Item {
             var fileName = "mapping_" + Date.now() + "_" + photoNumber + ".jpg"
             var separator = photoDirectory.charAt(photoDirectory.length - 1) === "/" ? "" : "/"
             filePath = photoDirectory + separator + fileName
+        }
+
+        if (routeMappingPiPhotoFetchEnabled
+                && !routeMappingPhotoController.requestPhotoCapture(
+                    photoNumber,
+                    coordinate.latitude,
+                    coordinate.longitude,
+                    coordinate.altitude,
+                    heading)) {
+            return false
         }
 
         _routeMappingLivePhotoModel.append({
@@ -792,19 +873,14 @@ Item {
             photoSequence: photoNumber,
             // Pi stills: JPEG path is filled only after SCP succeeds (avoids QML Image errors).
             photoImageSource: routeMappingPiPhotoFetchEnabled ? "" : _mappingPhotoFileUrl(filePath),
-            photoTelemetryConfirmed: telemetryConfirmed
+            photoTelemetryConfirmed: telemetryConfirmed,
+            photoReady: !routeMappingPiPhotoFetchEnabled,
+            photoFetchFailed: false
         })
 
         _trackRouteMappingPhotoFile(filePath)
 
-        if (routeMappingPiPhotoFetchEnabled) {
-            routeMappingPhotoController.requestPhotoCapture(
-                        photoNumber,
-                        coordinate.latitude,
-                        coordinate.longitude,
-                        coordinate.altitude,
-                        heading)
-        } else {
+        if (!routeMappingPiPhotoFetchEnabled) {
             QGroundControl.videoManager.grabImage(filePath)
         }
         return true
@@ -875,8 +951,16 @@ Item {
         var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
 
         if (_lastTransectPathCaptureDistance < 0) {
-            _lastTransectPathCaptureDistance = alongPath
+            // Distance-based spacing is measured from transect start (waypoint 1),
+            // not from wherever the vehicle first enters the 40 m corridor.
+            _lastTransectPathCaptureDistance = 0
             _lastMappingPatternCoordinate = coordinate
+            if (_routeMappingLivePhotoModel.count === 0 && alongPath > 8 && mapControl) {
+                var transectStart = mapControl.routeMappingCoordinateAtDistanceAlongPath(0)
+                if (transectStart && transectStart.isValid) {
+                    _appendRouteMappingPhotoAlongTransect(transectStart, false)
+                }
+            }
             _appendRouteMappingPhotoAlongTransect(coordinate, false)
             return
         }
@@ -901,6 +985,8 @@ Item {
         // Count only captures accepted on an interior photo transect. Raw
         // vehicle feedback can include unrelated camera events during takeoff
         // or RTL and must not inflate Route Mapping progress.
+        // Pi mode: tiles appear as soon as a capture is accepted; JPEG thumbnails
+        // fill in after SCP (_routeMappingPhotosRetrieved tracks fetch success only).
         return _routeMappingLivePhotoModel.count
     }
 
@@ -990,7 +1076,8 @@ Item {
                 // mission's survey photographs from the configured photo path.
                 _root._routeMappingSessionPhotoFiles = []
                 _root.resetRouteMappingLivePhotos()
-                _root._beginRouteMappingPhotoSession()
+                // Do not start Pi SSH/VIDEO_PAUSE here — beginSession blocks the GUI
+                // thread for seconds. Session starts when the mission runs or on first capture.
             } else {
                 _root._endRouteMappingPhotoSession()
             }
@@ -1016,6 +1103,7 @@ Item {
 
     onMissionRunningChanged: {
         if (missionRunning && routeMappingPhotoProgressEnabled) {
+            _lastTransectPathCaptureDistance = -1
             routeMappingPhotoController.captureEnabled = true
             if (!routeMappingPhotoController.sessionActive) {
                 _beginRouteMappingPhotoSession()

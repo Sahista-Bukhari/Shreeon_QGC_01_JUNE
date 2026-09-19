@@ -1,5 +1,8 @@
 # Raspberry Pi route-mapping capture
 
+**Full end-to-end guide (GCS + Pi + workflow + changelog):**  
+[`docs/en/shreeon-route-mapping-implementation.md`](../../docs/en/shreeon-route-mapping-implementation.md)
+
 This service keeps the existing WFB H.264 stream and captures full-resolution
 4608x2592 JPEG files on the Raspberry Pi when PX4 emits a MAVLink
 `CAMERA_TRIGGER` message. A capture pauses the live video for a few seconds and
@@ -10,6 +13,20 @@ Photos are stored under:
 ```text
 /home/shreeon/mapping_photos/mission_YYYYMMDD_HHMMSS/
 ```
+
+## Required GCS SSH key
+
+QGC uses non-interactive SCP and cannot answer a password prompt. Install the
+GCS user's public key on the Pi before flying:
+
+```bash
+ssh-copy-id shreeon@10.5.0.2
+ssh -o BatchMode=yes -o ConnectTimeout=3 shreeon@10.5.0.2 true
+```
+
+The second command must exit successfully without prompting. QGC runs the same
+precheck when a Route Mapping photo session starts and blocks the session with
+a modal setup message if key authentication is unavailable.
 
 The service also bridges MAVLink between `/dev/ttyAMA0` and the WFB UDP endpoint
 at `127.0.0.1:14550`. The default serial speed is 57600 baud and can be changed
@@ -29,17 +46,25 @@ UART logic.
 For a safe manual test while disarmed:
 
 ```bash
+printf 'VIDEO_PAUSE' | nc -u -w 5 127.0.0.1 14551
 printf 'CAPTURE' | nc -u -w 1 127.0.0.1 14551
+printf 'VIDEO_RESUME' | nc -u -w 1 127.0.0.1 14551
 ```
 
-QGroundControl (GCS-led capture) sends sequenced triggers over the WFB LAN:
+`VIDEO_PAUSE` creates a folder at the current flight start time and returns its
+authoritative path. QGroundControl stores that reply and sends sequenced,
+idempotent triggers over the WFB LAN:
 
-```bash
-printf 'CAPTURE 1' | nc -u -w 1 10.5.0.2 14551
+```text
+> VIDEO_PAUSE
+< OK session=/home/shreeon/mapping_photos/mission_20260919_124005
+> CAPTURE 1
+< QUEUED seq=1 path=/home/shreeon/mapping_photos/mission_…/image_0001_gcs_0001_….jpg
 ```
 
-Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the active
-`mission_*` session directory. Set `MANUAL_HOST=0.0.0.0` and `QGC_LED=1` in
+Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the returned
+`mission_YYYYMMDD_HHMMSS` directory. Repeating the same sequence within that
+session is safe and does not take a duplicate photo. Set `MANUAL_HOST=0.0.0.0` and `QGC_LED=1` in
 `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551 and UART
 `CAMERA_TRIGGER` does not double-capture.
 

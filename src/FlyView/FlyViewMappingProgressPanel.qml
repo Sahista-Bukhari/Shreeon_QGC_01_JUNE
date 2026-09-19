@@ -217,6 +217,8 @@ Rectangle {
                             fillMode: Image.PreserveAspectCrop
                             asynchronous: true
                             cache: false
+                            sourceSize.width: Math.ceil(width * 2)
+                            sourceSize.height: Math.ceil(height * 2)
                             smooth: true
                         }
 

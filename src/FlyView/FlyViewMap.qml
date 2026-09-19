@@ -178,6 +178,18 @@ FlightMap {
         return bestHeading
     }
 
+    function routeMappingCoordinateAtDistanceAlongPath(distanceAlongPath) {
+        var path = routeMappingTransectPath
+        if (!path || path.length === 0) {
+            return QtPositioning.coordinate()
+        }
+        if (distanceAlongPath <= 0 || path.length < 2) {
+            return path[0]
+        }
+        var slice = _slicePathFromStart(path, distanceAlongPath)
+        return slice.length > 0 ? slice[slice.length - 1] : path[0]
+    }
+
     function routeMappingDistanceAlongPath(coord) {
         var path = routeMappingTransectPath
         if (!path || path.length < 2 || !coord || !coord.isValid) {
@@ -1586,6 +1598,11 @@ FlightMap {
                     fillMode: Image.Stretch
                     asynchronous: true
                     cache: false
+                    // Decode only what the map can display. Loading each
+                    // 4608x2592 JPEG as a full GPU texture exhausts memory and
+                    // exceeds the 4096px texture limit on common QGC devices.
+                    sourceSize.width: Math.max(32, Math.ceil(mappingPhotoTile.width * 2))
+                    sourceSize.height: Math.max(32, Math.ceil(mappingPhotoTile.height * 2))
                     smooth: true
                     mipmap: true
                     opacity: status === Image.Ready ? 0.88 : 0

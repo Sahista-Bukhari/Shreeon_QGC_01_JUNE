@@ -51,6 +51,8 @@ class CaptureRequest:
     source: str
     sequence: int | None = None
     gcs_sequence: int | None = None
+    session_directory: pathlib.Path | None = None
+    planned_path: pathlib.Path | None = None
 
 
 def x25_crc(data: bytes, crc: int = 0xFFFF) -> int:
@@ -153,7 +155,11 @@ class CaptureWorker(threading.Thread):
         video_release_delay_sec: float,
     ) -> None:
         super().__init__(name="photo-capture", daemon=True)
-        self._requests: queue.Queue[CaptureRequest | None] = queue.Queue(maxsize=64)
+        # A mapping mission can easily contain hundreds of photographs. The
+        # old 64-item cap silently discarded the tail of a fast survey while
+        # rpicam-still was still draining earlier requests.
+        self._requests: queue.Queue[CaptureRequest | None] = queue.Queue()
+        self._photo_root = photo_root
         self._capture_user = capture_user
         self._camera_service = camera_service
         self._camera_command = camera_command
@@ -161,28 +167,92 @@ class CaptureWorker(threading.Thread):
         self._video_release_delay_sec = video_release_delay_sec
         self._session_video_paused = False
         self._counter = 0
-        self._session_directory = self._create_session_directory(photo_root)
+        self._session_directory: pathlib.Path | None = None
+        self._gcs_requests: set[tuple[str, int]] = set()
+        self._gcs_planned_paths: dict[tuple[str, int], pathlib.Path] = {}
+        self._request_lock = threading.Lock()
+
+        photo_root.mkdir(parents=True, exist_ok=True)
 
     def set_session_video_paused(self, paused: bool) -> None:
         self._session_video_paused = paused
 
     @property
-    def session_directory(self) -> pathlib.Path:
-        return self._session_directory
+    def session_directory(self) -> pathlib.Path | None:
+        with self._request_lock:
+            return self._session_directory
 
-    def request(self, request: CaptureRequest) -> bool:
+    def begin_session(self) -> pathlib.Path:
+        with self._request_lock:
+            if self._session_directory is None:
+                self._session_directory = self._create_session_directory(
+                    self._photo_root
+                )
+            return self._session_directory
+
+    def start_new_session(self) -> pathlib.Path:
+        with self._request_lock:
+            self._session_directory = self._create_session_directory(
+                self._photo_root
+            )
+            return self._session_directory
+
+    def close_session(self) -> None:
+        with self._request_lock:
+            if self._session_directory is not None:
+                LOGGER.info("Photo session closed: %s", self._session_directory)
+            self._session_directory = None
+
+    def _plan_gcs_capture_path(
+        self, session_directory: pathlib.Path, gcs_sequence: int
+    ) -> pathlib.Path:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+        return session_directory / (
+            f"image_{gcs_sequence:04d}_gcs_{gcs_sequence:04d}_{timestamp}.jpg"
+        )
+
+    def request(self, request: CaptureRequest) -> tuple[bool, pathlib.Path | None]:
+        if request.session_directory is None:
+            request = dataclasses.replace(
+                request, session_directory=self.begin_session()
+            )
+
+        planned_path: pathlib.Path | None = None
+        request_key: tuple[str, int] | None = None
+        if request.gcs_sequence is not None:
+            request_key = (str(request.session_directory), request.gcs_sequence)
+            with self._request_lock:
+                if request_key in self._gcs_requests:
+                    LOGGER.info(
+                        "Ignoring duplicate GCS capture session=%s sequence=%d",
+                        request.session_directory,
+                        request.gcs_sequence,
+                    )
+                    return True, self._gcs_planned_paths[request_key]
+                planned_path = self._plan_gcs_capture_path(
+                    request.session_directory, request.gcs_sequence
+                )
+                self._gcs_requests.add(request_key)
+                self._gcs_planned_paths[request_key] = planned_path
+            request = dataclasses.replace(request, planned_path=planned_path)
+
         try:
             self._requests.put_nowait(request)
             LOGGER.info(
-                "Queued photo from %s (sequence=%s gcs_sequence=%s)",
+                "Queued photo from %s (sequence=%s gcs_sequence=%s path=%s)",
                 request.source,
                 request.sequence,
                 request.gcs_sequence,
+                planned_path,
             )
-            return True
+            return True, planned_path
         except queue.Full:
+            if request_key is not None:
+                with self._request_lock:
+                    self._gcs_requests.discard(request_key)
+                    self._gcs_planned_paths.pop(request_key, None)
             LOGGER.error("Photo queue is full; dropping trigger from %s", request.source)
-            return False
+            return False, None
 
     def stop(self) -> None:
         try:
@@ -198,11 +268,25 @@ class CaptureWorker(threading.Thread):
             try:
                 self._capture(request)
             except Exception:
+                if request.gcs_sequence is not None:
+                    request_key = (
+                        str(request.session_directory),
+                        request.gcs_sequence,
+                    )
+                    with self._request_lock:
+                        self._gcs_requests.discard(request_key)
+                        self._gcs_planned_paths.pop(request_key, None)
                 LOGGER.exception("Full-resolution capture failed")
 
     def _create_session_directory(self, photo_root: pathlib.Path) -> pathlib.Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         session_directory = photo_root / f"mission_{timestamp}"
+        collision_index = 1
+        while session_directory.exists():
+            session_directory = photo_root / (
+                f"mission_{timestamp}_{collision_index:02d}"
+            )
+            collision_index += 1
         session_directory.mkdir(parents=True, exist_ok=True)
         account = pwd.getpwnam(self._capture_user)
         os.chown(session_directory, account.pw_uid, account.pw_gid)
@@ -211,19 +295,31 @@ class CaptureWorker(threading.Thread):
 
     def _capture(self, request: CaptureRequest) -> None:
         self._counter += 1
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
-        if request.gcs_sequence is not None:
+        session_directory = request.session_directory
+        if session_directory is None:
+            raise RuntimeError("Capture request has no photo session")
+        if request.planned_path is not None:
+            filename = request.planned_path
+            name_parts = filename.stem.split("_")
+            timestamp = (
+                "_".join(name_parts[4:])
+                if len(name_parts) > 4
+                else datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
+            )
+        elif request.gcs_sequence is not None:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
             trigger_sequence = f"gcs_{request.gcs_sequence:04d}"
-            filename = self._session_directory / (
+            filename = session_directory / (
                 f"image_{request.gcs_sequence:04d}_{trigger_sequence}_{timestamp}.jpg"
             )
         else:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")[:-3]
             trigger_sequence = (
                 f"px4_{request.sequence:06d}"
                 if request.sequence is not None
                 else f"local_{self._counter:06d}"
             )
-            filename = self._session_directory / (
+            filename = session_directory / (
                 f"image_{self._counter:06d}_{trigger_sequence}_{timestamp}.jpg"
             )
         temporary_filename = filename.with_suffix(".part.jpg")
@@ -282,6 +378,7 @@ class CaptureWorker(threading.Thread):
                 json.dumps(
                     {
                         "source": request.source,
+                        "session_directory": str(session_directory),
                         "gcs_sequence": request.gcs_sequence,
                         "px4_sequence": request.sequence,
                         "filename": filename.name,
@@ -358,7 +455,11 @@ class RouteMappingService:
             arguments.video_release_delay_sec,
         )
 
-    def pause_live_video(self) -> None:
+    def pause_live_video(self) -> pathlib.Path:
+        # VIDEO_PAUSE is the arm/start boundary for a mapping flight. Creating
+        # the folder here (rather than in the daemon constructor) keeps its
+        # timestamp and lifetime aligned with the actual mission.
+        session_directory = self._capture_worker.start_new_session()
         if (
             subprocess.run(
                 ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
@@ -371,13 +472,15 @@ class RouteMappingService:
             )
             time.sleep(self._arguments.video_release_delay_sec)
         self._capture_worker.set_session_video_paused(True)
-        LOGGER.info("Live video paused for mapping still session")
+        LOGGER.info("Live video paused for mapping still session %s", session_directory)
+        return session_directory
 
     def resume_live_video(self) -> None:
         self._capture_worker.set_session_video_paused(False)
         subprocess.run(
             ["systemctl", "start", self._arguments.camera_service], check=False
         )
+        self._capture_worker.close_session()
         LOGGER.info("Live video resumed after mapping still session")
 
     def request_stop(self, _signum: int, _frame: object) -> None:
@@ -480,34 +583,60 @@ class RouteMappingService:
     def _read_manual(self) -> None:
         data, address = self._manual_socket.recvfrom(1024)
         text = data.decode("utf-8", errors="ignore").strip()
-        parts = text.upper().split()
+        parts = text.split()
         if not parts:
             response = b"ERROR empty command\n"
-        elif parts[0] == "CAPTURE":
+        elif parts[0].upper() == "CAPTURE":
             gcs_sequence = None
             if len(parts) >= 2:
                 try:
-                    gcs_sequence = int(parts[1])
+                    # Accept the final field so one rollout remains compatible
+                    # with the previous CAPTURE <token> <sequence> client.
+                    gcs_sequence = int(parts[-1])
                 except ValueError:
                     self._manual_socket.sendto(b"ERROR invalid sequence\n", address)
                     return
             if gcs_sequence is not None:
-                queued = self._capture_worker.request(
-                    CaptureRequest("gcs-udp", gcs_sequence=gcs_sequence)
-                )
+                session_directory = self._capture_worker.session_directory
+                if session_directory is None:
+                    self._manual_socket.sendto(
+                        b"ERROR no active session; send VIDEO_PAUSE first\n",
+                        address,
+                    )
+                    return
+                queued, planned_path = self._capture_worker.request(CaptureRequest(
+                    "gcs-udp",
+                    gcs_sequence=gcs_sequence,
+                    session_directory=session_directory,
+                ))
             else:
-                queued = self._capture_worker.request(CaptureRequest("manual-udp"))
-            response = b"QUEUED\n" if queued else b"BUSY\n"
-        elif parts[0] == "STATUS":
-            response = f"SESSION {self._capture_worker.session_directory}\n".encode()
-        elif parts[0] == "VIDEO_PAUSE":
-            self.pause_live_video()
-            response = b"OK\n"
-        elif parts[0] == "VIDEO_RESUME":
+                queued, planned_path = self._capture_worker.request(
+                    CaptureRequest("manual-udp")
+                )
+            if queued:
+                if gcs_sequence is not None and planned_path is not None:
+                    response = (
+                        f"QUEUED seq={gcs_sequence} path={planned_path}\n"
+                    ).encode()
+                else:
+                    response = b"QUEUED\n"
+            else:
+                response = b"BUSY\n"
+        elif parts[0].upper() == "STATUS":
+            session_directory = self._capture_worker.session_directory
+            response = (
+                f"SESSION {session_directory}\n".encode()
+                if session_directory is not None
+                else b"SESSION NONE\n"
+            )
+        elif parts[0].upper() == "VIDEO_PAUSE":
+            session_directory = self.pause_live_video()
+            response = f"OK session={session_directory}\n".encode()
+        elif parts[0].upper() == "VIDEO_RESUME":
             self.resume_live_video()
             response = b"OK\n"
         else:
-            response = b"ERROR use CAPTURE [seq], STATUS, VIDEO_PAUSE, VIDEO_RESUME\n"
+            response = b"ERROR use VIDEO_PAUSE, CAPTURE [seq], STATUS, VIDEO_RESUME\n"
         self._manual_socket.sendto(response, address)
 
     def _handle_messages(
@@ -548,7 +677,7 @@ class RouteMappingService:
                 if command == MAV_CMD_IMAGE_START_CAPTURE and image_count == 1:
                     if self._capture_worker.request(
                         CaptureRequest("mavlink-one-shot-command")
-                    ):
+                    )[0]:
                         self._suppress_next_camera_trigger_until = (
                             time.monotonic() + 10
                         )

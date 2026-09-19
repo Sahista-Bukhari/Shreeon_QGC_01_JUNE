@@ -548,7 +548,8 @@ Item {
                     && root._pendingSprayerRateAttempts >= root._pendingSprayerRateMaxAttempts) {
                 root._pendingPlanSprayerRates = null
                 root._pendingSprayerRateAttempts = 0
-                qgcApp().showAppMessage(
+                mainWindow.showMessageDialog(
+                            QGroundControl.appName,
                             qsTr("Could not apply sprayer settings to the vehicle. Check that SPRAY parameters are available."))
             }
         }
