@@ -533,6 +533,7 @@ Item {
     property real   _mappingPhotoLastSegmentAlong: 0
     property bool   _mappingPhotoSegmentEndCaptured: false
     property real   _lastTransectPathCaptureDistance: -1
+    property bool   _routeMappingSurveyCaptureStarted: false
     property var    _routeMappingSessionPhotoFiles: []
     property int    _routeMappingPhotosRetrieved: 0
     property bool   _routeMappingGcsSessionPathAnnounced: false
@@ -652,6 +653,7 @@ Item {
         _mappingPhotoLastSegmentAlong = 0
         _mappingPhotoSegmentEndCaptured = false
         _lastTransectPathCaptureDistance = -1
+        _routeMappingSurveyCaptureStarted = false
         _routeMappingPiFetchErrorShown = false
         _routeMappingCaptureSetupWarned = false
         _routeMappingPhotosRetrieved = 0
@@ -716,6 +718,98 @@ Item {
 
     function _mappingPhotoTrackTolerance() {
         return Math.max(6, Math.min(15, Number(routeMappingPhotoFootprintSide) * 0.4))
+    }
+
+    function _missionRouteMappingSurveyItem() {
+        if (!_missionController || !_missionController.visualItems) {
+            return null
+        }
+        for (var i = 0; i < _missionController.visualItems.count; i++) {
+            var visualItem = _missionController.visualItems.get(i)
+            if (visualItem && visualItem.surveyAreaPolygon) {
+                return visualItem
+            }
+        }
+        return null
+    }
+
+    function _routeMappingSurveyStartSequence() {
+        var survey = _missionRouteMappingSurveyItem()
+        if (!survey || survey.sequenceNumber === undefined) {
+            return -1
+        }
+        var sequence = Number(survey.sequenceNumber)
+        return isFinite(sequence) ? sequence : -1
+    }
+
+    function _routeMappingSurveyEndSequence() {
+        var survey = _missionRouteMappingSurveyItem()
+        if (!survey || survey.lastSequenceNumber === undefined) {
+            return -1
+        }
+        var sequence = Number(survey.lastSequenceNumber)
+        return isFinite(sequence) ? sequence : -1
+    }
+
+    function _routeMappingOnPhotoCapturePolyline() {
+        if (!_activeVehicle || !mapControl) {
+            return false
+        }
+        var coordinate = _activeVehicle.coordinate
+        if (!coordinate || !coordinate.isValid) {
+            return false
+        }
+        var alongPath = mapControl.routeMappingDistanceAlongPath(coordinate)
+        if (alongPath < 0) {
+            return false
+        }
+        var totalLength = mapControl.routeMappingPhotoCapturePathLength()
+        if (totalLength <= 0) {
+            return alongPath >= 0
+        }
+        return alongPath <= totalLength + 0.5
+    }
+
+    function _routeMappingInSurveyPattern() {
+        if (!routeMappingPhotoProgressEnabled || !_activeVehicle || !_activeVehicle.flying) {
+            return false
+        }
+
+        var surveySeq = _routeMappingSurveyStartSequence()
+        if (surveySeq < 0) {
+            return false
+        }
+
+        var surveyEndSeq = _routeMappingSurveyEndSequence()
+        if (surveyEndSeq < surveySeq) {
+            surveyEndSeq = surveySeq
+        }
+
+        if (_activeVehicle.missionItemIndex) {
+            var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
+            if (isFinite(currentIdx) && currentIdx >= surveySeq && currentIdx <= surveyEndSeq) {
+                return _routeMappingOnPhotoCapturePolyline()
+            }
+        }
+
+        // No mission index: only accept coordinates projected onto the photo-capture polyline.
+        return _routeMappingOnPhotoCapturePolyline()
+    }
+
+    function _beginRouteMappingCaptureAtSurveyStart() {
+        if (_routeMappingSurveyCaptureStarted || !_routeMappingInSurveyPattern()) {
+            return
+        }
+        _routeMappingSurveyCaptureStarted = true
+
+        var coordinate = _activeVehicle ? _activeVehicle.coordinate : null
+        var alongPath = (coordinate && coordinate.isValid && mapControl)
+                ? mapControl.routeMappingDistanceAlongPath(coordinate) : -1
+        if (alongPath >= 0) {
+            _lastTransectPathCaptureDistance = alongPath
+        } else {
+            _lastTransectPathCaptureDistance = 0
+        }
     }
 
     function _routeMappingCaptureReady() {
@@ -788,6 +882,9 @@ Item {
         if (!coordinate || !coordinate.isValid || !_routeMappingCaptureReady()) {
             return false
         }
+        if (!_routeMappingInSurveyPattern()) {
+            return false
+        }
 
         var usePiPhotoFetch = routeMappingPiPhotoFetchEnabled
         if (!usePiPhotoFetch && !QGroundControl.videoManager.decoding) {
@@ -832,8 +929,14 @@ Item {
         var photoNumber = _routeMappingLivePhotoModel.count + 1
         var filePath = ""
         if (routeMappingPiPhotoFetchEnabled) {
-            if (!routeMappingPhotoController.sessionActive) {
-                _beginRouteMappingPhotoSession()
+            // Warm session on mission start (beginSession + async Pi). If the first
+            // trigger arrives early, ensure GCS folder exists and queue UDP/SCP.
+            if (!routeMappingPhotoController.sessionActive
+                    && routeMappingPhotoController.sessionDirectory.length === 0) {
+                routeMappingPhotoController.captureEnabled = true
+                if (!routeMappingPhotoController.beginSession()) {
+                    return false
+                }
             }
             filePath = routeMappingPhotoController.imagePathForSequence(photoNumber)
             if (!filePath || filePath.length === 0) {
@@ -903,6 +1006,12 @@ Item {
             return
         }
 
+        if (!_routeMappingInSurveyPattern()) {
+            _processedCameraTriggerCount = triggerCount
+            return
+        }
+        _beginRouteMappingCaptureAtSurveyStart()
+
         while (_processedCameraTriggerCount < triggerCount) {
             var triggerPoint = triggerPoints.get(_processedCameraTriggerCount)
             var coordinate = triggerPoint ? triggerPoint.coordinate : QtPositioning.coordinate()
@@ -935,6 +1044,11 @@ Item {
             return
         }
 
+        if (!_routeMappingInSurveyPattern()) {
+            return
+        }
+        _beginRouteMappingCaptureAtSurveyStart()
+
         var coordinate = _activeVehicle.coordinate
         if (!coordinate || !coordinate.isValid) {
             return
@@ -951,16 +1065,8 @@ Item {
         var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
 
         if (_lastTransectPathCaptureDistance < 0) {
-            // Distance-based spacing is measured from transect start (waypoint 1),
-            // not from wherever the vehicle first enters the 40 m corridor.
             _lastTransectPathCaptureDistance = 0
             _lastMappingPatternCoordinate = coordinate
-            if (_routeMappingLivePhotoModel.count === 0 && alongPath > 8 && mapControl) {
-                var transectStart = mapControl.routeMappingCoordinateAtDistanceAlongPath(0)
-                if (transectStart && transectStart.isValid) {
-                    _appendRouteMappingPhotoAlongTransect(transectStart, false)
-                }
-            }
             _appendRouteMappingPhotoAlongTransect(coordinate, false)
             return
         }
@@ -1094,6 +1200,12 @@ Item {
             _root._captureNewRouteMappingPhotos()
         }
 
+        function onMissionItemIndexChanged() {
+            _root._beginRouteMappingCaptureAtSurveyStart()
+            _root._updateAutomaticRouteMappingCapture()
+            _root._captureNewRouteMappingPhotos()
+        }
+
         function onInitialPlanRequestCompleteChanged(complete) {
             if (complete) {
                 _root._scheduleMissionResyncFromVehicle()
@@ -1104,9 +1216,13 @@ Item {
     onMissionRunningChanged: {
         if (missionRunning && routeMappingPhotoProgressEnabled) {
             _lastTransectPathCaptureDistance = -1
+            _routeMappingSurveyCaptureStarted = false
             routeMappingPhotoController.captureEnabled = true
-            if (!routeMappingPhotoController.sessionActive) {
-                _beginRouteMappingPhotoSession()
+            // Creates GCS Mission_* folder, then Pi SSH/VIDEO_PAUSE off the UI thread.
+            if (!routeMappingPhotoController.sessionActive
+                    && !routeMappingPhotoController.piSessionPending
+                    && !routeMappingPiPhotoFetcher.piSessionStarting) {
+                routeMappingPhotoController.beginSession()
             }
         } else if (!missionRunning) {
             routeMappingPhotoController.captureEnabled = false

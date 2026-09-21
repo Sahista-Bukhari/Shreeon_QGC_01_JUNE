@@ -179,7 +179,7 @@ FlightMap {
     }
 
     function routeMappingCoordinateAtDistanceAlongPath(distanceAlongPath) {
-        var path = routeMappingTransectPath
+        var path = _routeMappingPhotoCapturePolyline()
         if (!path || path.length === 0) {
             return QtPositioning.coordinate()
         }
@@ -190,8 +190,33 @@ FlightMap {
         return slice.length > 0 ? slice[slice.length - 1] : path[0]
     }
 
+    function _routeMappingPhotoCapturePolyline() {
+        var points = routeMappingPhotoCaptureTransectPoints
+        if (points && points.length >= 2) {
+            var path = []
+            for (var i = 0; i + 1 < points.length; i += 2) {
+                if (points[i] && points[i].isValid && points[i + 1] && points[i + 1].isValid) {
+                    path.push(points[i])
+                    path.push(points[i + 1])
+                }
+            }
+            if (path.length >= 2) {
+                return path
+            }
+        }
+        return routeMappingTransectPath
+    }
+
+    function routeMappingPhotoCapturePathLength() {
+        var path = _routeMappingPhotoCapturePolyline()
+        if (!path || path.length < 2) {
+            return 0
+        }
+        return _pathLength(path)
+    }
+
     function routeMappingDistanceAlongPath(coord) {
-        var path = routeMappingTransectPath
+        var path = _routeMappingPhotoCapturePolyline()
         if (!path || path.length < 2 || !coord || !coord.isValid) {
             return -1
         }

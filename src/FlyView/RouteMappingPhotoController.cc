@@ -185,6 +185,7 @@ bool RouteMappingPhotoController::beginSession()
     }
 
     _waitingForPiSession = true;
+    emit piSessionPendingChanged();
     _fetcher->beginSessionAsync();
     qCInfo(RouteMappingPhotoControllerLog)
         << "Route Mapping GCS photo folder ready; starting Pi session for"
@@ -198,6 +199,7 @@ void RouteMappingPhotoController::_onPiSessionBeginComplete(bool success)
         return;
     }
     _waitingForPiSession = false;
+    emit piSessionPendingChanged();
 
     if (!success) {
         _sessionDirectory.clear();
@@ -219,7 +221,10 @@ void RouteMappingPhotoController::_onPiSessionBeginComplete(bool success)
 void RouteMappingPhotoController::endSession()
 {
     _pendingCaptures.clear();
-    _waitingForPiSession = false;
+    if (_waitingForPiSession) {
+        _waitingForPiSession = false;
+        emit piSessionPendingChanged();
+    }
     if (_sessionActive) {
         _sessionActive = false;
         emit sessionActiveChanged();
@@ -235,7 +240,10 @@ void RouteMappingPhotoController::endSession()
 void RouteMappingPhotoController::cancelSession()
 {
     _pendingCaptures.clear();
-    _waitingForPiSession = false;
+    if (_waitingForPiSession) {
+        _waitingForPiSession = false;
+        emit piSessionPendingChanged();
+    }
     if (_fetcher) {
         _fetcher->cancelSession();
     }

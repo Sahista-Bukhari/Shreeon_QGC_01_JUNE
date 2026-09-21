@@ -13,6 +13,7 @@ class RouteMappingPhotoController : public QObject
     QML_ELEMENT
 
     Q_PROPERTY(bool sessionActive READ sessionActive NOTIFY sessionActiveChanged)
+    Q_PROPERTY(bool piSessionPending READ piSessionPending NOTIFY piSessionPendingChanged)
     Q_PROPERTY(QString sessionDirectory READ sessionDirectory NOTIFY sessionDirectoryChanged)
     Q_PROPERTY(QString routeMappingRoot READ routeMappingRoot NOTIFY routeMappingRootChanged)
     Q_PROPERTY(QString photoSaveRoot READ photoSaveRoot NOTIFY routeMappingRootChanged)
@@ -22,6 +23,7 @@ public:
     explicit RouteMappingPhotoController(QObject *parent = nullptr);
 
     bool sessionActive() const { return _sessionActive; }
+    bool piSessionPending() const { return _waitingForPiSession; }
     QString sessionDirectory() const { return _sessionDirectory; }
     QString routeMappingRoot() const { return _routeMappingRoot(false); }
     QString photoSaveRoot() const;
@@ -39,6 +41,7 @@ public:
 
 signals:
     void sessionActiveChanged();
+    void piSessionPendingChanged();
     void sessionDirectoryChanged();
     void routeMappingRootChanged();
     void captureEnabledChanged();

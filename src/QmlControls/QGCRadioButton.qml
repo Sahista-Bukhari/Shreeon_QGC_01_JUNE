@@ -9,7 +9,10 @@ RadioButton {
     font.family:    ScreenTools.normalFontFamily
     font.pointSize: ScreenTools.defaultFontPointSize
 
-    property color  textColor:  qgcPal.text
+    readonly property bool _customMissionLightPanel: typeof mainWindow !== "undefined"
+                                                     && mainWindow.customMissionStyleActive
+
+    property color  textColor:  _customMissionLightPanel ? "#3f3f3f" : qgcPal.text
     property bool   _noText:    text === ""
 
     spacing: ScreenTools.defaultFontPixelWidth * 0.25
@@ -22,7 +25,8 @@ RadioButton {
         implicitWidth:          ScreenTools.radioButtonIndicatorSize
         implicitHeight:         width
         color:                  "transparent"
-        border.color:           control.checked ? qgcPal.colorGreen : qgcPal.text
+        border.color:           control.checked ? qgcPal.colorGreen
+                                : (control._customMissionLightPanel ? "#6a6a6a" : qgcPal.text)
         border.width:           control.checked ? 2 : 1
         radius:                 height / 2
         x:                      control.leftPadding
