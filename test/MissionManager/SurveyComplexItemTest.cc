@@ -5,6 +5,8 @@
 
 #include <QtTest/QTest>
 
+#include <utility>
+
 SurveyComplexItemTest::SurveyComplexItemTest(void)
 {
     _rgSurveySignals[surveyVisualTransectPointsChangedIndex] =    SIGNAL(visualTransectPointsChanged());
@@ -395,4 +397,81 @@ void SurveyComplexItemTest::_testPatternParameters(void)
     QCOMPARE(loadedItems.first()->command(), MAV_CMD_DO_CHANGE_SPEED);
     QCOMPARE(loadedItems.first()->param2(), patternSpeed);
     QCOMPARE(loadedItems.last()->command(), MAV_CMD_DO_CHANGE_SPEED);
+}
+
+void SurveyComplexItemTest::_testRouteMappingResolutionPreset_data(void)
+{
+    QTest::addColumn<double>("altitudeMeters");
+    QTest::addColumn<double>("triggerDistanceMeters");
+    QTest::addColumn<double>("speedMetersPerSecond");
+
+    QTest::newRow("high-resolution") << 30.0 << 6.0 << 5.0;
+    QTest::newRow("low-resolution") << 60.0 << 9.0 << 5.0;
+}
+
+void SurveyComplexItemTest::_testRouteMappingResolutionPreset(void)
+{
+    QFETCH(double, altitudeMeters);
+    QFETCH(double, triggerDistanceMeters);
+    QFETCH(double, speedMetersPerSecond);
+
+    // These are the native SurveyComplexItem Facts written by the Route Mapping
+    // sidebar presets. The generated flight mission must contain real distance-
+    // based camera trigger and pattern-speed commands, not UI-only values.
+    _surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
+    _surveyItem->cameraCalc()->distanceToSurface()->setRawValue(altitudeMeters);
+    _surveyItem->patternFlightSpeed()->setRawValue(speedMetersPerSecond);
+    _surveyItem->setSpecifyPatternFlightSpeed(true);
+    _surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
+    _surveyItem->cameraTriggerInTurnAround()->setRawValue(false);
+
+    QCOMPARE(_surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), altitudeMeters);
+    QCOMPARE(_surveyItem->cameraCalc()->adjustedFootprintFrontal()->rawValue().toDouble(), triggerDistanceMeters);
+    QCOMPARE(_surveyItem->patternFlightSpeed()->rawValue().toDouble(), speedMetersPerSecond);
+    QVERIFY(_surveyItem->specifyPatternFlightSpeed());
+
+    QList<MissionItem*> missionItems;
+    _surveyItem->appendMissionItems(missionItems, this);
+
+    int speedCommandCount = 0;
+    int triggerStartCount = 0;
+    int triggerStopCount = 0;
+    int coordinateItemCount = 0;
+    for (const MissionItem* missionItem : std::as_const(missionItems)) {
+        if (missionItem->command() == MAV_CMD_DO_CHANGE_SPEED) {
+            if (speedCommandCount == 0) {
+                QCOMPARE(missionItem->param2(), speedMetersPerSecond);
+            }
+            speedCommandCount++;
+        } else if (missionItem->command() == MAV_CMD_DO_SET_CAM_TRIGG_DIST) {
+            if (missionItem->param1() > 0) {
+                QCOMPARE(missionItem->param1(), triggerDistanceMeters);
+                triggerStartCount++;
+            } else {
+                triggerStopCount++;
+            }
+        } else if (missionItem->command() == MAV_CMD_NAV_WAYPOINT || missionItem->command() == MAV_CMD_CONDITION_GATE) {
+            QCOMPARE(missionItem->param7(), altitudeMeters);
+            coordinateItemCount++;
+        }
+    }
+
+    QCOMPARE(speedCommandCount, 2);
+    QVERIFY(triggerStartCount > 0);
+    QVERIFY(triggerStopCount > 0);
+    QVERIFY(coordinateItemCount > 0);
+
+    // Plan persistence must retain the exact SI values used to rebuild the
+    // mission after switching between Route Mapping and Fly View.
+    QJsonArray savedItems;
+    _surveyItem->save(savedItems);
+    QCOMPARE(savedItems.count(), 1);
+
+    auto* loadedSurveyItem = new SurveyComplexItem(_masterController, false /* flyView */, QString() /* kmlFile */);
+    QString errorString;
+    QVERIFY2(loadedSurveyItem->load(savedItems.first().toObject(), 0, errorString), qPrintable(errorString));
+    QCOMPARE(loadedSurveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), altitudeMeters);
+    QCOMPARE(loadedSurveyItem->cameraCalc()->adjustedFootprintFrontal()->rawValue().toDouble(), triggerDistanceMeters);
+    QCOMPARE(loadedSurveyItem->patternFlightSpeed()->rawValue().toDouble(), speedMetersPerSecond);
+    QVERIFY(loadedSurveyItem->specifyPatternFlightSpeed());
 }

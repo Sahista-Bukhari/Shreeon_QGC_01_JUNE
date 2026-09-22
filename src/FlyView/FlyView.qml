@@ -43,6 +43,8 @@ Item {
     property int    routeMappingPlannedPhotoCount: 0
     property real   routeMappingPhotoFootprintSide: 25
     property real   routeMappingPhotoFootprintFrontal: 25
+    // Native SurveyComplexItem camera trigger interval, always in raw meters.
+    property real   routeMappingTriggerDistance: 25
     property var    routeMappingLivePhotoModel: _routeMappingLivePhotoModel
     property bool   hideVehicleMissionForUnuploadedRoute: false
     // Once a survey overlay has been painted (transfer/import), keep its geometry
@@ -110,6 +112,7 @@ Item {
         routeMappingPlannedPhotoCount = 0
         routeMappingPhotoFootprintSide = 25
         routeMappingPhotoFootprintFrontal = 25
+        routeMappingTriggerDistance = 25
         resetRouteMappingLivePhotos()
         mapControl.resetRouteMappingProgress()
     }
@@ -193,12 +196,30 @@ Item {
         }
 
 
+        var displayTransectPath = transectPath
+        if (photoCaptureTransectPoints.length >= 2) {
+            var captureLegPath = []
+            for (var leg = 0; leg + 1 < photoCaptureTransectPoints.length; leg += 2) {
+                var legStart = photoCaptureTransectPoints[leg]
+                var legEnd = photoCaptureTransectPoints[leg + 1]
+                if (legStart && legStart.isValid && legEnd && legEnd.isValid) {
+                    captureLegPath.push(legStart)
+                    captureLegPath.push(legEnd)
+                }
+            }
+            if (captureLegPath.length >= 2) {
+                displayTransectPath = captureLegPath
+            } else {
+                displayTransectPath = photoCaptureTransectPoints
+            }
+        }
+
         var entryHeading = 0
         var exitHeading = 0
-        if (visualTransectPoints.length >= 2) {
-            entryHeading = visualTransectPoints[0].azimuthTo(visualTransectPoints[1])
-            exitHeading = visualTransectPoints[visualTransectPoints.length - 2].azimuthTo(
-                        visualTransectPoints[visualTransectPoints.length - 1])
+        if (displayTransectPath.length >= 2) {
+            entryHeading = displayTransectPath[0].azimuthTo(displayTransectPath[1])
+            exitHeading = displayTransectPath[displayTransectPath.length - 2].azimuthTo(
+                        displayTransectPath[displayTransectPath.length - 1])
         }
 
         var takeoffCoord = QtPositioning.coordinate()
@@ -214,7 +235,7 @@ Item {
         }
 
         routeMappingBoundaryPath = boundary
-        routeMappingTransectPath = transectPath
+        routeMappingTransectPath = displayTransectPath
         routeMappingPhotoCaptureTransectPoints = photoCaptureTransectPoints
         routeMappingTakeoffCoordinate = takeoffCoord
         routeMappingEntryCoordinate = surveyItem.coordinate
@@ -227,14 +248,17 @@ Item {
         if (surveyItem.cameraCalc) {
             var sideFootprint = Number(surveyItem.cameraCalc.imageFootprintSide)
             var frontalFootprint = Number(surveyItem.cameraCalc.imageFootprintFrontal)
+            var triggerDistance = surveyItem.cameraCalc.adjustedFootprintFrontal
+                    ? Number(surveyItem.cameraCalc.adjustedFootprintFrontal.rawValue) : 0
             if (!sideFootprint || sideFootprint <= 0) {
-                sideFootprint = Number(surveyItem.cameraCalc.adjustedFootprintSide.value)
+                sideFootprint = Number(surveyItem.cameraCalc.adjustedFootprintSide.rawValue)
             }
             if (!frontalFootprint || frontalFootprint <= 0) {
-                frontalFootprint = Number(surveyItem.cameraCalc.adjustedFootprintFrontal.value)
+                frontalFootprint = triggerDistance
             }
             routeMappingPhotoFootprintSide = sideFootprint > 0 ? sideFootprint : 25
             routeMappingPhotoFootprintFrontal = frontalFootprint > 0 ? frontalFootprint : 25
+            routeMappingTriggerDistance = triggerDistance > 0 ? triggerDistance : 25
         }
         if (transectPath.length >= 2) {
             _routeMappingOverlayLocked = true
@@ -658,7 +682,7 @@ Item {
         _routeMappingCaptureSetupWarned = false
         _routeMappingPhotosRetrieved = 0
         _routeMappingGcsSessionPathAnnounced = false
-        routeMappingPhotoController.cancelSession()
+        routeMappingPhotoController.discardSessionStorage()
         if (routeMappingPiPhotoFetchEnabled) {
             routeMappingPiPhotoFetcher.resumeLiveVideo()
         }
@@ -681,6 +705,9 @@ Item {
     function _endRouteMappingPhotoSession() {
         routeMappingPhotoController.captureEnabled = false
         routeMappingPhotoController.endSession()
+        if (routeMappingPiPhotoFetchEnabled) {
+            routeMappingPiPhotoFetcher.resumeLiveVideo()
+        }
     }
 
     function _mappingPhotoFileUrl(filePath) {
@@ -699,7 +726,7 @@ Item {
     }
 
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
-        var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
+        var triggerDistance = Math.max(1, Number(routeMappingTriggerDistance))
         var duplicateRadius = duplicateRadiusOverride > 0
                 ? duplicateRadiusOverride
                 : Math.max(2, Math.min(12, triggerDistance * 0.45))
@@ -759,13 +786,22 @@ Item {
         if (!coordinate || !coordinate.isValid) {
             return false
         }
+
+        // Tighter than the 40 m transect progress helper: must be on an interior
+        // photo leg, not merely near the connector polyline during transit.
+        var captureInfo = mapControl.routeMappingPhotoCaptureInfo(coordinate)
+        if (!captureInfo || !captureInfo.valid
+                || captureInfo.distanceToSegment > _mappingPhotoTrackTolerance()) {
+            return false
+        }
+
         var alongPath = mapControl.routeMappingDistanceAlongPath(coordinate)
         if (alongPath < 0) {
             return false
         }
         var totalLength = mapControl.routeMappingPhotoCapturePathLength()
         if (totalLength <= 0) {
-            return alongPath >= 0
+            return true
         }
         return alongPath <= totalLength + 0.5
     }
@@ -785,14 +821,19 @@ Item {
             surveyEndSeq = surveySeq
         }
 
-        if (_activeVehicle.missionItemIndex) {
-            var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
-            if (isFinite(currentIdx) && currentIdx >= surveySeq && currentIdx <= surveyEndSeq) {
-                return _routeMappingOnPhotoCapturePolyline()
-            }
+        if (!_activeVehicle.missionItemIndex) {
+            return false
+        }
+        var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
+        if (!isFinite(currentIdx)) {
+            return false
+        }
+        // Strict: exclude takeoff/transit (index <= survey entry) and post-survey legs.
+        // Entry turn still reports surveySeq; require index past entry before capture.
+        if (currentIdx <= surveySeq || currentIdx > surveyEndSeq) {
+            return false
         }
 
-        // No mission index: only accept coordinates projected onto the photo-capture polyline.
         return _routeMappingOnPhotoCapturePolyline()
     }
 
@@ -929,13 +970,13 @@ Item {
         var photoNumber = _routeMappingLivePhotoModel.count + 1
         var filePath = ""
         if (routeMappingPiPhotoFetchEnabled) {
-            // Warm session on mission start (beginSession + async Pi). If the first
-            // trigger arrives early, ensure GCS folder exists and queue UDP/SCP.
-            if (!routeMappingPhotoController.sessionActive
-                    && routeMappingPhotoController.sessionDirectory.length === 0) {
-                routeMappingPhotoController.captureEnabled = true
-                if (!routeMappingPhotoController.beginSession()) {
-                    return false
+            // Session warms on mission start (beginSession + async Pi). Do not block
+            // captures while piSessionPending — queue UDP/SCP and show the tile immediately.
+            if (!routeMappingPhotoController.sessionActive) {
+                if (!routeMappingPhotoController.sessionDirectory
+                        || routeMappingPhotoController.sessionDirectory.length === 0) {
+                    routeMappingPhotoController.captureEnabled = true
+                    routeMappingPhotoController.beginSession()
                 }
             }
             filePath = routeMappingPhotoController.imagePathForSequence(photoNumber)
@@ -1062,7 +1103,7 @@ Item {
             return
         }
 
-        var triggerDistance = Math.max(1, Number(routeMappingPhotoFootprintFrontal))
+        var triggerDistance = Math.max(1, Number(routeMappingTriggerDistance))
 
         if (_lastTransectPathCaptureDistance < 0) {
             _lastTransectPathCaptureDistance = 0
@@ -1224,8 +1265,13 @@ Item {
                     && !routeMappingPiPhotoFetcher.piSessionStarting) {
                 routeMappingPhotoController.beginSession()
             }
+            routeMappingPiPhotoFetcher.warmUpConnection()
         } else if (!missionRunning) {
-            routeMappingPhotoController.captureEnabled = false
+            if (routeMappingPhotoProgressEnabled) {
+                _endRouteMappingPhotoSession()
+            } else {
+                routeMappingPhotoController.captureEnabled = false
+            }
         }
         _updateAutomaticRouteMappingCapture()
         _captureNewRouteMappingPhotos()

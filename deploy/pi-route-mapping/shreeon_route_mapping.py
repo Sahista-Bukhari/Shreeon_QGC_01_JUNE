@@ -171,6 +171,9 @@ class CaptureWorker(threading.Thread):
         self._gcs_requests: set[tuple[str, int]] = set()
         self._gcs_planned_paths: dict[tuple[str, int], pathlib.Path] = {}
         self._request_lock = threading.Lock()
+        # rpicam-still is serial; reject new GCS triggers when the queue is deep
+        # so UDP replies stay timely and the GCS can back off instead of timing out.
+        self._max_queued_captures = 12
 
         photo_root.mkdir(parents=True, exist_ok=True)
 
@@ -235,6 +238,18 @@ class CaptureWorker(threading.Thread):
                 self._gcs_requests.add(request_key)
                 self._gcs_planned_paths[request_key] = planned_path
             request = dataclasses.replace(request, planned_path=planned_path)
+
+        if request.gcs_sequence is not None and self._requests.qsize() >= self._max_queued_captures:
+            if request_key is not None:
+                with self._request_lock:
+                    self._gcs_requests.discard(request_key)
+                    self._gcs_planned_paths.pop(request_key, None)
+            LOGGER.warning(
+                "GCS capture queue full (%d); rejecting sequence=%s",
+                self._requests.qsize(),
+                request.gcs_sequence,
+            )
+            return False, None
 
         try:
             self._requests.put_nowait(request)
@@ -614,10 +629,17 @@ class RouteMappingService:
                     CaptureRequest("manual-udp")
                 )
             if queued:
-                if gcs_sequence is not None and planned_path is not None:
-                    response = (
-                        f"QUEUED seq={gcs_sequence} path={planned_path}\n"
-                    ).encode()
+                if gcs_sequence is not None:
+                    if planned_path is not None:
+                        response = (
+                            f"QUEUED seq={gcs_sequence} path={planned_path}\n"
+                        ).encode()
+                    else:
+                        LOGGER.warning(
+                            "GCS capture queued without planned path (sequence=%d)",
+                            gcs_sequence,
+                        )
+                        response = f"QUEUED seq={gcs_sequence}\n".encode()
                 else:
                     response = b"QUEUED\n"
             else:

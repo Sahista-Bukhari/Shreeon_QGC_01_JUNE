@@ -21,7 +21,7 @@ Rectangle {
     readonly property real  _radius:          ScreenTools.defaultFontPixelWidth * 0.75
 
     property int routeMode:   0   // 0 = Area Route, 1 = Boundary Route
-    property int resolution: 0   // 0 = Medium, 1 = High
+    property int resolution: 0   // 0 = Low, 1 = High
     property var surveyItem:  null
     property var takeoffItem: null
     property bool sprayPatternExpanded: false
@@ -258,10 +258,10 @@ Rectangle {
             root._planSprayEnabledDraft = enabled
             if (enabled && paramControllerLoader.item) {
                 paramControllerLoader.item.getMissingParameters([
-                    "SPRAY_NOZ_RATE",
-                    "SPRAY_PUMP_RATE",
-                    "MIS_RESUME_EXACT"
-                ])
+                                                                    "SPRAY_NOZ_RATE",
+                                                                    "SPRAY_PUMP_RATE",
+                                                                    "MIS_RESUME_EXACT"
+                                                                ])
                 sprayFactRefreshTimer.restart()
             }
             return
@@ -271,10 +271,10 @@ Rectangle {
         // After enable, firmware may expose dependent spray params — request/refresh them.
         if (enabled && paramControllerLoader.item) {
             paramControllerLoader.item.getMissingParameters([
-                "SPRAY_NOZ_RATE",
-                "SPRAY_PUMP_RATE",
-                "MIS_RESUME_EXACT"
-            ])
+                                                                "SPRAY_NOZ_RATE",
+                                                                "SPRAY_PUMP_RATE",
+                                                                "MIS_RESUME_EXACT"
+                                                            ])
             sprayFactRefreshTimer.restart()
         }
     }
@@ -354,8 +354,8 @@ Rectangle {
         var minV = root._rateFactMin(fact)
         var maxV = root._rateFactMax(fact)
         var current = root.showSpraySettings
-                      ? root._planRateDraftValue(fact)
-                      : Number(fact.value)
+                ? root._planRateDraftValue(fact)
+                : Number(fact.value)
         if (isNaN(current)) {
             current = minV
         }
@@ -404,38 +404,45 @@ Rectangle {
         pumpRateWriteTimer.restart()
     }
 
-    // Medium keeps default density; High shortens trigger spacing / raises overlap
-    // so Est. Photo Count and mission triggers both increase.
+    // Apply Route Mapping presets directly to the native SurveyComplexItem.
+    // AdjustedFootprintFrontal is QGC's camera trigger distance and is emitted
+    // as MAV_CMD_DO_SET_CAM_TRIGG_DIST when the mission is built.
     function applyResolutionPreset() {
-        if (!root._cameraCalc) {
+        if (!root._cameraCalc || !root.surveyItem) {
             return
         }
 
         var high = root.resolution === 1
-        if (root._cameraCalc.isManualCamera) {
-            var altitude = root._patternAltitudeFact
-                           ? Number(root._patternAltitudeFact.value)
-                           : 50
-            if (isNaN(altitude) || altitude <= 0) {
-                altitude = 50
-            }
-            // Manual grids drive shot count from adjusted footprints directly.
-            var spacingFactor = high ? 0.35 : 0.50
-            var spacing = Math.max(2.0, altitude * spacingFactor)
-            if (root._cameraCalc.adjustedFootprintFrontal) {
-                root._cameraCalc.adjustedFootprintFrontal.value = spacing
-            }
-            if (root._cameraCalc.adjustedFootprintSide) {
-                root._cameraCalc.adjustedFootprintSide.value = spacing
-            }
-        } else {
-            if (root._cameraCalc.frontalOverlap) {
-                root._cameraCalc.frontalOverlap.value = high ? 80 : 70
-            }
-            if (root._cameraCalc.sideOverlap) {
-                root._cameraCalc.sideOverlap.value = high ? 80 : 70
-            }
+        var altitudeMeters = high ? 30 : 60
+        var triggerDistanceMeters = high ? 6 : 9
+        var speedMetersPerSecond = 5
+
+        // A pending slider write must not restore the value that preceded the
+        // preset. rawValue is intentional: these presets are defined in SI
+        // mission units, independent of the user's display-unit preference.
+        patternAltitudeWriteTimer.stop()
+        patternSpeedWriteTimer.stop()
+
+        if (root._cameraCalc.valueSetIsDistance) {
+            root._cameraCalc.valueSetIsDistance.rawValue = true
         }
+        if (root._patternAltitudeFact) {
+            root._patternAltitudeFact.rawValue = altitudeMeters
+        }
+        if (root._patternSpeedFact) {
+            root._patternSpeedFact.rawValue = speedMetersPerSecond
+            // QGC generates MAV_CMD_DO_CHANGE_SPEED around the survey only
+            // when the pattern-speed override is enabled.
+            root.surveyItem.specifyPatternFlightSpeed = true
+        }
+        if (root._cameraCalc.adjustedFootprintFrontal) {
+            // Set this after altitude: known-camera altitude recalculation also
+            // updates the footprint, and the explicit preset distance must win.
+            root._cameraCalc.adjustedFootprintFrontal.rawValue = triggerDistanceMeters
+        }
+
+        root._syncPatternAltitudeSlider()
+        root._syncPatternSpeedSlider()
     }
 
     function syncResolutionFromSurvey() {
@@ -444,21 +451,23 @@ Rectangle {
             return
         }
 
-        if (root._cameraCalc.isManualCamera) {
-            var altitude = root._patternAltitudeFact
-                           ? Number(root._patternAltitudeFact.value)
-                           : 0
-            var frontalSpacing = root._cameraCalc.adjustedFootprintFrontal
-                                 ? Number(root._cameraCalc.adjustedFootprintFrontal.value)
-                                 : 0
-            root.resolution = altitude > 0 && frontalSpacing > 0
-                    && frontalSpacing <= altitude * 0.425 ? 1 : 0
-        } else {
-            var frontalOverlap = root._cameraCalc.frontalOverlap
-                    ? Number(root._cameraCalc.frontalOverlap.value) : 0
-            var sideOverlap = root._cameraCalc.sideOverlap
-                    ? Number(root._cameraCalc.sideOverlap.value) : 0
-            root.resolution = frontalOverlap >= 75 || sideOverlap >= 75 ? 1 : 0
+        var altitudeMeters = root._patternAltitudeFact
+                ? Number(root._patternAltitudeFact.rawValue) : 0
+        var triggerDistanceMeters = root._cameraCalc.adjustedFootprintFrontal
+                ? Number(root._cameraCalc.adjustedFootprintFrontal.rawValue) : 0
+        var speedMetersPerSecond = root._patternSpeedFact
+                ? Number(root._patternSpeedFact.rawValue) : 0
+        var highMatches = Math.abs(altitudeMeters - 30) < 0.01
+                && Math.abs(triggerDistanceMeters - 6) < 0.01
+                && Math.abs(speedMetersPerSecond - 5) < 0.01
+        var lowMatches = Math.abs(altitudeMeters - 60) < 0.01
+                && Math.abs(triggerDistanceMeters - 9) < 0.01
+                && Math.abs(speedMetersPerSecond - 5) < 0.01
+
+        if (highMatches) {
+            root.resolution = 1
+        } else if (lowMatches) {
+            root.resolution = 0
         }
     }
 
@@ -1016,6 +1025,7 @@ Rectangle {
                                     clipRadius: root._radius * 0.7
                                 }
 
+
                                 QGCMouseArea {
                                     id:           pumpMinusMouse
                                     anchors.fill: parent
@@ -1083,6 +1093,8 @@ Rectangle {
                 visible:            root.showPhotoSettings
             }
 
+
+
             RowLayout {
                 Layout.fillWidth:   true
                 spacing:            0
@@ -1090,9 +1102,9 @@ Rectangle {
                 visible:            root.showPhotoSettings
 
                 Repeater {
-                    model: [qsTr("Medium"), qsTr("High")]
+                    model: [qsTr("Low"), qsTr("High")]
 
-                    Rectangle {
+                    delegate: Rectangle {
                         Layout.fillWidth:       true
                         Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 2.15
                         color:                  root.resolution === index ? root._accentGreen : "#ffffff"
@@ -1132,8 +1144,8 @@ Rectangle {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.15
                 text:               root.resolution === 0
-                                    ? qsTr("Medium resolution balances photo count and flight time.")
-                                    : qsTr("High resolution increases photo count and flight time.")
+                                    ? qsTr("60 m altitude, photos every 9 m, 5 m/s flight speed.")
+                                    : qsTr("30 m altitude, photos every 6 m, 5 m/s flight speed.")
                 color:              root._hintColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
                 visible:            root.showPhotoSettings
@@ -1274,6 +1286,26 @@ Rectangle {
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
                     fieldTextColor:         "#3f3f3f"
                     fieldBackgroundColor:   "white"
+                }
+
+                QGCLabel {
+                    text:       qsTr("Trigger Dist")
+                    color:      root._bodyColor
+                    visible:    root.showPhotoSettings
+                }
+
+                FactTextField {
+                    fact: root._cameraCalc
+                          ? root._cameraCalc.adjustedFootprintFrontal
+                          : null
+                    Layout.fillWidth: true
+                    enabled: root._showGridAngle && root.missionSettingsEnabled
+                    activeFocusBorderColor: root._accentGreen
+                    persistentBorder:       false
+                    fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
+                    fieldTextColor:         "#3f3f3f"
+                    fieldBackgroundColor:   "white"
+                    visible:                root.showPhotoSettings
                 }
 
                 QGCLabel {

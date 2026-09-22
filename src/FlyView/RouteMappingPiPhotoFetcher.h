@@ -50,13 +50,16 @@ public:
     Q_INVOKABLE void resetSession();
     Q_INVOKABLE void cancelSession();
     Q_INVOKABLE bool testConnection() const;
+    Q_INVOKABLE void warmUpConnection();
     Q_INVOKABLE bool triggerCapture(int sequence, QString *remotePhotoPath = nullptr);
+    Q_INVOKABLE void triggerCaptureQueued(int sequence);
     Q_INVOKABLE bool pauseLiveVideo();
     Q_INVOKABLE bool resumeLiveVideo();
     Q_INVOKABLE void fetchLatestPhoto(const QString &localFilePath, int requestId);
     Q_INVOKABLE void fetchPhotoBySequence(int sequence, const QString &localFilePath, int requestId, const QString &remotePhotoPath = {});
 
 signals:
+    void triggerCaptureFinished(int sequence, bool success, const QString &remotePhotoPath);
     void piHostChanged();
     void piUserChanged();
     void piPhotoRootChanged();
@@ -90,7 +93,7 @@ private:
     void _listRemotePhotos(FetchRequest request);
     void _downloadRemotePhoto(FetchRequest request, const QString &remotePath);
     void _finishFetch(const FetchRequest &request, bool success, const QString &errorMessage);
-    void _scheduleRetry(FetchRequest request);
+    void _scheduleRetry(FetchRequest request, int retryDelayOverrideMs = -1);
     QString _sshTarget() const;
     static QStringList _baseSshOptions();
     bool _runSshPrecheck(QString *errorMessage) const;
@@ -103,6 +106,7 @@ private:
     bool _queryPiSessionPath(QString *sessionPath, QString *errorMessage) const;
     bool _sendVideoPauseAndWaitForSession(QString *sessionPath, QString *errorMessage) const;
     bool _sendRemoteUdpCommand(const QString &command) const;
+    bool _parseCaptureUdpResponse(int sequence, const QString &response, QString *remotePhotoPath) const;
 
     QString _piHost = QStringLiteral("10.5.0.2");
     QString _piUser = QStringLiteral("shreeon");
@@ -115,7 +119,7 @@ private:
     quint64 _generation = 0;
 
     void _completeBeginSessionOnMainThread(
-        quint64 generation, bool success, bool sshPrecheckFailed, const QString &sessionPath, const QString &errorMessage);
+        quint64 generation, bool success, bool hadSshPrecheckFailure, const QString &sessionPath, const QString &errorMessage);
 
     QSet<QString> _downloadedRemotePaths;
     QList<FetchRequest> _queue;

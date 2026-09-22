@@ -453,6 +453,7 @@ Item {
         flyView.routeMappingPlannedPhotoCount = 0
         flyView.routeMappingPhotoFootprintSide = 25
         flyView.routeMappingPhotoFootprintFrontal = 25
+        flyView.routeMappingTriggerDistance = 25
         if (flyView.resetRouteMappingLivePhotos) {
             flyView.resetRouteMappingLivePhotos()
         }
@@ -550,10 +551,10 @@ Item {
         for (var i = 0; i < polygon.count; i++) {
             var coordinate = polygon.vertexCoordinate(i)
             fieldTracePointsModel.append({
-                                            lat: coordinate.latitude,
-                                            lon: coordinate.longitude,
-                                            alt: coordinate.altitude
-                                        })
+                                             lat: coordinate.latitude,
+                                             lon: coordinate.longitude,
+                                             alt: coordinate.altitude
+                                         })
         }
         _selectedWaypointIndex = -1
     }
@@ -1551,13 +1552,14 @@ Item {
         var cameraCalc = _cachedSurveyItem.cameraCalc
         var sideFootprint = cameraCalc ? Number(cameraCalc.imageFootprintSide) : 0
         var frontalFootprint = cameraCalc ? Number(cameraCalc.imageFootprintFrontal) : 0
+        var triggerDistance = cameraCalc && cameraCalc.adjustedFootprintFrontal
+                ? Number(cameraCalc.adjustedFootprintFrontal.rawValue) : 0
         if ((!sideFootprint || sideFootprint <= 0) && cameraCalc
                 && cameraCalc.adjustedFootprintSide) {
-            sideFootprint = Number(cameraCalc.adjustedFootprintSide.value)
+            sideFootprint = Number(cameraCalc.adjustedFootprintSide.rawValue)
         }
-        if ((!frontalFootprint || frontalFootprint <= 0) && cameraCalc
-                && cameraCalc.adjustedFootprintFrontal) {
-            frontalFootprint = Number(cameraCalc.adjustedFootprintFrontal.value)
+        if (!frontalFootprint || frontalFootprint <= 0) {
+            frontalFootprint = triggerDistance
         }
 
         return {
@@ -1571,7 +1573,8 @@ Item {
             exitHeading: _surveyEndHeading,
             plannedPhotoCount: _cachedSurveyItem.cameraShots ? _cachedSurveyItem.cameraShots : 0,
             photoFootprintSide: sideFootprint > 0 ? sideFootprint : 25,
-            photoFootprintFrontal: frontalFootprint > 0 ? frontalFootprint : 25
+            photoFootprintFrontal: frontalFootprint > 0 ? frontalFootprint : 25,
+            triggerDistance: triggerDistance > 0 ? triggerDistance : 25,
         }
     }
 
@@ -1609,6 +1612,8 @@ Item {
                     ? routeMappingOverlayData.photoFootprintSide : 25
             flyView.routeMappingPhotoFootprintFrontal = routeMappingOverlayData.photoFootprintFrontal
                     ? routeMappingOverlayData.photoFootprintFrontal : 25
+            flyView.routeMappingTriggerDistance = routeMappingOverlayData.triggerDistance
+                    ? routeMappingOverlayData.triggerDistance : 25
             if (routeMappingOverlayData.transectPath
                     && routeMappingOverlayData.transectPath.length >= 2) {
                 flyView._routeMappingOverlayLocked = true

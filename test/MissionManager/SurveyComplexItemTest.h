@@ -29,6 +29,8 @@ private slots:
     void _testItemCount(void);
     void _testHoverCaptureItemGeneration(void);
     void _testPatternParameters(void);
+    void _testRouteMappingResolutionPreset_data(void);
+    void _testRouteMappingResolutionPreset(void);
 #else
     // Handy mechanism to to a single test
 private slots:
@@ -40,6 +42,8 @@ private:
     void _testItemGeneration(void);
     void _testHoverCaptureItemGeneration(void);
     void _testPatternParameters(void);
+    void _testRouteMappingResolutionPreset_data(void);
+    void _testRouteMappingResolutionPreset(void);
 #endif
 
 private:

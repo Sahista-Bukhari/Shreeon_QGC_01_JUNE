@@ -35,6 +35,7 @@ public:
     Q_INVOKABLE bool beginSession();
     Q_INVOKABLE void endSession();
     Q_INVOKABLE void cancelSession();
+    Q_INVOKABLE void discardSessionStorage();
     Q_INVOKABLE QString imagePathForSequence(int sequence) const;
     Q_INVOKABLE QString metadataPathForSequence(int sequence) const;
     Q_INVOKABLE bool requestPhotoCapture(int sequence, double latitude, double longitude, double altitude, double heading);
@@ -51,6 +52,7 @@ signals:
 private slots:
     void _onPiSessionBeginComplete(bool success);
     void _pumpCaptureQueue();
+    void _onTriggerCaptureFinished(int sequence, bool success, const QString &remotePhotoPath);
 
 private:
     struct PendingCapture {
@@ -80,6 +82,8 @@ private:
     QList<PendingCapture> _pendingCaptures;
     bool _capturePumpRunning = false;
     bool _captureUdpInFlight = false;
+    PendingCapture _inFlightCapture;
+    bool _inFlightCaptureValid = false;
     QString _sessionDirectory;
     QString _sessionToken;
     bool _sessionActive = false;

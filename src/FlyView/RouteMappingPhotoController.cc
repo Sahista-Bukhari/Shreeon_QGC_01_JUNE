@@ -11,9 +11,8 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QFileInfo>
+#include <QtCore/QDir>
 #include <QtCore/QUuid>
-#include <QtConcurrent/QtConcurrentRun>
-#include <QtCore/QFutureWatcher>
 #include <QtCore/QTimer>
 
 #include <utility>
@@ -46,6 +45,11 @@ void RouteMappingPhotoController::setPhotoFetcher(QObject *fetcher)
             &RouteMappingPiPhotoFetcher::piSessionBeginComplete,
             this,
             &RouteMappingPhotoController::_onPiSessionBeginComplete);
+        connect(
+            _fetcher,
+            &RouteMappingPiPhotoFetcher::triggerCaptureFinished,
+            this,
+            &RouteMappingPhotoController::_onTriggerCaptureFinished);
     }
 }
 
@@ -257,6 +261,28 @@ void RouteMappingPhotoController::cancelSession()
     }
 }
 
+void RouteMappingPhotoController::discardSessionStorage()
+{
+    const QString sessionPath = _sessionDirectory;
+    cancelSession();
+    if (sessionPath.isEmpty()) {
+        return;
+    }
+
+    QDir sessionDir(sessionPath);
+    if (!sessionDir.exists()) {
+        return;
+    }
+
+    if (sessionDir.removeRecursively()) {
+        qCInfo(RouteMappingPhotoControllerLog)
+            << "Removed Route Mapping photo folder after plan clear:" << sessionPath;
+    } else {
+        qCWarning(RouteMappingPhotoControllerLog)
+            << "Could not remove Route Mapping photo folder:" << sessionPath;
+    }
+}
+
 QString RouteMappingPhotoController::imagePathForSequence(int sequence) const
 {
     if (sequence < 1 || _sessionDirectory.isEmpty()) {
@@ -338,7 +364,7 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     }
 
     _capturePumpRunning = false;
-    _scheduleCapturePump();
+    QTimer::singleShot(100, this, &RouteMappingPhotoController::_scheduleCapturePump);
 }
 
 void RouteMappingPhotoController::_pumpCaptureQueue()
@@ -376,56 +402,56 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
         pending.heading);
 
     _captureUdpInFlight = true;
-    RouteMappingPiPhotoFetcher *fetcher = _fetcher;
-    const PendingCapture capture = pending;
+    _inFlightCapture = pending;
+    _inFlightCaptureValid = true;
+    _fetcher->triggerCaptureQueued(pending.sequence);
+}
 
-    auto *watcher = new QFutureWatcher<std::pair<bool, QString>>(this);
-    connect(
-        watcher,
-        &QFutureWatcher<std::pair<bool, QString>>::finished,
-        this,
-        [this, watcher, capture]() {
-            const std::pair<bool, QString> result = watcher->result();
-            watcher->deleteLater();
+void RouteMappingPhotoController::_onTriggerCaptureFinished(
+    int sequence, bool success, const QString &remotePhotoPath)
+{
+    if (!_inFlightCaptureValid || _inFlightCapture.sequence != sequence) {
+        return;
+    }
 
-            if (!result.first) {
-                PendingCapture retry = capture;
-                retry.udpAttempts++;
-                if (retry.udpAttempts <= 8) {
-                    _pendingCaptures.prepend(retry);
-                    qCWarning(RouteMappingPhotoControllerLog)
-                        << "Re-queued Route Mapping CAPTURE seq" << retry.sequence << "attempt"
-                        << retry.udpAttempts;
-                    _captureUdpInFlight = false;
-                    _capturePumpRunning = false;
-                    QTimer::singleShot(1500, this, &RouteMappingPhotoController::_pumpCaptureQueue);
-                    return;
-                }
-                _completeCaptureAttempt(
-                    capture.sequence,
-                    capture.latitude,
-                    capture.longitude,
-                    capture.altitude,
-                    capture.heading,
-                    false,
-                    {});
-                return;
-            }
-            _completeCaptureAttempt(
-                capture.sequence,
-                capture.latitude,
-                capture.longitude,
-                capture.altitude,
-                capture.heading,
-                result.first,
-                result.second);
-        });
+    const PendingCapture capture = _inFlightCapture;
+    _inFlightCaptureValid = false;
+    _captureUdpInFlight = false;
 
-    watcher->setFuture(QtConcurrent::run([fetcher, capture]() {
-        QString remotePhotoPath;
-        const bool ok = fetcher->triggerCapture(capture.sequence, &remotePhotoPath);
-        return std::make_pair(ok, remotePhotoPath);
-    }));
+    if (!success) {
+        PendingCapture retry = capture;
+        retry.udpAttempts++;
+        if (retry.udpAttempts <= 4) {
+            _pendingCaptures.prepend(retry);
+            qCWarning(RouteMappingPhotoControllerLog)
+                << "Re-queued Route Mapping CAPTURE seq" << retry.sequence << "attempt"
+                << retry.udpAttempts;
+            _capturePumpRunning = false;
+            QTimer::singleShot(2000, this, &RouteMappingPhotoController::_pumpCaptureQueue);
+            return;
+        }
+        qCWarning(RouteMappingPhotoControllerLog)
+            << "Route Mapping CAPTURE seq" << sequence
+            << "UDP send failed; starting SCP/find retries anyway";
+        _completeCaptureAttempt(
+            capture.sequence,
+            capture.latitude,
+            capture.longitude,
+            capture.altitude,
+            capture.heading,
+            true,
+            {});
+        return;
+    }
+
+    _completeCaptureAttempt(
+        capture.sequence,
+        capture.latitude,
+        capture.longitude,
+        capture.altitude,
+        capture.heading,
+        true,
+        remotePhotoPath);
 }
 
 bool RouteMappingPhotoController::requestPhotoCapture(

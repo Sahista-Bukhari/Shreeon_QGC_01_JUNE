@@ -1565,6 +1565,8 @@ FlightMap {
             required property real photoHeading
             required property int photoSequence
             required property string photoImageSource
+            required property bool photoReady
+            required property bool photoFetchFailed
 
             property real footprintSide: _root.routeMappingPhotoFootprintSide
             property real footprintFrontal: _root.routeMappingPhotoFootprintFrontal
@@ -1610,9 +1612,26 @@ FlightMap {
 
                 Rectangle {
                     anchors.fill: parent
-                    color: "#263238"
+                    color: mappingPhotoItem.photoFetchFailed ? "#7a1f1f" : "#263238"
                     border.width: 1
-                    border.color: Qt.rgba(1, 1, 1, 0.75)
+                    border.color: mappingPhotoItem.photoFetchFailed
+                                  ? "#ff5555"
+                                  : Qt.rgba(1, 1, 1, 0.75)
+                }
+
+                Rectangle {
+                    anchors.fill: parent
+                    visible: mappingPhotoItem.photoImageSource.length === 0
+                             && !mappingPhotoItem.photoFetchFailed
+                    color: Qt.rgba(0.15, 0.22, 0.28, 0.92)
+                    border.width: 0
+
+                    BusyIndicator {
+                        anchors.centerIn: parent
+                        width: Math.min(parent.width, parent.height) * 0.45
+                        height: width
+                        running: mappingPhotoItem.photoImageSource.length === 0
+                    }
                 }
 
                 Image {
@@ -1634,15 +1653,20 @@ FlightMap {
                 }
 
                 QGCLabel {
-                    anchors.centerIn: parent
-                    text: mappingPhotoItem.photoImageSource.length === 0
-                          ? qsTr("Photo %1 (waiting for Pi…)").arg(mappingPhotoItem.photoSequence)
-                          : qsTr("Photo %1").arg(mappingPhotoItem.photoSequence)
+                    anchors.bottom: parent.bottom
+                    anchors.horizontalCenter: parent.horizontalCenter
+                    anchors.bottomMargin: 2
+                    text: mappingPhotoItem.photoFetchFailed
+                          ? qsTr("Photo %1 (failed)").arg(mappingPhotoItem.photoSequence)
+                          : (mappingPhotoItem.photoImageSource.length === 0
+                             ? qsTr("Photo %1 (waiting for Pi…)").arg(mappingPhotoItem.photoSequence)
+                             : qsTr("Photo %1").arg(mappingPhotoItem.photoSequence))
                     color: "white"
                     font.bold: true
                     font.pointSize: ScreenTools.smallFontPointSize
                     visible: mappingPhotoItem.photoImageSource.length === 0
                              || mappingPhotoImage.status !== Image.Ready
+                             || mappingPhotoItem.photoFetchFailed
                 }
             }
         }
