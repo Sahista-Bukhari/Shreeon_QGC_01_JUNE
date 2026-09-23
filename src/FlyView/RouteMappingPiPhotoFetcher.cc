@@ -30,7 +30,9 @@ bool remoteScpTargetMissing(const QString &stderrText)
 constexpr int kMaxFetchAttempts = 400;
 constexpr int kMaxConcurrentFetches = 2;
 constexpr int kCaptureUdpAckAttempts = 1;
-constexpr int kCaptureUdpAckTimeoutMs = 1200;
+constexpr int kSshPrecheckAttempts = 3;
+constexpr int kSshPrecheckRetryDelayMs = 1500;
+constexpr int kCaptureUdpAckTimeoutMs = 2500;
 constexpr int kRetryDelayMs = 3000;
 constexpr int kMinDownloadedJpegBytes = 8192;
 constexpr int kRetryDelayFirstMs = 500;
@@ -43,6 +45,7 @@ constexpr int kVideoPauseReplyTimeoutMs = 8000;
 constexpr int kStatusReplyTimeoutMs = 4000;
 constexpr int kStatusQueryAttempts = 6;
 constexpr int kPiVideoPauseSettleMs = 2500;
+constexpr int kCaptureSshTriggerTimeoutMs = 12000;
 
 const QRegularExpression kCaptureUdpAcceptableReply(
     QStringLiteral("^(QUEUED(\\s+seq=\\d+(\\s+path=/[^\\s]+)?)?|BUSY)$"),
@@ -175,25 +178,42 @@ void RouteMappingPiPhotoFetcher::beginSessionAsync()
         QString sessionPath;
         bool sshPrecheckFailed = false;
         bool success = false;
+        bool videoPaused = false;
 
-        if (!self->_runSshPrecheck(&errorMessage)) {
+        for (int attempt = 0; attempt < kSshPrecheckAttempts; ++attempt) {
+            if (self->_runSshPrecheck(&errorMessage)) {
+                sshPrecheckFailed = false;
+                break;
+            }
             sshPrecheckFailed = true;
+            if (attempt + 1 < kSshPrecheckAttempts) {
+                QThread::msleep(kSshPrecheckRetryDelayMs);
+            }
         }
 
-        if (!self->_sendVideoPauseAndWaitForSession(&sessionPath, &errorMessage)) {
+        if (sshPrecheckFailed) {
+            qCWarning(RouteMappingPiPhotoFetcherLog)
+                << "SSH precheck failed after" << kSshPrecheckAttempts
+                << "attempts; skipping VIDEO_PAUSE:" << errorMessage;
+        } else if (!self->_sendVideoPauseAndWaitForSession(&sessionPath, &errorMessage)) {
             success = false;
-        } else if (sshPrecheckFailed) {
-            // Live video is paused for mapping; SCP/photo transfer still needs SSH keys.
-            success = true;
         } else {
+            videoPaused = true;
             const QString photoRoot = QDir::cleanPath(self->_piPhotoRoot);
             if (!sessionPath.startsWith(photoRoot + QLatin1Char('/'))) {
                 errorMessage = RouteMappingPiPhotoFetcher::tr(
                                    "Pi returned a photo session outside the configured root: %1")
                                    .arg(sessionPath);
+                success = false;
             } else {
                 success = true;
             }
+        }
+
+        if (!success && videoPaused) {
+            qCInfo(RouteMappingPiPhotoFetcherLog)
+                << "Rolling back Pi VIDEO_PAUSE after failed mapping session start";
+            (void)self->_sendRemoteUdpCommand(QStringLiteral("VIDEO_RESUME"));
         }
 
         QMetaObject::invokeMethod(
@@ -311,7 +331,7 @@ QStringList RouteMappingPiPhotoFetcher::_baseSshOptions()
         QStringLiteral("-o"),
         QStringLiteral("ControlMaster=auto"),
         QStringLiteral("-o"),
-        QStringLiteral("ControlPersist=120"),
+        QStringLiteral("ControlPersist=60"),
         QStringLiteral("-o"),
         QStringLiteral("ControlPath=%1").arg(controlPath),
     };
@@ -370,14 +390,67 @@ bool RouteMappingPiPhotoFetcher::_runSshPrecheck(QString *errorMessage) const
 
     QProcess process;
     process.setProgram(QStringLiteral("ssh"));
-    process.setArguments({
-        QStringLiteral("-o"), QStringLiteral("BatchMode=yes"),
-        QStringLiteral("-o"), QStringLiteral("ConnectTimeout=8"),
-        QStringLiteral("-o"), QStringLiteral("StrictHostKeyChecking=accept-new"),
-        _sshTarget(),
-        QStringLiteral("true"),
-    });
+    QStringList arguments = _baseSshOptions();
+    arguments << _sshTarget() << QStringLiteral("true");
+    process.setArguments(arguments);
     return runProcess(process, kSshPrecheckTimeoutMs, errorMessage);
+#endif
+}
+
+bool RouteMappingPiPhotoFetcher::_triggerCaptureViaSsh(
+    int sequence, QString *remotePhotoPath, QString *errorMessage) const
+{
+#if defined(Q_OS_WIN)
+    Q_UNUSED(sequence);
+    Q_UNUSED(remotePhotoPath);
+    if (errorMessage) {
+        *errorMessage = tr("SSH capture trigger is not supported on Windows");
+    }
+    return false;
+#else
+    if (_piHost.isEmpty() || _piUser.isEmpty() || sequence < 1) {
+        if (errorMessage) {
+            *errorMessage = tr("Pi SSH host, user, or sequence is invalid");
+        }
+        return false;
+    }
+
+    QProcess ssh;
+    ssh.setProgram(QStringLiteral("ssh"));
+    QStringList args = _baseSshOptions();
+    args << _sshTarget()
+         << QStringLiteral("/home/shreeon/capture.sh")
+         << QString::number(sequence);
+    ssh.setArguments(args);
+
+    if (!runProcess(ssh, kCaptureSshTriggerTimeoutMs, errorMessage)) {
+        return false;
+    }
+
+    const QString remotePath = QDir::cleanPath(trimmedProcessOutput(ssh));
+    const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
+    if (!remotePath.isEmpty()) {
+        if (!remotePath.startsWith(photoRoot + QLatin1Char('/'))
+            || remotePath.contains(QLatin1Char('\n'))) {
+            if (errorMessage) {
+                *errorMessage = tr("SSH capture returned path outside photo root: %1").arg(remotePath);
+            }
+            return false;
+        }
+        if (remotePhotoPath) {
+            *remotePhotoPath = remotePath;
+        }
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "SSH trigger queued sequence" << sequence << "path" << remotePath;
+        return true;
+    }
+
+    qCInfo(RouteMappingPiPhotoFetcherLog)
+        << "SSH trigger queued sequence" << sequence << "(Pi reply without path; session-scoped find)";
+    if (remotePhotoPath) {
+        remotePhotoPath->clear();
+    }
+    return true;
 #endif
 }
 
@@ -704,6 +777,13 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePho
         return false;
     }
 
+    QString sshError;
+    if (_triggerCaptureViaSsh(sequence, remotePhotoPath, &sshError)) {
+        return true;
+    }
+    qCInfo(RouteMappingPiPhotoFetcherLog)
+        << "SSH CAPTURE" << sequence << "failed; falling back to UDP:" << sshError;
+
     QString response;
     QString errorMessage;
     for (int attempt = 0; attempt < kCaptureUdpAckAttempts; ++attempt) {
@@ -715,18 +795,15 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePho
                 &kCaptureUdpAcceptableReply)) {
             return _parseCaptureUdpResponse(sequence, response, remotePhotoPath);
         }
-        qCWarning(RouteMappingPiPhotoFetcherLog)
-            << "CAPTURE" << sequence << "attempt" << (attempt + 1) << "failed:" << errorMessage;
-        if (attempt + 1 < kCaptureUdpAckAttempts) {
-            QThread::msleep(200);
-        }
+        qCDebug(RouteMappingPiPhotoFetcherLog)
+            << "CAPTURE" << sequence << "UDP ack not received:" << errorMessage;
     }
 
     // WFB often drops the Pi→GCS reply while the command still reaches the Pi.
     if (_sendRemoteUdpCommand(QStringLiteral("CAPTURE %1").arg(sequence))) {
         qCInfo(RouteMappingPiPhotoFetcherLog)
             << "CAPTURE" << sequence
-            << "UDP ack not received; datagram sent — continuing with session find / SCP retries";
+            << "sent over UDP without ack — SCP retries will wait for the JPEG";
         if (remotePhotoPath) {
             remotePhotoPath->clear();
         }

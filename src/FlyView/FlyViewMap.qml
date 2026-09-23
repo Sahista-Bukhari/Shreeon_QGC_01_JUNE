@@ -56,6 +56,7 @@ FlightMap {
     property real   routeMappingExitHeading: 0
     property real   routeMappingPhotoFootprintSide: 25
     property real   routeMappingPhotoFootprintFrontal: 25
+    property real   routeMappingTriggerDistance: 25
     property var    routeMappingLivePhotoModel: null
     property bool   hideVehicleMissionForUnuploadedRoute: false
     readonly property var _routeMappingTakeoffPath: {
@@ -136,10 +137,22 @@ FlightMap {
         return segStart.atDistanceAndAzimuth(along, azSeg)
     }
 
-    function _distanceAlongTransect(path, coord) {
+    function _photoCapturePathToleranceMeters() {
+        var spacing = Number(routeMappingTriggerDistance)
+        if (!isFinite(spacing) || spacing <= 0) {
+            spacing = 25
+        }
+        // GPS/cross-track error on the last leg must not block final triggers.
+        return Math.max(40, spacing * 1.5)
+    }
+
+    function _distanceAlongTransect(path, coord, maxCrossTrackMeters) {
         var bestAlong = 0
         var minDist = Number.MAX_VALUE
         var accumulated = 0
+        var crossTrackLimit = maxCrossTrackMeters > 0
+                ? maxCrossTrackMeters
+                : _photoCapturePathToleranceMeters()
 
         for (var i = 0; i < path.length - 1; i++) {
             var segStart = path[i]
@@ -153,7 +166,7 @@ FlightMap {
             accumulated += segStart.distanceTo(segEnd)
         }
 
-        if (minDist > 40) {
+        if (minDist > crossTrackLimit) {
             return -1
         }
         return bestAlong
@@ -178,8 +191,15 @@ FlightMap {
         return bestHeading
     }
 
+    function _routeMappingTriggerPath() {
+        if (routeMappingTransectPath && routeMappingTransectPath.length >= 2) {
+            return routeMappingTransectPath
+        }
+        return _routeMappingPhotoCapturePolyline()
+    }
+
     function routeMappingCoordinateAtDistanceAlongPath(distanceAlongPath) {
-        var path = _routeMappingPhotoCapturePolyline()
+        var path = _routeMappingTriggerPath()
         if (!path || path.length === 0) {
             return QtPositioning.coordinate()
         }
@@ -208,7 +228,7 @@ FlightMap {
     }
 
     function routeMappingPhotoCapturePathLength() {
-        var path = _routeMappingPhotoCapturePolyline()
+        var path = _routeMappingTriggerPath()
         if (!path || path.length < 2) {
             return 0
         }
@@ -216,7 +236,7 @@ FlightMap {
     }
 
     function routeMappingDistanceAlongPath(coord) {
-        var path = _routeMappingPhotoCapturePolyline()
+        var path = _routeMappingTriggerPath()
         if (!path || path.length < 2 || !coord || !coord.isValid) {
             return -1
         }
@@ -776,8 +796,7 @@ FlightMap {
         }
     }
 
-    // Camera trigger points — hidden on map for route-mapping Fly View
-    // (photo count still tracked via cameraTriggerPoints for the progress panel)
+    // Camera trigger points — hidden; Route Mapping uses QGC-calculated triggers + Pi SCP.
     MapItemView {
         model: 0
         visible: false
@@ -1642,6 +1661,14 @@ FlightMap {
                     fillMode: Image.Stretch
                     asynchronous: true
                     cache: false
+                    // MapItemView + ListModel can miss role updates; force reload when URL arrives.
+                    onSourceChanged: {
+                        if (source.length > 0 && status === Image.Error) {
+                            var retryUrl = source
+                            source = ""
+                            source = retryUrl
+                        }
+                    }
                     // Decode only what the map can display. Loading each
                     // 4608x2592 JPEG as a full GPU texture exhausts memory and
                     // exceeds the 4096px texture limit on common QGC devices.

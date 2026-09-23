@@ -540,6 +540,9 @@ void Vehicle::_mavlinkMessageReceived(LinkInterface* link, mavlink_message_t mes
     case MAVLINK_MSG_ID_CAMERA_IMAGE_CAPTURED:
         _handleCameraImageCaptured(message);
         break;
+    case MAVLINK_MSG_ID_CAMERA_TRIGGER:
+        _handleCameraTrigger(message);
+        break;
     case MAVLINK_MSG_ID_ADSB_VEHICLE:
         ADSBVehicleManager::instance()->mavlinkMessageReceived(message);
         break;
@@ -695,6 +698,14 @@ void Vehicle::_handleCameraImageCaptured(const mavlink_message_t& message)
     if (feedback.capture_result == 1) {
         _cameraTriggerPoints.append(new QGCQGeoCoordinate(imageCoordinate, this));
     }
+}
+
+void Vehicle::_handleCameraTrigger(const mavlink_message_t& message)
+{
+    mavlink_camera_trigger_t trigger{};
+    mavlink_msg_camera_trigger_decode(&message, &trigger);
+    qCDebug(VehicleLog) << "CAMERA_TRIGGER sequence" << trigger.seq;
+    emit cameraTriggerReceived(trigger.seq);
 }
 
 // TODO: VehicleFactGroup

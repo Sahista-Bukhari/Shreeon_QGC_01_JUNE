@@ -107,6 +107,7 @@ private:
     bool _sendVideoPauseAndWaitForSession(QString *sessionPath, QString *errorMessage) const;
     bool _sendRemoteUdpCommand(const QString &command) const;
     bool _parseCaptureUdpResponse(int sequence, const QString &response, QString *remotePhotoPath) const;
+    bool _triggerCaptureViaSsh(int sequence, QString *remotePhotoPath, QString *errorMessage) const;
 
     QString _piHost = QStringLiteral("10.5.0.2");
     QString _piUser = QStringLiteral("shreeon");

@@ -9,7 +9,10 @@ Rectangle {
 
     property int routePercent: 0
     property int photosTaken: 0
+    property int photosRetrieved: 0
     property int photosPlanned: 0
+    property int photoFailures: 0
+    property int triggersReceived: 0
     property bool photosVisible: true
     property var photoModel: null
     property string reconstructionText: qsTr("Pending")
@@ -163,8 +166,17 @@ Rectangle {
             MetricItem {
                 visible: root.photosVisible
                 iconSource: "/res/modern-icons/MappingProgressPhotos.svg"
-                labelText: qsTr("Photos")
+                labelText: qsTr("Triggers")
                 valueText: root.photosTaken + " / " + root.photosPlanned
+            }
+
+            MetricItem {
+                visible: root.photosVisible
+                iconSource: "/res/modern-icons/MappingProgressPhotos.svg"
+                coloredIcon: false
+                iconScale: 0.85
+                labelText: qsTr("On GCS")
+                valueText: root.photosRetrieved + " / " + root.photosPlanned
             }
 
             MetricItem {
@@ -173,6 +185,15 @@ Rectangle {
                 labelText: qsTr("Reconstruction")
                 valueText: root.reconstructionText
             }
+        }
+
+        QGCLabel {
+            visible: root.photosVisible && root.photoFailures > 0
+            text: qsTr("Missed captures: %1 of %2 triggers")
+                    .arg(root.photoFailures)
+                    .arg(root.triggersReceived)
+            font.pointSize: ScreenTools.smallFontPointSize
+            color: "#ffb74d"
         }
 
         QGCLabel {

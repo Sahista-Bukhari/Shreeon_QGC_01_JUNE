@@ -3,6 +3,7 @@
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 install -m 755 "$SCRIPT_DIR/shreeon_route_mapping.py" /usr/local/libexec/shreeon-route-mapping-capture
+install -m 755 "$SCRIPT_DIR/capture.sh" /home/shreeon/capture.sh
 install -m 644 "$SCRIPT_DIR/shreeon-route-mapping.default" /etc/default/shreeon-route-mapping
 systemctl daemon-reload
 systemctl restart route-mapping-capture.service

@@ -40,24 +40,24 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
 │  QGC — Plan: RouteMappingView.qml, RouteMappingTaskSettings.qml │
-│         Upload survey → mainWindow.uploadedMissionEditor =       │
-│         "routeMapping"                                           │
+│         Survey params → cameraShots (N), trigger distance, legs  │
 └────────────────────────────┬────────────────────────────────────┘
-                             │ transect overlay, mission items
+                             │ overlay + planned photo count N
 ┌────────────────────────────▼────────────────────────────────────┐
-│  QGC — Fly View: FlyView.qml, FlyViewMap.qml                     │
-│         RouteMappingPhotoController  (GCS folders + JSON)        │
-│         RouteMappingPiPhotoFetcher   (UDP triggers + SSH/SCP)  │
+│  QGC — Fly View (source of truth for when to shoot)              │
+│         Precompute N trigger distances along photo-capture legs    │
+│         Vehicle progress → CAPTURE 1..N (no MAVLink camera API)  │
+│         RouteMappingPhotoController + RouteMappingPiPhotoFetcher │
 └───────────────┬───────────────────────────────┬───────────────┘
                 │ UDP :14551                      │ SSH/SCP :22
-                │ VIDEO_PAUSE, CAPTURE, STATUS    │
+                │ VIDEO_PAUSE, CAPTURE seq, STATUS│
 ┌───────────────▼───────────────────────────────▼───────────────┐
-│  Pi: shreeon_route_mapping.py (route-mapping-capture.service)   │
-│      UART ↔ WFB MAVLink :14550, rpicam-still, wfb-camera.service│
-└───────────────┬─────────────────────────────────────────────────┘
-                │ MAVLink CAMERA_TRIGGER / survey mission
+│  Pi: shreeon_route_mapping.py — one still per CAPTURE seq only   │
+│      QGC_LED=1 disables UART auto-trigger; rpicam-still          │
+└─────────────────────────────────────────────────────────────────┘
+                │ PX4 flies uploaded survey mission (position only)
 ┌───────────────▼─────────────────────────────────────────────────┐
-│  PX4 + camera trigger / survey waypoints                          │
+│  Autopilot — mission waypoints / speed; not photo count authority │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -131,12 +131,15 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 
 1. **Arm** — live photo model resets; Pi session is **not** started on arm (avoids blocking UI).
 2. **Start mission** (or first photo trigger) — GCS creates local `Mission_*` folder; Pi session starts **in a background thread** (SSH precheck + `VIDEO_PAUSE` + `STATUS` if needed).
-3. For each trigger (transect logic and/or PX4 `CAMERA_TRIGGER`):
-   - GCS writes `image_NNNN.json` (lat, lon, alt, heading, trigger index).
-   - UDP `CAPTURE N` to Pi; Pi replies `QUEUED seq=N path=/full/path.jpg` (when deployed).
-   - GCS **SCP** copies that exact path to `image_NNNN.jpg`.
-   - Map tile updates when `photoFetched` succeeds; failures set `photoFetchFailed` on the tile.
-4. **Disarm** — GCS stops new captures; SCP queue may drain; then `VIDEO_RESUME` on the Pi when the fetch queue is empty.
+3. **QGC** (not MAVLink camera protocol) decides when to shoot:
+   - On plan upload, survey **`cameraShots`** (N) and **trigger distance** define the schedule.
+   - Fly View precomputes **N distances** along interior photo-capture legs (same math as `SurveyComplexItem`).
+   - As the vehicle progresses along those legs, GCS fires **Photo 1 … Photo N** (max **N**; no extra Pi shots).
+   - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, Pi still, **SCP** → `image_NNNN.jpg`.
+   - Map tile and Photos count update only when `photoFetched` succeeds.
+   - Pi **`QGC_LED=1`**: UART `CAMERA_TRIGGER` does not add captures during a QGC session.
+4. **Disarm** — GCS stops accepting new triggers, drains all capture and SCP
+   queues, then sends `VIDEO_RESUME` when the fetch queue is empty.
 
 ### 3.4 After flight
 
@@ -188,7 +191,7 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 **Session start (async)**
 
 1. `resetSession()` / generation counter.
-2. Background thread: `ssh BatchMode=yes user@host true` (precheck).
+2. Background thread: `ssh BatchMode=yes user@host true` (precheck, retried); **skip `VIDEO_PAUSE` if SSH fails**.
 3. UDP `VIDEO_PAUSE`; wait for `OK session=…` **or** after settle (~2.5 s) query `STATUS` with retries.
 4. Validate path under configured `piPhotoRoot`.
 5. Main thread: emit `sshPrecheckFailed`, `sessionStartFailed`, or `piSessionBeginComplete(true)`.

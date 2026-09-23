@@ -829,6 +829,9 @@ signals:
     void coordinateChanged              (QGeoCoordinate coordinate);
     void joystickEnabledChanged         (bool enabled);
     void mavlinkMessageReceived         (const mavlink_message_t& message);
+    /// Emitted for the native MAVLink CAMERA_TRIGGER generated while executing
+    /// distance-based camera trigger mission items.
+    void cameraTriggerReceived           (quint32 sequence);
     void homePositionChanged            (const QGeoCoordinate& homePosition);
     void armedPositionChanged();
     void armedChanged                   (bool armed);
@@ -978,6 +981,7 @@ private:
     void _handleCameraFeedback          (const mavlink_message_t& message);
 #endif
     void _handleCameraImageCaptured     (const mavlink_message_t& message);
+    void _handleCameraTrigger           (const mavlink_message_t& message);
     void _handleCommandLong             (const mavlink_message_t& message);
     void _missionManagerError           (int errorCode, const QString& errorMsg);
     void _geoFenceManagerError          (int errorCode, const QString& errorMsg);

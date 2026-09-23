@@ -288,9 +288,23 @@ class CaptureWorker(threading.Thread):
                         str(request.session_directory),
                         request.gcs_sequence,
                     )
-                    with self._request_lock:
-                        self._gcs_requests.discard(request_key)
-                        self._gcs_planned_paths.pop(request_key, None)
+                    # If the JPEG was atomically renamed before a later
+                    # metadata error, the capture itself succeeded. Preserve
+                    # the idempotency key so an ACK retry cannot create a
+                    # second image for the same QGC trigger.
+                    jpeg_saved = False
+                    if request.planned_path is not None:
+                        try:
+                            jpeg_saved = (
+                                request.planned_path.is_file()
+                                and request.planned_path.stat().st_size > 0
+                            )
+                        except OSError:
+                            jpeg_saved = False
+                    if not jpeg_saved:
+                        with self._request_lock:
+                            self._gcs_requests.discard(request_key)
+                            self._gcs_planned_paths.pop(request_key, None)
                 LOGGER.exception("Full-resolution capture failed")
 
     def _create_session_directory(self, photo_root: pathlib.Path) -> pathlib.Path:
@@ -447,6 +461,11 @@ class RouteMappingService:
         self._seen_camera_triggers: dict[tuple[int, int, int], float] = {}
         self._suppress_next_camera_trigger_until = 0.0
         self._ignore_uart_camera_trigger = os.environ.get("QGC_LED", "0") == "1"
+        # VIDEO_PAUSE starts a QGC-led Route Mapping session. During that
+        # session the service captures only explicit, sequenced CAPTURE
+        # commands from QGC. This prevents the same MAVLink CAMERA_TRIGGER from
+        # also being captured independently on the Pi UART path.
+        self._gcs_controls_captures = False
 
         self._wfb_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._wfb_socket.bind(("127.0.0.1", 0))
@@ -475,22 +494,28 @@ class RouteMappingService:
         # the folder here (rather than in the daemon constructor) keeps its
         # timestamp and lifetime aligned with the actual mission.
         session_directory = self._capture_worker.start_new_session()
-        if (
-            subprocess.run(
-                ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
-                check=False,
-            ).returncode
-            == 0
-        ):
-            subprocess.run(
-                ["systemctl", "stop", self._arguments.camera_service], check=True
-            )
-            time.sleep(self._arguments.video_release_delay_sec)
-        self._capture_worker.set_session_video_paused(True)
+        self._gcs_controls_captures = True
+        try:
+            if (
+                subprocess.run(
+                    ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
+                    check=False,
+                ).returncode
+                == 0
+            ):
+                subprocess.run(
+                    ["systemctl", "stop", self._arguments.camera_service], check=True
+                )
+                time.sleep(self._arguments.video_release_delay_sec)
+            self._capture_worker.set_session_video_paused(True)
+        except Exception:
+            self._gcs_controls_captures = False
+            raise
         LOGGER.info("Live video paused for mapping still session %s", session_directory)
         return session_directory
 
     def resume_live_video(self) -> None:
+        self._gcs_controls_captures = False
         self._capture_worker.set_session_video_paused(False)
         subprocess.run(
             ["systemctl", "start", self._arguments.camera_service], check=False
@@ -673,7 +698,7 @@ class RouteMappingService:
                 and message.message_id == MAVLINK_MSG_ID_CAMERA_TRIGGER
                 and len(message.payload) >= 12
             ):
-                if self._ignore_uart_camera_trigger:
+                if self._ignore_uart_camera_trigger or self._gcs_controls_captures:
                     continue
                 _time_usec, sequence = struct.unpack_from("<QI", message.payload)
                 now = time.monotonic()
@@ -697,6 +722,8 @@ class RouteMappingService:
                 command = values[7]
                 image_count = int(round(values[2]))
                 if command == MAV_CMD_IMAGE_START_CAPTURE and image_count == 1:
+                    if self._gcs_controls_captures:
+                        continue
                     if self._capture_worker.request(
                         CaptureRequest("mavlink-one-shot-command")
                     )[0]:

@@ -8,6 +8,7 @@ Item {
 
     property Item pipView
     property Item pipState: videoPipState
+    property bool routeMappingPiStillsActive: false
 
     property int    _track_rec_x:       0
     property int    _track_rec_y:       0
@@ -48,6 +49,22 @@ Item {
         anchors.fill:   parent
         useSmallFont:   _root.pipState.state !== _root.pipState.fullState
         visible:        QGroundControl.videoManager.isStreamSource
+                && !_root.routeMappingPiStillsActive
+    }
+
+    Rectangle {
+        anchors.fill: parent
+        visible: _root.routeMappingPiStillsActive
+        color: Qt.rgba(0.05, 0.08, 0.1, 0.92)
+        QGCLabel {
+            anchors.centerIn: parent
+            width: parent.width - ScreenTools.defaultFontPixelWidth * 2
+            horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.WordWrap
+            text: qsTr("Route mapping stills\nPi live video paused — photos via SCP")
+            color: Qt.rgba(1, 1, 1, 0.85)
+            font.pointSize: ScreenTools.smallFontPointSize
+        }
     }
     //-- UVC Video (USB Camera or Video Device)
     Loader {

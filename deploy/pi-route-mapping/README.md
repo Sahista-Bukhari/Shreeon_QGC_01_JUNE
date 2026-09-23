@@ -4,9 +4,11 @@
 [`docs/en/shreeon-route-mapping-implementation.md`](../../docs/en/shreeon-route-mapping-implementation.md)
 
 This service keeps the existing WFB H.264 stream and captures full-resolution
-4608x2592 JPEG files on the Raspberry Pi when PX4 emits a MAVLink
-`CAMERA_TRIGGER` message. A capture pauses the live video for a few seconds and
-then restarts it automatically.
+4608x2592 JPEG files on the Raspberry Pi. **Route Mapping photo count and timing
+come from QGC** (survey trigger distance and planned `cameraShots`); QGC sends
+one sequenced **`CAPTURE N`** per calculated trigger over UDP **14551**, then
+copies each JPEG with **SCP**. With **`QGC_LED=1`**, UART `CAMERA_TRIGGER` does
+not queue extra Pi captures during a QGC session.
 
 Photos are stored under:
 
@@ -17,16 +19,46 @@ Photos are stored under:
 ## Required GCS SSH key
 
 QGC uses non-interactive SCP and cannot answer a password prompt. Install the
-GCS user's public key on the Pi before flying:
+GCS user's public key on the Pi before flying.
+
+**Run on the GCS PC** (e.g. `shreeon@ubuntu`), not on the Pi. The drone link
+(WFB) must be up so `10.5.0.2` is reachable.
+
+If `ssh-copy-id` says **No identities found**, create a key first:
 
 ```bash
-ssh-copy-id shreeon@10.5.0.2
+ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519 -N ""
+ssh-copy-id -i ~/.ssh/id_ed25519.pub shreeon@10.5.0.2
 ssh -o BatchMode=yes -o ConnectTimeout=3 shreeon@10.5.0.2 true
 ```
+
+(Use `ssh-copy-id shreeon@10.5.0.2` instead if you already have `~/.ssh/id_rsa`
+or `~/.ssh/id_ed25519`.)
 
 The second command must exit successfully without prompting. QGC runs the same
 precheck when a Route Mapping photo session starts and blocks the session with
 a modal setup message if key authentication is unavailable.
+
+GCS capture triggers use SSH (`/home/shreeon/capture.sh`, installed by
+`install-on-pi.sh`) over a multiplexed connection, then SCP for each JPEG.
+
+## Install / update Pi software
+
+**On the GCS**, copy this folder to the Pi (adjust the repo path):
+
+```bash
+scp -r ~/shreeon_Tech_V1/Shreeon_QGC_01_JUNE/Shreeon_QGC_01_JUNE/deploy/pi-route-mapping shreeon@10.5.0.2:~/
+```
+
+**On the Pi** (after `ssh shreeon@10.5.0.2`):
+
+```bash
+cd ~/pi-route-mapping
+sudo bash install-on-pi.sh
+```
+
+Do not run `install-on-pi.sh` on the GCS — it only exists in the repo and must
+run on the Raspberry Pi.
 
 The service also bridges MAVLink between `/dev/ttyAMA0` and the WFB UDP endpoint
 at `127.0.0.1:14550`. The default serial speed is 57600 baud and can be changed
@@ -64,9 +96,10 @@ idempotent triggers over the WFB LAN:
 
 Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the returned
 `mission_YYYYMMDD_HHMMSS` directory. Repeating the same sequence within that
-session is safe and does not take a duplicate photo. Set `MANUAL_HOST=0.0.0.0` and `QGC_LED=1` in
-`/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551 and UART
-`CAMERA_TRIGGER` does not double-capture.
+session is safe and does not take a duplicate photo. Set `MANUAL_HOST=0.0.0.0`
+in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. No
+`QGC_LED` setting is required: `VIDEO_PAUSE` selects QGC as capture authority
+for that session, and `VIDEO_RESUME` restores standalone UART triggering.
 
 During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
 starts (stops `wfb-camera.service` for the whole session so `rpicam-still` can

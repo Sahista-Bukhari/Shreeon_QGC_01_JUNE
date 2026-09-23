@@ -33,6 +33,11 @@ void RouteMappingPhotoController::setCaptureEnabled(bool enabled)
     emit captureEnabledChanged();
 }
 
+void RouteMappingPhotoController::_notifyPendingCaptureCountChanged()
+{
+    emit pendingCaptureCountChanged();
+}
+
 void RouteMappingPhotoController::setPhotoFetcher(QObject *fetcher)
 {
     if (_fetcher) {
@@ -119,6 +124,31 @@ void RouteMappingPhotoController::_ensureRouteMappingReadme(
     }
 }
 
+void RouteMappingPhotoController::_removeEmptySessionDirectory(const QString &sessionPath) const
+{
+    if (sessionPath.isEmpty()) {
+        return;
+    }
+
+    QDir sessionDir(sessionPath);
+    if (!sessionDir.exists()) {
+        return;
+    }
+
+    const QStringList entries = sessionDir.entryList(QDir::NoDotAndDotDot | QDir::AllEntries);
+    if (!entries.isEmpty()) {
+        return;
+    }
+
+    if (sessionDir.rmdir(sessionPath)) {
+        qCInfo(RouteMappingPhotoControllerLog)
+            << "Removed empty Route Mapping mission folder after failed Pi session:" << sessionPath;
+    } else {
+        qCWarning(RouteMappingPhotoControllerLog)
+            << "Could not remove empty Route Mapping mission folder:" << sessionPath;
+    }
+}
+
 void RouteMappingPhotoController::_writeSessionLocatorFiles(const QString &sessionPath) const
 {
     const QString routeMappingRoot = _routeMappingRoot(false);
@@ -158,6 +188,8 @@ bool RouteMappingPhotoController::beginSession()
         return true;
     }
 
+    _finishRequested = false;
+    _requestedCaptureSequences.clear();
     const QString routeMappingRoot = _routeMappingRoot(true);
     if (routeMappingRoot.isEmpty()) {
         const QString errorMessage = tr(
@@ -206,8 +238,17 @@ void RouteMappingPhotoController::_onPiSessionBeginComplete(bool success)
     emit piSessionPendingChanged();
 
     if (!success) {
+        const QString errorMessage = tr("Raspberry Pi photo session could not be started.");
+        for (const PendingCapture &pending : std::as_const(_pendingCaptures)) {
+            emit captureFailed(pending.sequence, errorMessage);
+        }
+        _pendingCaptures.clear();
+        _notifyPendingCaptureCountChanged();
+        _finishRequested = false;
+        const QString failedSessionPath = _sessionDirectory;
         _sessionDirectory.clear();
         emit sessionDirectoryChanged();
+        _removeEmptySessionDirectory(failedSessionPath);
         return;
     }
 
@@ -224,26 +265,19 @@ void RouteMappingPhotoController::_onPiSessionBeginComplete(bool success)
 
 void RouteMappingPhotoController::endSession()
 {
-    _pendingCaptures.clear();
-    if (_waitingForPiSession) {
-        _waitingForPiSession = false;
-        emit piSessionPendingChanged();
-    }
-    if (_sessionActive) {
-        _sessionActive = false;
-        emit sessionActiveChanged();
-    }
-
-    // Stop accepting captures, but let already queued SCP transfers drain.
-    // Cancelling here left most map tiles permanently empty at mission end.
-    if (_fetcher) {
-        _fetcher->finishSession();
-    }
+    // Stop accepting new triggers, but preserve every trigger already accepted.
+    // The UDP capture queue must drain before the Pi session is closed.
+    _finishRequested = true;
+    _finishSessionIfReady();
+    _scheduleCapturePump();
 }
 
 void RouteMappingPhotoController::cancelSession()
 {
     _pendingCaptures.clear();
+    _notifyPendingCaptureCountChanged();
+    _requestedCaptureSequences.clear();
+    _finishRequested = false;
     if (_waitingForPiSession) {
         _waitingForPiSession = false;
         emit piSessionPendingChanged();
@@ -307,7 +341,7 @@ QString RouteMappingPhotoController::metadataPathForSequence(int sequence) const
         QStringLiteral("image_%1.json").arg(sequence, 4, 10, QChar('0')));
 }
 
-bool RouteMappingPhotoController::_writeMetadata(int sequence, double latitude, double longitude, double altitude, double heading) const
+bool RouteMappingPhotoController::_writeMetadata(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading) const
 {
     const QString metaPath = metadataPathForSequence(sequence);
     if (metaPath.isEmpty()) {
@@ -316,6 +350,7 @@ bool RouteMappingPhotoController::_writeMetadata(int sequence, double latitude, 
 
     QJsonObject object;
     object.insert(QStringLiteral("triggerIndex"), sequence);
+    object.insert(QStringLiteral("nativeCameraTriggerSequence"), static_cast<qint64>(nativeTriggerSequence));
     object.insert(QStringLiteral("timestamp"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
     object.insert(QStringLiteral("latitude"), latitude);
     object.insert(QStringLiteral("longitude"), longitude);
@@ -339,6 +374,24 @@ void RouteMappingPhotoController::_scheduleCapturePump()
     QTimer::singleShot(0, this, &RouteMappingPhotoController::_pumpCaptureQueue);
 }
 
+void RouteMappingPhotoController::_finishSessionIfReady()
+{
+    if (!_finishRequested || _waitingForPiSession || _captureUdpInFlight || !_pendingCaptures.isEmpty()) {
+        return;
+    }
+
+    _finishRequested = false;
+    if (_sessionActive) {
+        _sessionActive = false;
+        emit sessionActiveChanged();
+    }
+    if (_fetcher) {
+        // All capture commands are now represented in the fetch queue. Let its
+        // transfers finish before VIDEO_RESUME closes the remote session.
+        _fetcher->finishSession();
+    }
+}
+
 void RouteMappingPhotoController::_completeCaptureAttempt(
     int sequence,
     double latitude,
@@ -349,9 +402,14 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     const QString &remotePhotoPath)
 {
     _captureUdpInFlight = false;
+    _notifyPendingCaptureCountChanged();
 
     const QString imagePath = imagePathForSequence(sequence);
     if (success && !imagePath.isEmpty() && _fetcher) {
+        if (!remotePhotoPath.isEmpty()) {
+            qCInfo(RouteMappingPhotoControllerLog)
+                << "SCP using Pi path from trigger for seq" << sequence << remotePhotoPath;
+        }
         _fetcher->fetchPhotoBySequence(sequence, imagePath, sequence, remotePhotoPath);
         emit captureRequested(sequence, imagePath);
     } else {
@@ -365,17 +423,19 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
 
     _capturePumpRunning = false;
     QTimer::singleShot(100, this, &RouteMappingPhotoController::_scheduleCapturePump);
+    _finishSessionIfReady();
 }
 
 void RouteMappingPhotoController::_pumpCaptureQueue()
 {
     _capturePumpRunning = false;
 
-    if (!_captureEnabled || !_fetcher || _sessionDirectory.isEmpty()) {
+    if (!_fetcher || _sessionDirectory.isEmpty()) {
         return;
     }
 
     if (_captureUdpInFlight || _pendingCaptures.isEmpty()) {
+        _finishSessionIfReady();
         return;
     }
 
@@ -389,6 +449,7 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
     const PendingCapture pending = _pendingCaptures.takeFirst();
     const QString imagePath = imagePathForSequence(pending.sequence);
     if (imagePath.isEmpty()) {
+        emit captureFailed(pending.sequence, tr("No active Route Mapping photo session."));
         _scheduleCapturePump();
         return;
     }
@@ -396,6 +457,7 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
     QDir().mkpath(_sessionDirectory);
     (void)_writeMetadata(
         pending.sequence,
+        pending.nativeTriggerSequence,
         pending.latitude,
         pending.longitude,
         pending.altitude,
@@ -404,6 +466,7 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
     _captureUdpInFlight = true;
     _inFlightCapture = pending;
     _inFlightCaptureValid = true;
+    _notifyPendingCaptureCountChanged();
     _fetcher->triggerCaptureQueued(pending.sequence);
 }
 
@@ -417,12 +480,14 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
     const PendingCapture capture = _inFlightCapture;
     _inFlightCaptureValid = false;
     _captureUdpInFlight = false;
+    _notifyPendingCaptureCountChanged();
 
     if (!success) {
         PendingCapture retry = capture;
         retry.udpAttempts++;
         if (retry.udpAttempts <= 4) {
             _pendingCaptures.prepend(retry);
+            _notifyPendingCaptureCountChanged();
             qCWarning(RouteMappingPhotoControllerLog)
                 << "Re-queued Route Mapping CAPTURE seq" << retry.sequence << "attempt"
                 << retry.udpAttempts;
@@ -455,16 +520,16 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
 }
 
 bool RouteMappingPhotoController::requestPhotoCapture(
-    int sequence, double latitude, double longitude, double altitude, double heading)
+    int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading)
 {
     if (!_captureEnabled || sequence < 1 || !_fetcher || _sessionDirectory.isEmpty()) {
         return false;
     }
 
-    for (const PendingCapture &existing : _pendingCaptures) {
-        if (existing.sequence == sequence) {
-            return true;
-        }
+    if (_requestedCaptureSequences.contains(sequence)) {
+        qCWarning(RouteMappingPhotoControllerLog)
+            << "Ignoring duplicate Route Mapping capture sequence" << sequence;
+        return false;
     }
     if (_captureUdpInFlight) {
         // Allow one in-flight UDP command; additional sequences queue behind it.
@@ -472,11 +537,14 @@ bool RouteMappingPhotoController::requestPhotoCapture(
 
     PendingCapture pending;
     pending.sequence = sequence;
+    pending.nativeTriggerSequence = nativeTriggerSequence;
     pending.latitude = latitude;
     pending.longitude = longitude;
     pending.altitude = altitude;
     pending.heading = heading;
+    _requestedCaptureSequences.insert(sequence);
     _pendingCaptures.append(pending);
+    _notifyPendingCaptureCountChanged();
     qCInfo(RouteMappingPhotoControllerLog)
         << "Queued Route Mapping capture seq" << sequence << "(queue depth" << _pendingCaptures.size() << ")";
     _scheduleCapturePump();
