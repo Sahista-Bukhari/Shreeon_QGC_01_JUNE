@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Queues one GCS sequenced still via route-mapping-capture (UDP 14551).
-# Prints the planned JPEG path on stdout for QGC SCP (one line, no extra text).
+# Prints one canonical line for QGC: QUEUED seq=N path=... thumb=...
 set -euo pipefail
 
 SEQ="${1:?usage: capture.sh <sequence>}"
@@ -25,12 +25,58 @@ sock.sendto(payload, ("127.0.0.1", port))
 data, _ = sock.recvfrom(4096)
 text = data.decode("utf-8", "ignore").strip()
 
-path_match = re.search(r"path=(/\S+)", text)
-if path_match:
-    print(path_match.group(1))
-    sys.exit(0)
 
-if re.match(rf"^QUEUED(\s+seq={seq})?\s*$", text, re.I):
+def thumb_path_for(sequence: int, full_path: str) -> str:
+    from pathlib import Path
+
+    return str(Path(full_path).parent / f"image_{sequence:04d}_thumb.jpg")
+
+
+def canonicalize_capture_reply(sequence: int, reply: str) -> str | None:
+    queued = re.match(
+        r"^QUEUED\s+seq=(\d+)\s+path=(/\S+)(?:\s+thumb=(/\S+))?\s*$",
+        reply,
+        re.I,
+    )
+    if queued:
+        ack_seq = int(queued.group(1))
+        full_path = queued.group(2)
+        thumb = queued.group(3)
+        if ack_seq != sequence:
+            return None
+        if not thumb:
+            thumb = thumb_path_for(sequence, full_path)
+        return f"QUEUED seq={sequence} path={full_path} thumb={thumb}"
+
+    bare = re.match(
+        rf"^(/[^\s]+/image_{sequence:04d}_gcs_\d{{4}}_[^\s]+\.jpg)\s*$",
+        reply,
+        re.I,
+    )
+    if bare:
+        full_path = bare.group(1)
+        return (
+            f"QUEUED seq={sequence} path={full_path} "
+            f"thumb={thumb_path_for(sequence, full_path)}"
+        )
+
+    path_only = re.search(r"path=(/\S+)", reply)
+    if path_only:
+        full_path = path_only.group(1)
+        return (
+            f"QUEUED seq={sequence} path={full_path} "
+            f"thumb={thumb_path_for(sequence, full_path)}"
+        )
+
+    if re.match(rf"^QUEUED(\s+seq={sequence})?\s*$", reply, re.I):
+        return ""
+    return None
+
+
+canonical = canonicalize_capture_reply(seq, text)
+if canonical is not None:
+    if canonical:
+        print(canonical)
     sys.exit(0)
 
 sys.stderr.write(text + "\n")

@@ -91,7 +91,7 @@ idempotent triggers over the WFB LAN:
 > VIDEO_PAUSE
 < OK session=/home/shreeon/mapping_photos/mission_20260919_124005
 > CAPTURE 1
-< QUEUED seq=1 path=/home/shreeon/mapping_photos/mission_…/image_0001_gcs_0001_….jpg
+< QUEUED seq=1 path=/home/shreeon/mapping_photos/mission_…/image_0001_gcs_0001_….jpg thumb=/home/shreeon/mapping_photos/mission_…/image_0001_thumb.jpg
 ```
 
 Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the returned

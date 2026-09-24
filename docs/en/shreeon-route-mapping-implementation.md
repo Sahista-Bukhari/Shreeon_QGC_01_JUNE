@@ -132,14 +132,16 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 1. **Arm** — live photo model resets; Pi session is **not** started on arm (avoids blocking UI).
 2. **Start mission** (or first photo trigger) — GCS creates local `Mission_*` folder; Pi session starts **in a background thread** (SSH precheck + `VIDEO_PAUSE` + `STATUS` if needed).
 3. **QGC** (not MAVLink camera protocol) decides when to shoot:
-   - On plan upload, survey **`cameraShots`** (N) and **trigger distance** define the schedule.
+   - On plan upload, survey **`cameraShots`** (N) and **trigger distance** define a **fixed** schedule (`_routeMappingGcsTriggerDistances`).
    - Fly View precomputes **N distances** along interior photo-capture legs (same math as `SurveyComplexItem`).
-   - As the vehicle progresses along those legs, GCS fires **Photo 1 … Photo N** (max **N**; no extra Pi shots).
-   - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, Pi still, **SCP** → `image_NNNN.jpg`.
-   - Map tile and Photos count update only when `photoFetched` succeeds.
+   - **Active photo-trigger phase** (all must hold): mission running, not `_routeMappingPhotoTriggersComplete`, mission index within the survey item (`sequenceNumber` … `lastSequenceNumber`), vehicle within corridor of photo-capture transects, max along-path progress on those legs.
+   - As progress crosses each planned distance, GCS fires **one CAPTURE per 250 ms tick** (Pi serial queue). Coordinates for geotag come from the **plan distance**, not ad-hoc “live” spacing.
+   - **Phase ends immediately** (sets `_routeMappingPhotoTriggersComplete`, `captureEnabled = false`) when any of: all N triggers sent; along-path progress passes the photo-capture path end; mission index moves past the survey (RTH/RTL item); mission stops; disarm.
+   - **RTH / post-pattern flight** does not increase along-path progress (off-transect) and does not re-open the trigger phase.
+   - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, Pi still + `image_NNNN_thumb.jpg`, **SCP thumbnail during flight** → map tile.
+   - Map tile and Photos count update when `photoFetched` succeeds. **Full-res archive SCP runs after disarm** (deferred queue); `photoFullFetched` when each archive JPEG replaces the thumb.
    - Pi **`QGC_LED=1`**: UART `CAMERA_TRIGGER` does not add captures during a QGC session.
-4. **Disarm** — GCS stops accepting new triggers, drains all capture and SCP
-   queues, then sends `VIDEO_RESUME` when the fetch queue is empty.
+4. **Disarm** — trigger phase marked complete; GCS stops accepting new CAPTURE requests, drains the **in-flight thumb SCP** queue, sends **`VIDEO_RESUME`** when that live queue is empty, then continues **deferred full-res** archive SCP in the background (one at a time on the link).
 
 ### 3.4 After flight
 
@@ -153,14 +155,32 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 
 Commands are plain UTF-8 text datagrams (newline optional).
 
+**Frozen `CAPTURE` ack (canonical — Pi daemon and `capture.sh` must match GCS parser):**
+
+```text
+QUEUED seq=N path=/home/shreeon/mapping_photos/mission_…/image_NNNN_gcs_NNNN_<timestamp>.jpg thumb=/…/image_NNNN_thumb.jpg
+```
+
+GCS also accepts **`QUEUED seq=N path=…` without `thumb=`** (infers `image_NNNN_thumb.jpg`) and **legacy bare path** `…/image_NNNN_gcs_NNNN_<timestamp>.jpg` (SSH/old `capture.sh`). Prefer the canonical line.
+
+**Smoke test before changing either side:**
+
+```bash
+printf 'VIDEO_PAUSE' | nc -u -w 5 10.5.0.2 14551
+printf 'CAPTURE 1\n' | nc -u -w 2 10.5.0.2 14551
+# Expect one line: QUEUED seq=1 path=… thumb=…
+```
+
 | Command | Pi action | Reply (current script) |
 |---------|-----------|-------------------------|
 | `VIDEO_PAUSE` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release | `OK session=/home/shreeon/mapping_photos/mission_…` |
-| `CAPTURE N` | Queue still; path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg` |
+| `CAPTURE N` | Enqueue still (no `BUSY` drop); path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg thumb=/…/image_NNNN_thumb.jpg` |
 | `STATUS` | Report active session | `SESSION /path` or `SESSION NONE` |
 | `VIDEO_RESUME` | Restart camera, close session | `OK` |
 
 Duplicate `CAPTURE N` in the same Pi session is **idempotent** (same path returned, no second file).
+
+The `<timestamp>` in `image_NNNN_gcs_NNNN_<timestamp>.jpg` is stamped when **`CAPTURE N` is accepted** (path planned at queue time), **not** when `rpicam-still` finishes. Spacing in filenames reflects trigger/ack timing, not exposure duration. Use Pi logs `Saved … in X.XX s` for true still latency.
 
 GCS tests from the field laptop:
 
@@ -198,21 +218,24 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 
 **Per photo**
 
-1. **`triggerCapture(seq)`** — synchronous UDP `CAPTURE seq`; parse `QUEUED seq= path=`.
-2. **`fetchPhotoBySequence`** — if `remotePhotoPath` set, **SCP that path only**; else legacy **find** scoped to **`piSessionPath`** (never global `mapping_photos`).
-3. Retries: up to 120 attempts, 2 s apart; re-send `CAPTURE` every 5th attempt.
+1. **`triggerCapture(seq)`** — UDP/SSH `CAPTURE seq`; parse `QUEUED seq= path= thumb=` (thumb optional).
+2. **`fetchPhotoBySequence`** — if `thumb=` was present, SCP thumbnail during flight (`photoFetched`), defer full-res until **`finishSession()`** after disarm; if no thumb, legacy single SCP of `path=`; else session-scoped **find**.
+3. Pi still: **4608×2592**, quality **85**, `--immediate`, default exposure timeout **1500 ms** (tunable via `--capture-timeout-ms`).
+4. Retries: up to 400 attempts; re-send `CAPTURE` every 5th attempt when path unknown.
 
 **Session end**
 
-- `finishSession()` stops new captures; `fetchQueueDrained` → Fly View calls `resumeLiveVideo()` (`VIDEO_RESUME`).
+- `finishSession()` stops new captures; when the **thumb SCP queue** is empty, `fetchQueueDrained` → Fly View calls `resumeLiveVideo()` (`VIDEO_RESUME`); deferred full-res SCP continues afterward.
 
 **Logging:** `FlyView.RouteMappingPiPhotoFetcher`
 
 ### 5.3 Fly View integration
 
 - Photo session starts on **`missionRunning`** or first capture path, **not on arm**.
+- **GCS trigger state machine** (`FlyView.qml`): `_rebuildRouteMappingGcsTriggerSchedule()` at plan load; `_processGcsCalculatedPhotoTriggers()` on 250 ms timer + position/mission-index updates; `_markRouteMappingPhotoTriggersComplete(reason)` latches end-of-phase; reset on arm via `resetRouteMappingLivePhotos()`.
+- Helpers: `_routeMappingSurveyLastSequence()`, `_routeMappingVehicleOnPhotoCapturePath()` (corridor vs `routeMappingPhotoCaptureInfo`), `_routeMappingPlannedTriggerCount()`.
 - Errors: modals via `mainWindow.showMessageDialog` (do **not** use `qgcApp()` in QML — C++ only).
-- Successful session path: **`console.info`** with `[RouteMapping]` when `sessionActive` becomes true.
+- Successful session path: **`console.info`** with `[RouteMapping]` when `sessionActive` becomes true; phase complete logs `[RouteMapping] Photo trigger phase complete: …`.
 
 ---
 
@@ -298,15 +321,29 @@ FlyView.RouteMappingPhotoController
 
 ---
 
-## 10. Known limitations
+## 10. Latency strategy (recommended order)
+
+| Priority | Change | Role |
+|----------|--------|------|
+| **A (shipped)** | **`photoPlaceholder`** on trigger — gray/green footprint + sequence on map and strip; real thumb on `photoFetched` | Perceived latency → ~0 |
+| **B (next)** | Pi **pushes** thumb to GCS (reverse SCP + `QFileSystemWatcher`) | Real thumb latency −1–2 s vs poll/SCP |
+| **Skip C1** | Small still before full still | Extra sensor time; wrong trade |
+| **C2 (later)** | libcamera one buffer → two JPEGs | Only if A + B insufficient |
+
+Parser tolerance (canonical `QUEUED … thumb=`, bare path, inferred thumb) and **thumb-only during flight / full-res after disarm** remain prerequisites.
+
+---
+
+## 11. Known limitations
 
 - **`triggerCapture`** still uses a **synchronous UDP wait** on the GUI thread per shot (up to ~8 s timeout). Session start is async; per-shot UDP could be moved to a worker in a follow-up.
 - **JSON metadata** does not yet include `state=requested/fetched/failed` (only trigger fields).
 - **GCS and Pi session folder names** differ by design; correlation is by sequence + path + timestamps.
 - **Mixed versions:** New QGC + old Pi works via STATUS + session-scoped find; full path protocol needs Pi script deploy from §3.1.
+- **Deferred full-res:** During flight the GCS JPEG is the thumb; 4608×2592 archive SCP runs after disarm. `VIDEO_RESUME` follows the thumb queue, not the archive drain.
 
 ---
 
-## 11. Related demo
+## 12. Related demo
 
 - Import `demo/BaylandsRouteMapping.plan` in Route Mapping for a sample survey.

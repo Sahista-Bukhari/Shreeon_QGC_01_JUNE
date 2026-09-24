@@ -40,26 +40,38 @@ public:
     bool enabled() const { return _enabled; }
     void setEnabled(bool enabled);
 
-    int pendingFetchCount() const { return _queue.size(); }
+    int pendingFetchCount() const
+    {
+        return _queue.size() + _deferredFullResQueue.size() + _deferredFullResActiveCount;
+    }
     QString piSessionPath() const { return _piSessionPath; }
     bool piSessionStarting() const { return _piSessionStarting; }
 
     Q_INVOKABLE void beginSessionAsync();
     Q_INVOKABLE bool beginSession();
     Q_INVOKABLE void finishSession();
+    /// Stop accepting CAPTURE while keeping the Pi session open for SCP / VIDEO_RESUME on disarm.
+    Q_INVOKABLE void haltNewCaptures();
     Q_INVOKABLE void resetSession();
     Q_INVOKABLE void cancelSession();
     Q_INVOKABLE bool testConnection() const;
     Q_INVOKABLE void warmUpConnection();
-    Q_INVOKABLE bool triggerCapture(int sequence, QString *remotePhotoPath = nullptr);
+    Q_INVOKABLE bool triggerCapture(
+        int sequence, QString *remotePhotoPath = nullptr, QString *remoteThumbnailPath = nullptr);
     Q_INVOKABLE void triggerCaptureQueued(int sequence);
     Q_INVOKABLE bool pauseLiveVideo();
     Q_INVOKABLE bool resumeLiveVideo();
     Q_INVOKABLE void fetchLatestPhoto(const QString &localFilePath, int requestId);
-    Q_INVOKABLE void fetchPhotoBySequence(int sequence, const QString &localFilePath, int requestId, const QString &remotePhotoPath = {});
+    Q_INVOKABLE void fetchPhotoBySequence(
+        int sequence,
+        const QString &localFilePath,
+        int requestId,
+        const QString &remotePhotoPath = {},
+        const QString &remoteThumbnailPath = {});
 
 signals:
-    void triggerCaptureFinished(int sequence, bool success, const QString &remotePhotoPath);
+    void triggerCaptureFinished(
+        int sequence, bool success, const QString &remotePhotoPath, const QString &remoteThumbnailPath);
     void piHostChanged();
     void piUserChanged();
     void piPhotoRootChanged();
@@ -73,6 +85,7 @@ signals:
     void sshPrecheckFailed(const QString &errorMessage);
     void sessionStartFailed(const QString &errorMessage);
     void photoFetched(int requestId, const QString &localFilePath, bool success, const QString &errorMessage);
+    void photoFullFetched(int requestId, const QString &localFilePath, bool success, const QString &errorMessage);
 
 private:
     struct FetchRequest {
@@ -82,17 +95,36 @@ private:
         int photoSequence = 0;
         bool bySequence = false;
         bool transferStarted = false;
+        bool thumbFetched = false;
+        bool fullResInFlight = false;
         quint64 generation = 0;
         QString remoteSessionPath;
         QString remotePhotoPath;
+        QString remoteThumbnailPath;
     };
 
     void _startNextFetch();
     void _beginFetchTransfer(FetchRequest request);
     int _indexOfFetchRequest(int requestId) const;
     void _listRemotePhotos(FetchRequest request);
-    void _downloadRemotePhoto(FetchRequest request, const QString &remotePath);
-    void _finishFetch(const FetchRequest &request, bool success, const QString &errorMessage);
+    void _downloadRemotePhoto(FetchRequest request, const QString &remotePath, bool thumbnailTier = false);
+    void _deferFullResAfterThumb(FetchRequest request);
+    void _tryCompleteSessionEnd();
+    void _pumpDeferredFullResDrain();
+    void _runDeferredFullResJob(FetchRequest request);
+    void _completeDeferredFullRes(FetchRequest request, bool success, const QString &errorMessage);
+    int _indexOfDeferredFullResRequest(int requestId) const;
+    void _finishFetch(
+        const FetchRequest &request,
+        bool success,
+        const QString &errorMessage,
+        bool emitPhotoFetched = true);
+    bool _scpRemotePhotoToLocal(
+        const FetchRequest &request,
+        const QString &remotePath,
+        const QString &localFilePath,
+        bool thumbnailTier,
+        QString *errorMessage) const;
     void _scheduleRetry(FetchRequest request, int retryDelayOverrideMs = -1);
     QString _sshTarget() const;
     static QStringList _baseSshOptions();
@@ -106,8 +138,16 @@ private:
     bool _queryPiSessionPath(QString *sessionPath, QString *errorMessage) const;
     bool _sendVideoPauseAndWaitForSession(QString *sessionPath, QString *errorMessage) const;
     bool _sendRemoteUdpCommand(const QString &command) const;
-    bool _parseCaptureUdpResponse(int sequence, const QString &response, QString *remotePhotoPath) const;
-    bool _triggerCaptureViaSsh(int sequence, QString *remotePhotoPath, QString *errorMessage) const;
+    bool _parseCaptureUdpResponse(
+        int sequence,
+        const QString &response,
+        QString *remotePhotoPath,
+        QString *remoteThumbnailPath = nullptr) const;
+    bool _triggerCaptureViaSsh(
+        int sequence,
+        QString *remotePhotoPath,
+        QString *remoteThumbnailPath,
+        QString *errorMessage) const;
 
     QString _piHost = QStringLiteral("10.5.0.2");
     QString _piUser = QStringLiteral("shreeon");
@@ -124,5 +164,8 @@ private:
 
     QSet<QString> _downloadedRemotePaths;
     QList<FetchRequest> _queue;
+    QList<FetchRequest> _deferredFullResQueue;
     int _activeFetchCount = 0;
+    int _deferredFullResActiveCount = 0;
+    bool _liveFetchQueueDrainedEmitted = false;
 };

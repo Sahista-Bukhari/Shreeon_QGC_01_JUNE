@@ -61,7 +61,8 @@ class RouteMappingPhotoController : public QObject
    private slots:
     void _onPiSessionBeginComplete(bool success);
     void _pumpCaptureQueue();
-    void _onTriggerCaptureFinished(int sequence, bool success, const QString &remotePhotoPath);
+    void _onTriggerCaptureFinished(
+        int sequence, bool success, const QString &remotePhotoPath, const QString &remoteThumbnailPath);
 
    private:
     struct PendingCapture {
@@ -89,7 +90,8 @@ class RouteMappingPhotoController : public QObject
         double altitude,
         double heading,
         bool success,
-        const QString &remotePhotoPath);
+        const QString &remotePhotoPath,
+        const QString &remoteThumbnailPath);
     RouteMappingPiPhotoFetcher *_fetcher = nullptr;
     QList<PendingCapture> _pendingCaptures;
     QSet<int> _requestedCaptureSequences;

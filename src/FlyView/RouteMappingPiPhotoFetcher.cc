@@ -27,8 +27,60 @@ bool remoteScpTargetMissing(const QString &stderrText)
         || stderrText.contains(QStringLiteral("not found"), Qt::CaseInsensitive);
 }
 
+// Wire format (keep in sync with deploy/pi-route-mapping/shreeon_route_mapping.py CAPTURE reply):
+//   QUEUED seq=N path=/…/image_NNNN_gcs_NNNN_<ts>.jpg thumb=/…/image_NNNN_thumb.jpg
+bool applyCaptureAckPaths(
+    int sequence,
+    int ackSequence,
+    const QString &photoRoot,
+    const QString &fullPath,
+    const QString &explicitThumb,
+    QString *remotePhotoPath,
+    QString *remoteThumbnailPath)
+{
+    const QString path = QDir::cleanPath(fullPath);
+    if (ackSequence != sequence) {
+        const QString expectedPrefix = QStringLiteral("image_%1_").arg(sequence, 4, 10, QChar('0'));
+        if (!path.contains(expectedPrefix)) {
+            return false;
+        }
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "CAPTURE ack seq" << ackSequence << "!= requested" << sequence
+            << "— accepting path that names GCS sequence";
+    }
+    const QString root = QDir::cleanPath(photoRoot);
+    if (!path.startsWith(root + QLatin1Char('/'))) {
+        return false;
+    }
+    if (remotePhotoPath) {
+        *remotePhotoPath = path;
+    }
+    if (remoteThumbnailPath) {
+        if (!explicitThumb.trimmed().isEmpty()) {
+            const QString thumbPath = QDir::cleanPath(explicitThumb.trimmed());
+            if (!thumbPath.startsWith(root + QLatin1Char('/'))) {
+                remoteThumbnailPath->clear();
+            } else {
+                *remoteThumbnailPath = thumbPath;
+            }
+        } else {
+            const QFileInfo imageInfo(path);
+            const QString thumbPath = QDir::cleanPath(
+                imageInfo.dir().filePath(
+                    QStringLiteral("image_%1_thumb.jpg").arg(sequence, 4, 10, QChar('0'))));
+            if (thumbPath.startsWith(root + QLatin1Char('/'))) {
+                *remoteThumbnailPath = thumbPath;
+            } else {
+                remoteThumbnailPath->clear();
+            }
+        }
+    }
+    return true;
+}
+
 constexpr int kMaxFetchAttempts = 400;
 constexpr int kMaxConcurrentFetches = 2;
+constexpr int kMaxConcurrentFullResDrain = 1;
 constexpr int kCaptureUdpAckAttempts = 1;
 constexpr int kSshPrecheckAttempts = 3;
 constexpr int kSshPrecheckRetryDelayMs = 1500;
@@ -36,8 +88,8 @@ constexpr int kCaptureUdpAckTimeoutMs = 2500;
 constexpr int kRetryDelayMs = 3000;
 constexpr int kMinDownloadedJpegBytes = 8192;
 constexpr int kRetryDelayFirstMs = 500;
-constexpr int kRetryDelayPlannedPathMs = 5000;
-constexpr int kRetryDelayRemoteMissingMs = 8000;
+constexpr int kRetryDelayPlannedPathMs = 750;
+constexpr int kRetryDelayRemoteMissingMs = 750;
 constexpr int kFastRetryAttempts = 3;
 constexpr int kProcessTimeoutMs = 30000;
 constexpr int kSshPrecheckTimeoutMs = 12000;
@@ -48,7 +100,8 @@ constexpr int kPiVideoPauseSettleMs = 2500;
 constexpr int kCaptureSshTriggerTimeoutMs = 12000;
 
 const QRegularExpression kCaptureUdpAcceptableReply(
-    QStringLiteral("^(QUEUED(\\s+seq=\\d+(\\s+path=/[^\\s]+)?)?|BUSY)$"),
+    QStringLiteral(
+        "^(QUEUED(\\s+seq=\\d+(\\s+path=/[^\\s]+(\\s+thumb=/[^\\s]+)?)?)?|BUSY)$"),
     QRegularExpression::CaseInsensitiveOption);
 
 QString trimmedProcessOutput(QProcess &process)
@@ -273,9 +326,12 @@ void RouteMappingPiPhotoFetcher::_completeBeginSessionOnMainThread(
 void RouteMappingPiPhotoFetcher::finishSession()
 {
     _acceptingCaptures = false;
-    if (_queue.isEmpty() && _activeFetchCount == 0) {
-        emit fetchQueueDrained();
-    }
+    _tryCompleteSessionEnd();
+}
+
+void RouteMappingPiPhotoFetcher::haltNewCaptures()
+{
+    _acceptingCaptures = false;
 }
 
 void RouteMappingPiPhotoFetcher::resetSession()
@@ -286,11 +342,14 @@ void RouteMappingPiPhotoFetcher::resetSession()
     }
     ++_generation;
     _downloadedRemotePaths.clear();
-    if (!_queue.isEmpty()) {
+    if (!_queue.isEmpty() || !_deferredFullResQueue.isEmpty() || _deferredFullResActiveCount > 0) {
         _queue.clear();
+        _deferredFullResQueue.clear();
+        _deferredFullResActiveCount = 0;
         emit pendingFetchCountChanged();
     }
     _activeFetchCount = 0;
+    _liveFetchQueueDrainedEmitted = false;
     _acceptingCaptures = true;
     if (!_piSessionPath.isEmpty()) {
         _piSessionPath.clear();
@@ -306,11 +365,14 @@ void RouteMappingPiPhotoFetcher::cancelSession()
         _piSessionPath.clear();
         emit piSessionPathChanged();
     }
-    if (!_queue.isEmpty()) {
+    if (!_queue.isEmpty() || !_deferredFullResQueue.isEmpty() || _deferredFullResActiveCount > 0) {
         _queue.clear();
+        _deferredFullResQueue.clear();
+        _deferredFullResActiveCount = 0;
         emit pendingFetchCountChanged();
     }
     _activeFetchCount = 0;
+    _liveFetchQueueDrainedEmitted = false;
 }
 
 QString RouteMappingPiPhotoFetcher::_sshTarget() const
@@ -398,11 +460,12 @@ bool RouteMappingPiPhotoFetcher::_runSshPrecheck(QString *errorMessage) const
 }
 
 bool RouteMappingPiPhotoFetcher::_triggerCaptureViaSsh(
-    int sequence, QString *remotePhotoPath, QString *errorMessage) const
+    int sequence, QString *remotePhotoPath, QString *remoteThumbnailPath, QString *errorMessage) const
 {
 #if defined(Q_OS_WIN)
     Q_UNUSED(sequence);
     Q_UNUSED(remotePhotoPath);
+    Q_UNUSED(remoteThumbnailPath);
     if (errorMessage) {
         *errorMessage = tr("SSH capture trigger is not supported on Windows");
     }
@@ -427,30 +490,15 @@ bool RouteMappingPiPhotoFetcher::_triggerCaptureViaSsh(
         return false;
     }
 
-    const QString remotePath = QDir::cleanPath(trimmedProcessOutput(ssh));
-    const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
-    if (!remotePath.isEmpty()) {
-        if (!remotePath.startsWith(photoRoot + QLatin1Char('/'))
-            || remotePath.contains(QLatin1Char('\n'))) {
-            if (errorMessage) {
-                *errorMessage = tr("SSH capture returned path outside photo root: %1").arg(remotePath);
-            }
-            return false;
-        }
-        if (remotePhotoPath) {
-            *remotePhotoPath = remotePath;
-        }
-        qCInfo(RouteMappingPiPhotoFetcherLog)
-            << "SSH trigger queued sequence" << sequence << "path" << remotePath;
+    const QString response = trimmedProcessOutput(ssh);
+    if (_parseCaptureUdpResponse(sequence, response, remotePhotoPath, remoteThumbnailPath)) {
         return true;
     }
 
-    qCInfo(RouteMappingPiPhotoFetcherLog)
-        << "SSH trigger queued sequence" << sequence << "(Pi reply without path; session-scoped find)";
-    if (remotePhotoPath) {
-        remotePhotoPath->clear();
+    if (errorMessage && errorMessage->isEmpty()) {
+        *errorMessage = tr("Unexpected SSH capture reply: %1").arg(response);
     }
-    return true;
+    return false;
 #endif
 }
 
@@ -711,32 +759,67 @@ bool RouteMappingPiPhotoFetcher::resumeLiveVideo()
 }
 
 bool RouteMappingPiPhotoFetcher::_parseCaptureUdpResponse(
-    int sequence, const QString &response, QString *remotePhotoPath) const
+    int sequence, const QString &response, QString *remotePhotoPath, QString *remoteThumbnailPath) const
 {
-    const QString trimmed = response.trimmed();
+    QString trimmed = response.trimmed();
+    if (trimmed.length() >= 2
+        && ((trimmed.startsWith(QLatin1Char('"')) && trimmed.endsWith(QLatin1Char('"')))
+            || (trimmed.startsWith(QLatin1Char('\'')) && trimmed.endsWith(QLatin1Char('\''))))) {
+        trimmed = trimmed.mid(1, trimmed.length() - 2).trimmed();
+    }
+    const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
+
     static const QRegularExpression queuedWithPath(
-        QStringLiteral("^QUEUED\\s+seq=(\\d+)\\s+path=(/[^\\s]+)$"));
+        QStringLiteral("^QUEUED\\s+seq=(\\d+)\\s+path=(/[^\\s]+)(?:\\s+thumb=(/[^\\s]+))?$"),
+        QRegularExpression::CaseInsensitiveOption);
     static const QRegularExpression queuedPlain(QStringLiteral("^QUEUED$"));
     static const QRegularExpression queuedWithSeqOnly(
         QStringLiteral("^QUEUED\\s+seq=(\\d+)$"), QRegularExpression::CaseInsensitiveOption);
+    static const QRegularExpression bareGcsImagePath(
+        QStringLiteral("^(/[^\\s]+/image_(\\d{4})_gcs_\\d{4}_[^\\s]+\\.jpg)$"),
+        QRegularExpression::CaseInsensitiveOption);
+
     const QRegularExpressionMatch pathMatch = queuedWithPath.match(trimmed);
     if (pathMatch.hasMatch()) {
         const int ackSequence = pathMatch.captured(1).toInt();
-        if (ackSequence != sequence) {
+        if (!applyCaptureAckPaths(
+                sequence,
+                ackSequence,
+                photoRoot,
+                pathMatch.captured(2),
+                pathMatch.captured(3),
+                remotePhotoPath,
+                remoteThumbnailPath)) {
             qCWarning(RouteMappingPiPhotoFetcherLog)
-                << "CAPTURE ack sequence mismatch: expected" << sequence << "got" << ackSequence;
+                << "CAPTURE ack rejected for sequence" << sequence << "reply" << trimmed;
             return false;
         }
-        const QString path = QDir::cleanPath(pathMatch.captured(2));
-        const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
-        if (!path.startsWith(photoRoot + QLatin1Char('/'))) {
-            qCWarning(RouteMappingPiPhotoFetcherLog) << "CAPTURE path outside photo root:" << path;
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "Trigger queued sequence" << sequence << "path" << pathMatch.captured(2)
+            << "thumb" << (remoteThumbnailPath ? remoteThumbnailPath->trimmed() : QString())
+            << "(QUEUED path=)";
+        return true;
+    }
+
+    const QRegularExpressionMatch bareMatch = bareGcsImagePath.match(trimmed);
+    if (bareMatch.hasMatch()) {
+        const int ackSequence = bareMatch.captured(2).toInt();
+        if (!applyCaptureAckPaths(
+                sequence,
+                ackSequence,
+                photoRoot,
+                bareMatch.captured(1),
+                {},
+                remotePhotoPath,
+                remoteThumbnailPath)) {
+            qCWarning(RouteMappingPiPhotoFetcherLog)
+                << "CAPTURE bare path rejected for sequence" << sequence << "reply" << trimmed;
             return false;
         }
-        if (remotePhotoPath) {
-            *remotePhotoPath = path;
-        }
-        qCInfo(RouteMappingPiPhotoFetcherLog) << "Trigger queued sequence" << sequence << "path" << path;
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "Trigger queued sequence" << sequence << "path" << bareMatch.captured(1)
+            << "thumb" << (remoteThumbnailPath ? remoteThumbnailPath->trimmed() : QString())
+            << "(bare path)";
         return true;
     }
 
@@ -768,7 +851,8 @@ bool RouteMappingPiPhotoFetcher::_parseCaptureUdpResponse(
     return false;
 }
 
-bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePhotoPath)
+bool RouteMappingPiPhotoFetcher::triggerCapture(
+    int sequence, QString *remotePhotoPath, QString *remoteThumbnailPath)
 {
     if (!_enabled || !_acceptingCaptures) {
         return false;
@@ -778,7 +862,7 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePho
     }
 
     QString sshError;
-    if (_triggerCaptureViaSsh(sequence, remotePhotoPath, &sshError)) {
+    if (_triggerCaptureViaSsh(sequence, remotePhotoPath, remoteThumbnailPath, &sshError)) {
         return true;
     }
     qCInfo(RouteMappingPiPhotoFetcherLog)
@@ -793,7 +877,7 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePho
                 &errorMessage,
                 kCaptureUdpAckTimeoutMs,
                 &kCaptureUdpAcceptableReply)) {
-            return _parseCaptureUdpResponse(sequence, response, remotePhotoPath);
+            return _parseCaptureUdpResponse(sequence, response, remotePhotoPath, remoteThumbnailPath);
         }
         qCDebug(RouteMappingPiPhotoFetcherLog)
             << "CAPTURE" << sequence << "UDP ack not received:" << errorMessage;
@@ -807,6 +891,9 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(int sequence, QString *remotePho
         if (remotePhotoPath) {
             remotePhotoPath->clear();
         }
+        if (remoteThumbnailPath) {
+            remoteThumbnailPath->clear();
+        }
         return true;
     }
 
@@ -818,12 +905,14 @@ void RouteMappingPiPhotoFetcher::triggerCaptureQueued(int sequence)
     RouteMappingPiPhotoFetcher *const self = this;
     (void)QtConcurrent::run([self, sequence]() {
         QString remotePhotoPath;
-        const bool success = self->triggerCapture(sequence, &remotePhotoPath);
+        QString remoteThumbnailPath;
+        const bool success = self->triggerCapture(sequence, &remotePhotoPath, &remoteThumbnailPath);
         const QString pathForMain = remotePhotoPath;
+        const QString thumbForMain = remoteThumbnailPath;
         QMetaObject::invokeMethod(
             self,
-            [self, sequence, success, pathForMain]() {
-                emit self->triggerCaptureFinished(sequence, success, pathForMain);
+            [self, sequence, success, pathForMain, thumbForMain]() {
+                emit self->triggerCaptureFinished(sequence, success, pathForMain, thumbForMain);
             },
             Qt::QueuedConnection);
     });
@@ -835,7 +924,11 @@ void RouteMappingPiPhotoFetcher::fetchLatestPhoto(const QString &localFilePath, 
 }
 
 void RouteMappingPiPhotoFetcher::fetchPhotoBySequence(
-    int sequence, const QString &localFilePath, int requestId, const QString &remotePhotoPath)
+    int sequence,
+    const QString &localFilePath,
+    int requestId,
+    const QString &remotePhotoPath,
+    const QString &remoteThumbnailPath)
 {
     if (!_enabled) {
         emit photoFetched(requestId, localFilePath, false, tr("Pi photo fetch is disabled"));
@@ -866,6 +959,7 @@ void RouteMappingPiPhotoFetcher::fetchPhotoBySequence(
     request.generation = _generation;
     request.remoteSessionPath = _piSessionPath;
     request.remotePhotoPath = QDir::cleanPath(remotePhotoPath.trimmed());
+    request.remoteThumbnailPath = QDir::cleanPath(remoteThumbnailPath.trimmed());
     _queue.append(request);
     emit pendingFetchCountChanged();
     _startNextFetch();
@@ -888,8 +982,17 @@ void RouteMappingPiPhotoFetcher::_beginFetchTransfer(FetchRequest request)
         return;
     }
 
+    if (request.fullResInFlight) {
+        return;
+    }
+
+    if (!request.remoteThumbnailPath.isEmpty() && !request.thumbFetched) {
+        _downloadRemotePhoto(request, request.remoteThumbnailPath, true);
+        return;
+    }
+
     if (!request.remotePhotoPath.isEmpty()) {
-        _downloadRemotePhoto(request, request.remotePhotoPath);
+        _downloadRemotePhoto(request, request.remotePhotoPath, false);
         return;
     }
     _listRemotePhotos(request);
@@ -903,10 +1006,28 @@ void RouteMappingPiPhotoFetcher::_startNextFetch()
 
     while (_activeFetchCount < kMaxConcurrentFetches) {
         int startIndex = -1;
+        // Always display every available preview before spending the slow
+        // radio link on another full-resolution JPEG.
         for (int index = 0; index < _queue.size(); ++index) {
-            if (!_queue.at(index).transferStarted) {
+            const FetchRequest &candidate = _queue.at(index);
+            if (candidate.fullResInFlight || candidate.transferStarted) {
+                continue;
+            }
+            if (!candidate.remoteThumbnailPath.isEmpty() && !candidate.thumbFetched) {
                 startIndex = index;
                 break;
+            }
+        }
+        if (startIndex < 0) {
+            if (_activeFetchCount > 0) {
+                return;
+            }
+            for (int index = 0; index < _queue.size(); ++index) {
+                const FetchRequest &candidate = _queue.at(index);
+                if (!candidate.fullResInFlight && !candidate.transferStarted) {
+                    startIndex = index;
+                    break;
+                }
             }
         }
         if (startIndex < 0) {
@@ -1016,7 +1137,265 @@ void RouteMappingPiPhotoFetcher::_listRemotePhotos(FetchRequest request)
     });
 }
 
-void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(FetchRequest request, const QString &remotePath)
+bool RouteMappingPiPhotoFetcher::_scpRemotePhotoToLocal(
+    const FetchRequest &request,
+    const QString &remotePath,
+    const QString &localFilePath,
+    bool thumbnailTier,
+    QString *errorMessage) const
+{
+#if defined(Q_OS_WIN)
+    Q_UNUSED(request);
+    Q_UNUSED(remotePath);
+    Q_UNUSED(localFilePath);
+    Q_UNUSED(thumbnailTier);
+    if (errorMessage) {
+        *errorMessage = tr("Pi SSH photo fetch is not supported on Windows");
+    }
+    return false;
+#else
+    const QString cleanedPath = QDir::cleanPath(remotePath);
+    const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
+    const QString sessionPrefix = request.remoteSessionPath.isEmpty()
+        ? QString()
+        : QDir::cleanPath(request.remoteSessionPath) + QLatin1Char('/');
+    if (!cleanedPath.startsWith(photoRoot + QLatin1Char('/'))
+        || cleanedPath.contains(QLatin1Char('\n'))
+        || (!sessionPrefix.isEmpty() && !cleanedPath.startsWith(sessionPrefix))) {
+        if (errorMessage) {
+            *errorMessage = tr("Refusing remote photo path: %1").arg(cleanedPath);
+        }
+        return false;
+    }
+
+    const QFileInfo localInfo(localFilePath);
+    QDir().mkpath(localInfo.absolutePath());
+
+    const QString temporaryPath = localFilePath + QStringLiteral(".part");
+    QFile::remove(temporaryPath);
+
+    QProcess process;
+    process.setProgram(QStringLiteral("scp"));
+    QStringList arguments = _baseSshOptions();
+    arguments << QStringLiteral("%1:%2").arg(_sshTarget(), cleanedPath) << temporaryPath;
+    process.setArguments(arguments);
+
+    if (!runProcess(process, kProcessTimeoutMs, errorMessage)) {
+        QFile::remove(temporaryPath);
+        return false;
+    }
+
+    const QFileInfo downloadedInfo(temporaryPath);
+    const int minimumBytes = thumbnailTier ? 1024 : kMinDownloadedJpegBytes;
+    if (!downloadedInfo.isFile() || downloadedInfo.size() < minimumBytes) {
+        QFile::remove(temporaryPath);
+        if (errorMessage) {
+            *errorMessage = tr("Downloaded image is too small or missing");
+        }
+        return false;
+    }
+
+    QImageReader reader(temporaryPath);
+    if (!reader.canRead() || !reader.size().isValid()) {
+        QFile::remove(temporaryPath);
+        if (errorMessage) {
+            *errorMessage = tr("Downloaded file is not a valid image");
+        }
+        return false;
+    }
+
+    QFile::remove(localFilePath);
+    if (!QFile::rename(temporaryPath, localFilePath)) {
+        QFile::remove(temporaryPath);
+        if (errorMessage) {
+            *errorMessage = tr("Could not publish downloaded image");
+        }
+        return false;
+    }
+
+    return true;
+#endif
+}
+
+int RouteMappingPiPhotoFetcher::_indexOfDeferredFullResRequest(int requestId) const
+{
+    for (int index = 0; index < _deferredFullResQueue.size(); ++index) {
+        if (_deferredFullResQueue.at(index).requestId == requestId) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+void RouteMappingPiPhotoFetcher::_deferFullResAfterThumb(FetchRequest request)
+{
+    if (request.generation != _generation) {
+        return;
+    }
+
+    const int index = _indexOfFetchRequest(request.requestId);
+    if (index >= 0) {
+        _queue.removeAt(index);
+    }
+    _activeFetchCount = qMax(0, _activeFetchCount - 1);
+
+    if (request.remotePhotoPath.isEmpty()) {
+        emit pendingFetchCountChanged();
+        _tryCompleteSessionEnd();
+        _startNextFetch();
+        return;
+    }
+
+    request.thumbFetched = true;
+    request.transferStarted = false;
+    request.fullResInFlight = false;
+    request.attempt = 0;
+    _deferredFullResQueue.append(request);
+    emit pendingFetchCountChanged();
+    _tryCompleteSessionEnd();
+    _startNextFetch();
+}
+
+void RouteMappingPiPhotoFetcher::_tryCompleteSessionEnd()
+{
+    if (_acceptingCaptures || !_queue.isEmpty() || _activeFetchCount > 0) {
+        return;
+    }
+
+    if (!_liveFetchQueueDrainedEmitted) {
+        _liveFetchQueueDrainedEmitted = true;
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "In-flight thumb SCP queue drained;"
+            << _deferredFullResQueue.size() << "full-res archive(s) deferred until after disarm";
+        emit fetchQueueDrained();
+    }
+
+    _pumpDeferredFullResDrain();
+}
+
+void RouteMappingPiPhotoFetcher::_pumpDeferredFullResDrain()
+{
+    if (!_liveFetchQueueDrainedEmitted) {
+        return;
+    }
+
+    while (_deferredFullResActiveCount < kMaxConcurrentFullResDrain) {
+        int startIndex = -1;
+        for (int index = 0; index < _deferredFullResQueue.size(); ++index) {
+            if (!_deferredFullResQueue.at(index).fullResInFlight) {
+                startIndex = index;
+                break;
+            }
+        }
+        if (startIndex < 0) {
+            return;
+        }
+
+        FetchRequest request = _deferredFullResQueue.at(startIndex);
+        request.fullResInFlight = true;
+        _deferredFullResQueue[startIndex] = request;
+        _deferredFullResActiveCount++;
+        _runDeferredFullResJob(request);
+    }
+}
+
+void RouteMappingPiPhotoFetcher::_runDeferredFullResJob(FetchRequest request)
+{
+    if (request.generation != _generation || request.remotePhotoPath.isEmpty()) {
+        _deferredFullResActiveCount = qMax(0, _deferredFullResActiveCount - 1);
+        _pumpDeferredFullResDrain();
+        return;
+    }
+
+    RouteMappingPiPhotoFetcher *const self = this;
+    const quint64 generation = request.generation;
+    const FetchRequest backgroundRequest = request;
+
+    (void)QtConcurrent::run([self, backgroundRequest, generation]() {
+        QString errorMessage;
+        const bool success = self->_scpRemotePhotoToLocal(
+            backgroundRequest,
+            backgroundRequest.remotePhotoPath,
+            backgroundRequest.localFilePath,
+            false,
+            &errorMessage);
+
+        const QString errorForMain = errorMessage;
+        QMetaObject::invokeMethod(
+            self,
+            [self, backgroundRequest, generation, success, errorForMain]() {
+                if (generation != self->_generation) {
+                    const int staleIndex = self->_indexOfDeferredFullResRequest(backgroundRequest.requestId);
+                    if (staleIndex >= 0) {
+                        self->_deferredFullResQueue.removeAt(staleIndex);
+                        emit self->pendingFetchCountChanged();
+                    }
+                    self->_deferredFullResActiveCount = qMax(0, self->_deferredFullResActiveCount - 1);
+                    self->_pumpDeferredFullResDrain();
+                    return;
+                }
+                self->_completeDeferredFullRes(backgroundRequest, success, errorForMain);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void RouteMappingPiPhotoFetcher::_completeDeferredFullRes(
+    FetchRequest request, bool success, const QString &errorMessage)
+{
+    if (request.generation != _generation) {
+        _deferredFullResActiveCount = qMax(0, _deferredFullResActiveCount - 1);
+        _pumpDeferredFullResDrain();
+        return;
+    }
+
+    const int index = _indexOfDeferredFullResRequest(request.requestId);
+    if (index < 0) {
+        _deferredFullResActiveCount = qMax(0, _deferredFullResActiveCount - 1);
+        _pumpDeferredFullResDrain();
+        return;
+    }
+
+    request = _deferredFullResQueue.at(index);
+    request.fullResInFlight = false;
+    _deferredFullResActiveCount = qMax(0, _deferredFullResActiveCount - 1);
+
+    if (success) {
+        _downloadedRemotePaths.insert(QDir::cleanPath(request.remotePhotoPath));
+        _deferredFullResQueue.removeAt(index);
+        emit pendingFetchCountChanged();
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << "Fetched full-res archive" << request.remotePhotoPath << "to" << request.localFilePath;
+        emit photoFullFetched(request.requestId, request.localFilePath, true, {});
+        _pumpDeferredFullResDrain();
+        return;
+    }
+
+    request.attempt++;
+    if (request.attempt >= kMaxFetchAttempts) {
+        _deferredFullResQueue.removeAt(index);
+        emit pendingFetchCountChanged();
+        emit photoFullFetched(request.requestId, request.localFilePath, false, errorMessage);
+        _pumpDeferredFullResDrain();
+        return;
+    }
+
+    qCWarning(RouteMappingPiPhotoFetcherLog)
+        << "Deferred full-res SCP failed for" << request.remotePhotoPath << errorMessage;
+    _deferredFullResQueue[index] = request;
+    const quint64 generation = request.generation;
+    const int requestId = request.requestId;
+    QTimer::singleShot(kRetryDelayPlannedPathMs, this, [this, generation, requestId]() {
+        if (generation != _generation) {
+            return;
+        }
+        _pumpDeferredFullResDrain();
+    });
+    _pumpDeferredFullResDrain();
+}
+
+void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(
+    FetchRequest request, const QString &remotePath, bool thumbnailTier)
 {
     const QString cleanedPath = QDir::cleanPath(remotePath);
     const QString photoRoot = QDir::cleanPath(_piPhotoRoot);
@@ -1044,7 +1423,8 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(FetchRequest request, cons
     process->setArguments(arguments);
 
     const auto handled = std::make_shared<bool>(false);
-    const auto handleFinished = [this, request, cleanedPath, process, handled](int exitCode, QProcess::ExitStatus exitStatus) {
+    const auto handleFinished = [this, request, cleanedPath, thumbnailTier, process, handled](
+                                    int exitCode, QProcess::ExitStatus exitStatus) {
         if (*handled) {
             return;
         }
@@ -1061,6 +1441,19 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(FetchRequest request, cons
             if (remoteScpTargetMissing(stderrText)) {
                 qCInfo(RouteMappingPiPhotoFetcherLog)
                     << "Pi photo not written yet (will retry SCP):" << cleanedPath;
+                if (thumbnailTier && request.attempt >= 6 && !request.remotePhotoPath.isEmpty()) {
+                    FetchRequest fullRequest = request;
+                    fullRequest.remoteThumbnailPath.clear();
+                    fullRequest.thumbFetched = true;
+                    const int index = _indexOfFetchRequest(request.requestId);
+                    if (index >= 0) {
+                        _queue[index] = fullRequest;
+                    }
+                    _activeFetchCount = qMax(0, _activeFetchCount - 1);
+                    _beginFetchTransfer(fullRequest);
+                    _startNextFetch();
+                    return;
+                }
                 _scheduleRetry(request, kRetryDelayRemoteMissingMs);
             } else {
                 qCWarning(RouteMappingPiPhotoFetcherLog) << "SCP failed for" << cleanedPath << stderrText;
@@ -1071,7 +1464,8 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(FetchRequest request, cons
 
         const QString temporaryPath = request.localFilePath + QStringLiteral(".part");
         const QFileInfo localInfo(temporaryPath);
-        if (!localInfo.isFile() || localInfo.size() < kMinDownloadedJpegBytes) {
+        const int minimumBytes = thumbnailTier ? 1024 : kMinDownloadedJpegBytes;
+        if (!localInfo.isFile() || localInfo.size() < minimumBytes) {
             if (localInfo.isFile() && localInfo.size() > 0) {
                 qCInfo(RouteMappingPiPhotoFetcherLog)
                     << "Downloaded image still too small (Pi may still be writing)"
@@ -1097,9 +1491,20 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(FetchRequest request, cons
             return;
         }
 
+        qCInfo(RouteMappingPiPhotoFetcherLog)
+            << (thumbnailTier ? "Fetched thumbnail" : "Fetched")
+            << cleanedPath << "to" << request.localFilePath;
+        if (thumbnailTier) {
+            emit photoFetched(request.requestId, request.localFilePath, true, {});
+            FetchRequest deferredRequest = request;
+            deferredRequest.thumbFetched = true;
+            deferredRequest.transferStarted = false;
+            _deferFullResAfterThumb(deferredRequest);
+            return;
+        }
+
         _downloadedRemotePaths.insert(cleanedPath);
-        qCInfo(RouteMappingPiPhotoFetcherLog) << "Fetched" << cleanedPath << "to" << request.localFilePath;
-        _finishFetch(request, true, {});
+        _finishFetch(request, true, {}, true);
     };
     connect(process, &QProcess::finished, this, handleFinished);
     connect(process, &QProcess::errorOccurred, this,
@@ -1125,7 +1530,13 @@ void RouteMappingPiPhotoFetcher::_scheduleRetry(FetchRequest request, int retryD
 
     request.attempt++;
     if (request.attempt >= kMaxFetchAttempts) {
-        _finishFetch(request, false, tr("Timed out waiting for Pi mapping photo"));
+        const QString timeoutMessage = tr("Timed out waiting for Pi mapping photo");
+        if (request.thumbFetched && !request.remoteThumbnailPath.isEmpty()) {
+            emit photoFullFetched(request.requestId, request.localFilePath, false, timeoutMessage);
+            _finishFetch(request, false, timeoutMessage, false);
+        } else {
+            _finishFetch(request, false, timeoutMessage);
+        }
         return;
     }
 
@@ -1174,13 +1585,16 @@ void RouteMappingPiPhotoFetcher::_scheduleRetry(FetchRequest request, int retryD
     });
 }
 
-void RouteMappingPiPhotoFetcher::_finishFetch(const FetchRequest &request, bool success, const QString &errorMessage)
+void RouteMappingPiPhotoFetcher::_finishFetch(
+    const FetchRequest &request, bool success, const QString &errorMessage, bool emitPhotoFetched)
 {
     if (request.generation != _generation) {
         return;
     }
 
-    emit photoFetched(request.requestId, request.localFilePath, success, errorMessage);
+    if (emitPhotoFetched) {
+        emit photoFetched(request.requestId, request.localFilePath, success, errorMessage);
+    }
 
     const int index = _indexOfFetchRequest(request.requestId);
     if (index >= 0) {
@@ -1188,8 +1602,6 @@ void RouteMappingPiPhotoFetcher::_finishFetch(const FetchRequest &request, bool 
         emit pendingFetchCountChanged();
     }
     _activeFetchCount = qMax(0, _activeFetchCount - 1);
-    if (_queue.isEmpty() && _activeFetchCount == 0 && !_acceptingCaptures) {
-        emit fetchQueueDrained();
-    }
+    _tryCompleteSessionEnd();
     _startNextFetch();
 }

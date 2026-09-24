@@ -30,6 +30,18 @@ void RouteMappingPhotoController::setCaptureEnabled(bool enabled)
         return;
     }
     _captureEnabled = enabled;
+    if (!enabled) {
+        if (!_pendingCaptures.isEmpty()) {
+            qCInfo(RouteMappingPhotoControllerLog)
+                << "Discarding" << _pendingCaptures.size()
+                << "queued Route Mapping capture(s); trigger phase inactive";
+        }
+        _pendingCaptures.clear();
+        _notifyPendingCaptureCountChanged();
+        if (_fetcher) {
+            _fetcher->haltNewCaptures();
+        }
+    }
     emit captureEnabledChanged();
 }
 
@@ -265,11 +277,17 @@ void RouteMappingPhotoController::_onPiSessionBeginComplete(bool success)
 
 void RouteMappingPhotoController::endSession()
 {
-    // Stop accepting new triggers, but preserve every trigger already accepted.
-    // The UDP capture queue must drain before the Pi session is closed.
+    // Once mission mode ends, discard commands which have not reached the Pi.
+    // Draining them would take photographs at the landing/RTL location instead
+    // of at their planned survey coordinates.
+    const QString cancelMessage = tr("Mission ended before this capture reached the camera.");
+    for (const PendingCapture &pending : std::as_const(_pendingCaptures)) {
+        emit captureFailed(pending.sequence, cancelMessage);
+    }
+    _pendingCaptures.clear();
+    _notifyPendingCaptureCountChanged();
     _finishRequested = true;
     _finishSessionIfReady();
-    _scheduleCapturePump();
 }
 
 void RouteMappingPhotoController::cancelSession()
@@ -399,7 +417,8 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     double altitude,
     double heading,
     bool success,
-    const QString &remotePhotoPath)
+    const QString &remotePhotoPath,
+    const QString &remoteThumbnailPath)
 {
     _captureUdpInFlight = false;
     _notifyPendingCaptureCountChanged();
@@ -410,7 +429,12 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
             qCInfo(RouteMappingPhotoControllerLog)
                 << "SCP using Pi path from trigger for seq" << sequence << remotePhotoPath;
         }
-        _fetcher->fetchPhotoBySequence(sequence, imagePath, sequence, remotePhotoPath);
+        if (!remoteThumbnailPath.isEmpty()) {
+            qCInfo(RouteMappingPhotoControllerLog)
+                << "Thumbnail path from trigger for seq" << sequence << remoteThumbnailPath;
+        }
+        _fetcher->fetchPhotoBySequence(
+            sequence, imagePath, sequence, remotePhotoPath, remoteThumbnailPath);
         emit captureRequested(sequence, imagePath);
     } else {
         Q_UNUSED(latitude);
@@ -431,6 +455,10 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
     _capturePumpRunning = false;
 
     if (!_fetcher || _sessionDirectory.isEmpty()) {
+        return;
+    }
+
+    if (!_captureEnabled) {
         return;
     }
 
@@ -471,7 +499,7 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
 }
 
 void RouteMappingPhotoController::_onTriggerCaptureFinished(
-    int sequence, bool success, const QString &remotePhotoPath)
+    int sequence, bool success, const QString &remotePhotoPath, const QString &remoteThumbnailPath)
 {
     if (!_inFlightCaptureValid || _inFlightCapture.sequence != sequence) {
         return;
@@ -485,7 +513,7 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
     if (!success) {
         PendingCapture retry = capture;
         retry.udpAttempts++;
-        if (retry.udpAttempts <= 4) {
+        if (_captureEnabled && retry.udpAttempts <= 4) {
             _pendingCaptures.prepend(retry);
             _notifyPendingCaptureCountChanged();
             qCWarning(RouteMappingPhotoControllerLog)
@@ -497,14 +525,16 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
         }
         qCWarning(RouteMappingPhotoControllerLog)
             << "Route Mapping CAPTURE seq" << sequence
-            << "UDP send failed; starting SCP/find retries anyway";
+            << "failed; no JPEG will be fetched";
+        emit captureFailed(sequence, tr("The Raspberry Pi did not accept the capture command."));
         _completeCaptureAttempt(
             capture.sequence,
             capture.latitude,
             capture.longitude,
             capture.altitude,
             capture.heading,
-            true,
+            false,
+            {},
             {});
         return;
     }
@@ -516,7 +546,8 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
         capture.altitude,
         capture.heading,
         true,
-        remotePhotoPath);
+        remotePhotoPath,
+        remoteThumbnailPath);
 }
 
 bool RouteMappingPhotoController::requestPhotoCapture(

@@ -557,9 +557,8 @@ Item {
     property real   _routeMappingMaxAlongPathSeen: 0
     property int    _routeMappingTriggersReceived: 0
     property bool   _routeMappingGcsSessionPathAnnounced: false
-    // Pi stills: allow deep capture queue; throttle SCP fetches, not plan triggers.
-    readonly property int _routeMappingPiBacklogTriggerCap: 8
-
+    // Set when planned triggers are done, photo legs end, or mission leaves survey (RTH).
+    property bool   _routeMappingPhotoTriggersComplete: false
     onRouteMappingPhotoCaptureTransectPointsChanged: _rebuildRouteMappingGcsTriggerSchedule()
     onRouteMappingTransectPathChanged: _rebuildRouteMappingGcsTriggerSchedule()
     onRouteMappingTriggerDistanceChanged: _rebuildRouteMappingGcsTriggerSchedule()
@@ -576,6 +575,22 @@ Item {
         piUser: _root.routeMappingPiUser
         piPhotoRoot: _root.routeMappingPiPhotoRoot
         piTriggerPort: _root.routeMappingPiTriggerPort
+
+        onPhotoFullFetched: function(requestId, localFilePath, success, errorMessage) {
+            if (!success) {
+                console.warn("[RouteMapping] Full-res fetch failed for", requestId, errorMessage)
+                return
+            }
+            for (var fullIndex = 0; fullIndex < _routeMappingLivePhotoModel.count; fullIndex++) {
+                if (Number(_routeMappingLivePhotoModel.get(fullIndex).photoSequence) !== Number(requestId)) {
+                    continue
+                }
+                var fullResUrl = _root._mappingPhotoFileUrl(localFilePath)
+                        + "?ready=" + Date.now()
+                _routeMappingLivePhotoModel.setProperty(fullIndex, "photoImageSource", fullResUrl)
+                break
+            }
+        }
 
         onPhotoFetched: function(requestId, localFilePath, success, errorMessage) {
             if (!success) {
@@ -613,6 +628,7 @@ Item {
                 _routeMappingLivePhotoModel.setProperty(i, "photoImageSource", refreshedUrl)
                 _routeMappingLivePhotoModel.setProperty(i, "photoReady", true)
                 _routeMappingLivePhotoModel.setProperty(i, "photoFetchFailed", false)
+                _routeMappingLivePhotoModel.setProperty(i, "photoPlaceholder", false)
                 break
             }
         }
@@ -669,6 +685,7 @@ Item {
                 if (!photo.photoFetchFailed) {
                     _root._routeMappingCaptureFailures++
                     _routeMappingLivePhotoModel.setProperty(i, "photoFetchFailed", true)
+                    _routeMappingLivePhotoModel.setProperty(i, "photoPlaceholder", false)
                 }
                 break
             }
@@ -706,6 +723,7 @@ Item {
         _routeMappingMaxAlongPathSeen = 0
         _routeMappingTriggersReceived = 0
         _routeMappingGcsSessionPathAnnounced = false
+        _routeMappingPhotoTriggersComplete = false
         _rebuildRouteMappingGcsTriggerSchedule()
         routeMappingPhotoController.discardSessionStorage()
         if (routeMappingPiPhotoFetchEnabled) {
@@ -728,14 +746,17 @@ Item {
     }
 
     function _endRouteMappingPhotoSession() {
-        _flushRemainingRouteMappingTriggersBeforeSessionEnd()
         routeMappingPhotoController.captureEnabled = false
-        // endSession() drains CAPTURE/SCP first; fetchQueueDrained sends VIDEO_RESUME.
+        // Do not synthesize or drain unsent captures after the vehicle leaves
+        // mission mode. Only an already accepted camera exposure may finish.
         routeMappingPhotoController.endSession()
     }
 
     function _retryRouteMappingPiSessionIfNeeded() {
         if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled || !missionRunning) {
+            return
+        }
+        if (_routeMappingPhotoTriggersComplete) {
             return
         }
         if (routeMappingPhotoController.sessionActive
@@ -823,20 +844,73 @@ Item {
         _routeMappingGcsTriggerDistances = schedule
     }
 
-    function _routeMappingSurveyStartSequence() {
+    function _routeMappingSurveyVisualItem() {
         if (!_missionController || !_missionController.visualItems) {
-            return -1
+            return null
         }
         for (var i = 0; i < _missionController.visualItems.count; i++) {
             var visualItem = _missionController.visualItems.get(i)
-            if (visualItem && visualItem.surveyAreaPolygon && visualItem.sequenceNumber !== undefined) {
-                var sequence = Number(visualItem.sequenceNumber)
-                if (isFinite(sequence)) {
-                    return sequence
-                }
+            if (visualItem && visualItem.surveyAreaPolygon) {
+                return visualItem
             }
         }
-        return -1
+        return null
+    }
+
+    function _routeMappingSurveyStartSequence() {
+        var survey = _routeMappingSurveyVisualItem()
+        if (!survey || survey.sequenceNumber === undefined) {
+            return -1
+        }
+        var sequence = Number(survey.sequenceNumber)
+        return isFinite(sequence) ? sequence : -1
+    }
+
+    function _routeMappingSurveyLastSequence() {
+        var survey = _routeMappingSurveyVisualItem()
+        if (!survey || survey.lastSequenceNumber === undefined) {
+            return -1
+        }
+        var sequence = Number(survey.lastSequenceNumber)
+        return isFinite(sequence) ? sequence : -1
+    }
+
+    function _routeMappingPlannedTriggerCount() {
+        var schedule = _routeMappingGcsTriggerDistances
+        if (!schedule || schedule.length === 0) {
+            return 0
+        }
+        var planned = Number(routeMappingPlannedPhotoCount)
+        return planned > 0 ? Math.min(planned, schedule.length) : schedule.length
+    }
+
+    function _routeMappingVehicleOnPhotoCapturePath() {
+        if (!_activeVehicle || !mapControl) {
+            return false
+        }
+        var coord = _activeVehicle.coordinate
+        if (!coord || !coord.isValid) {
+            return false
+        }
+        var info = mapControl.routeMappingPhotoCaptureInfo(coord)
+        if (!info || !info.valid) {
+            return false
+        }
+        var spacing = Math.max(0.1, Number(routeMappingTriggerDistance))
+        var corridorMeters = Math.max(8, spacing * 0.75)
+        return info.distanceToSegment <= corridorMeters
+    }
+
+    function _markRouteMappingPhotoTriggersComplete(reason) {
+        if (_routeMappingPhotoTriggersComplete) {
+            return
+        }
+        _routeMappingPhotoTriggersComplete = true
+        routeMappingPhotoController.captureEnabled = false
+        if (routeMappingPiPhotoFetchEnabled) {
+            routeMappingPiPhotoFetcher.haltNewCaptures()
+        }
+        console.info("[RouteMapping] Photo trigger phase complete:", reason)
     }
 
     function _mappingPhotoTrackTolerance() {
@@ -848,18 +922,28 @@ Item {
         if (!routeMappingPhotoProgressEnabled || !missionRunning || !_activeVehicle) {
             return false
         }
-        if (!_activeVehicle.armed && !_activeVehicle.flying) {
+        if (_routeMappingPhotoTriggersComplete) {
             return false
         }
-        var surveySeq = _routeMappingSurveyStartSequence()
-        if (surveySeq < 0) {
-            return true
+        if (!_activeVehicle.armed && !_activeVehicle.flying) {
+            return false
         }
         if (!_activeVehicle.missionItemIndex) {
             return false
         }
         var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
-        return isFinite(currentIdx) && currentIdx >= surveySeq
+        if (!isFinite(currentIdx)) {
+            return false
+        }
+        var surveyStart = _routeMappingSurveyStartSequence()
+        var surveyLast = _routeMappingSurveyLastSequence()
+        if (surveyStart >= 0 && currentIdx < surveyStart) {
+            return false
+        }
+        if (surveyLast >= 0 && currentIdx > surveyLast) {
+            return false
+        }
+        return true
     }
 
     function _issueGcsRouteMappingTriggerAtIndex(scheduleIndex, fallbackCoordinate) {
@@ -895,6 +979,9 @@ Item {
         if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled) {
             return
         }
+        if (_routeMappingPhotoTriggersComplete) {
+            return
+        }
         if (!_routeMappingGcsCaptureAllowed() || !routeMappingPhotoController.captureEnabled) {
             return
         }
@@ -907,9 +994,19 @@ Item {
             return
         }
 
-        var planned = Number(routeMappingPlannedPhotoCount)
-        var maxTriggers = planned > 0 ? Math.min(planned, schedule.length) : schedule.length
+        var maxTriggers = _routeMappingPlannedTriggerCount()
         if (_routeMappingGcsNextTriggerIndex >= maxTriggers) {
+            _markRouteMappingPhotoTriggersComplete("all planned triggers sent")
+            return
+        }
+
+        if (!_activeVehicle.missionItemIndex) {
+            return
+        }
+        var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
+        var surveyLast = _routeMappingSurveyLastSequence()
+        if (surveyLast >= 0 && isFinite(currentIdx) && currentIdx > surveyLast) {
+            _markRouteMappingPhotoTriggersComplete("mission past survey (RTH/post-pattern)")
             return
         }
 
@@ -922,14 +1019,14 @@ Item {
             _routeMappingMaxAlongPathSeen = Math.max(_routeMappingMaxAlongPathSeen, alongPath)
         }
         var progressAlong = _routeMappingMaxAlongPathSeen
-
         var pathLength = mapControl.routeMappingPhotoCapturePathLength()
-        var nearExit = routeMappingExitCoordinate && routeMappingExitCoordinate.isValid
-                && vehicleCoordinate && vehicleCoordinate.isValid
-                && vehicleCoordinate.distanceTo(routeMappingExitCoordinate) < Math.max(25, spacing * 2)
         var pastPhotoPathEnd = pathLength > 0
                 && progressAlong >= pathLength - crossTolerance * 2
-        var surveyEndFlush = nearExit || pastPhotoPathEnd
+
+        if (pastPhotoPathEnd) {
+            _markRouteMappingPhotoTriggersComplete("photo-capture path complete")
+            return
+        }
 
         if (routeMappingPiPhotoFetchEnabled
                 && !routeMappingPhotoController.sessionActive
@@ -939,21 +1036,9 @@ Item {
             }
         }
 
-        var piBacklog = routeMappingPhotoController.pendingCaptureCount
-                + routeMappingPiPhotoFetcher.pendingFetchCount
-        if (piBacklog >= _routeMappingPiBacklogTriggerCap) {
-            return
-        }
-
-        // Last transect / RTL: vehicle often leaves the tight photo-leg corridor
-        // before slow Pi pacing finishes — commit remaining shots at plan coords.
-        if (surveyEndFlush && progressAlong + crossTolerance < schedule[_routeMappingGcsNextTriggerIndex]) {
-            var flushDistance = schedule[_routeMappingGcsNextTriggerIndex]
-            var flushCoordinate = mapControl.routeMappingCoordinateAtDistanceAlongPath(flushDistance)
-            if (!flushCoordinate || !flushCoordinate.isValid) {
-                flushCoordinate = vehicleCoordinate
-            }
-            _issueGcsRouteMappingTriggerAtIndex(_routeMappingGcsNextTriggerIndex, flushCoordinate)
+        // The Pi camera is serial. Keeping one command outstanding prevents
+        // metadata/placeholders from running minutes ahead of real exposures.
+        if (routeMappingPhotoController.pendingCaptureCount > 0) {
             return
         }
 
@@ -966,34 +1051,8 @@ Item {
             return
         }
 
+        // One planned trigger per tick at the precomputed along-path distance (Pi still serial).
         _issueGcsRouteMappingTriggerAtIndex(_routeMappingGcsNextTriggerIndex, vehicleCoordinate)
-    }
-
-    function _flushRemainingRouteMappingTriggersBeforeSessionEnd() {
-        if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled) {
-            return
-        }
-        if (!routeMappingPhotoController.captureEnabled) {
-            return
-        }
-        var schedule = _routeMappingGcsTriggerDistances
-        if (!schedule || schedule.length === 0) {
-            return
-        }
-        var planned = Number(routeMappingPlannedPhotoCount)
-        var maxTriggers = planned > 0 ? Math.min(planned, schedule.length) : schedule.length
-        var piBacklog = routeMappingPhotoController.pendingCaptureCount
-                + routeMappingPiPhotoFetcher.pendingFetchCount
-        if (piBacklog >= _routeMappingPiBacklogTriggerCap
-                || _routeMappingGcsNextTriggerIndex >= maxTriggers) {
-            return
-        }
-        var flushDistance = schedule[_routeMappingGcsNextTriggerIndex]
-        var plannedCoord = mapControl.routeMappingCoordinateAtDistanceAlongPath(flushDistance)
-        var coord = _activeVehicle ? _activeVehicle.coordinate : QtPositioning.coordinate()
-        _issueGcsRouteMappingTriggerAtIndex(
-                    _routeMappingGcsNextTriggerIndex,
-                    plannedCoord && plannedCoord.isValid ? plannedCoord : coord)
     }
 
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
@@ -1016,6 +1075,9 @@ Item {
 
     function _commitRouteMappingPhoto(coordinate, telemetryConfirmed, duplicateRadiusOverride, heading,
                                       authoritativeTrigger, nativeTriggerSequence) {
+        if (_routeMappingPhotoTriggersComplete) {
+            return false
+        }
         if (routeMappingPiPhotoFetchEnabled && !routeMappingPhotoController.captureEnabled) {
             return false
         }
@@ -1070,17 +1132,7 @@ Item {
             filePath = photoDirectory + separator + fileName
         }
 
-        if (routeMappingPiPhotoFetchEnabled
-                && !routeMappingPhotoController.requestPhotoCapture(
-                    photoNumber,
-                    Number(nativeTriggerSequence || 0),
-                    coordinate.latitude,
-                    coordinate.longitude,
-                    coordinate.altitude,
-                    heading)) {
-            return false
-        }
-
+        // Pi path: draw the map footprint immediately, then queue CAPTURE/SCP.
         _routeMappingLivePhotoModel.append({
             photoLatitude: coordinate.latitude,
             photoLongitude: coordinate.longitude,
@@ -1088,18 +1140,33 @@ Item {
             photoHeading: heading,
             photoSequence: photoNumber,
             nativeTriggerSequence: Number(nativeTriggerSequence || 0),
-            // Pi stills: JPEG path is filled only after SCP succeeds (avoids QML Image errors).
             photoImageSource: routeMappingPiPhotoFetchEnabled ? "" : _mappingPhotoFileUrl(filePath),
             photoTelemetryConfirmed: telemetryConfirmed,
             photoReady: !routeMappingPiPhotoFetchEnabled,
-            photoFetchFailed: false
+            photoFetchFailed: false,
+            photoPlaceholder: routeMappingPiPhotoFetchEnabled
         })
 
-        _trackRouteMappingPhotoFile(filePath)
+        var committedIndex = _routeMappingLivePhotoModel.count - 1
 
-        if (!routeMappingPiPhotoFetchEnabled) {
-            QGroundControl.videoManager.grabImage(filePath)
+        if (routeMappingPiPhotoFetchEnabled) {
+            if (!routeMappingPhotoController.requestPhotoCapture(
+                        photoNumber,
+                        Number(nativeTriggerSequence || 0),
+                        coordinate.latitude,
+                        coordinate.longitude,
+                        coordinate.altitude,
+                        heading)) {
+                _routeMappingLivePhotoModel.setProperty(committedIndex, "photoFetchFailed", true)
+                _routeMappingLivePhotoModel.setProperty(committedIndex, "photoPlaceholder", false)
+                return false
+            }
+            _trackRouteMappingPhotoFile(filePath)
+            return true
         }
+
+        _trackRouteMappingPhotoFile(filePath)
+        QGroundControl.videoManager.grabImage(filePath)
         return true
     }
 
@@ -1197,6 +1264,9 @@ Item {
                 // Do not start Pi SSH/VIDEO_PAUSE here — beginSession blocks the GUI
                 // thread for seconds. Session starts when the mission runs or on first capture.
             } else {
+                if (_root.routeMappingPhotoProgressEnabled) {
+                    _root._markRouteMappingPhotoTriggersComplete("disarmed")
+                }
                 _root._endRouteMappingPhotoSession()
             }
         }
@@ -1222,16 +1292,19 @@ Item {
 
     onMissionRunningChanged: {
         if (missionRunning && routeMappingPhotoProgressEnabled) {
-            routeMappingPhotoController.captureEnabled = true
-            // SSH warm-up before Pi VIDEO_PAUSE so SCP works as soon as captures start.
-            routeMappingPiPhotoFetcher.warmUpConnection()
-            if (!routeMappingPhotoController.sessionActive
-                    && !routeMappingPhotoController.piSessionPending
-                    && !routeMappingPiPhotoFetcher.piSessionStarting) {
-                routeMappingPhotoController.beginSession()
+            if (!_routeMappingPhotoTriggersComplete) {
+                routeMappingPhotoController.captureEnabled = true
+                // SSH warm-up before Pi VIDEO_PAUSE so SCP works as soon as captures start.
+                routeMappingPiPhotoFetcher.warmUpConnection()
+                if (!routeMappingPhotoController.sessionActive
+                        && !routeMappingPhotoController.piSessionPending
+                        && !routeMappingPiPhotoFetcher.piSessionStarting) {
+                    routeMappingPhotoController.beginSession()
+                }
             }
         } else if (!missionRunning) {
             if (routeMappingPhotoProgressEnabled) {
+                _markRouteMappingPhotoTriggersComplete("mission ended")
                 _endRouteMappingPhotoSession()
             } else {
                 routeMappingPhotoController.captureEnabled = false

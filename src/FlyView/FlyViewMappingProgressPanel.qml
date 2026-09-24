@@ -222,13 +222,16 @@ Rectangle {
                     Rectangle {
                         required property int photoSequence
                         required property string photoImageSource
+                        required property bool photoPlaceholder
 
                         width: root._thumbSize
                         height: root._thumbSize
                         radius: ScreenTools.defaultFontPixelWidth * 0.35
-                        color: "#263238"
-                        border.width: 1
-                        border.color: Qt.rgba(1, 1, 1, 0.35)
+                        color: photoPlaceholder ? "#3a454c" : "#263238"
+                        border.width: photoPlaceholder ? 2 : 1
+                        border.color: photoPlaceholder
+                                      ? Qt.rgba(0.43, 0.92, 0.09, 0.75)
+                                      : Qt.rgba(1, 1, 1, 0.35)
 
                         Image {
                             anchors.fill: parent
@@ -244,9 +247,21 @@ Rectangle {
                         }
 
                         QGCLabel {
+                            anchors.centerIn: parent
+                            visible: photoImageSource.length === 0
+                            text: String(photoSequence)
+                            font.bold: photoPlaceholder
+                            font.pointSize: photoPlaceholder
+                                          ? ScreenTools.defaultFontPointSize
+                                          : ScreenTools.smallFontPointSize
+                            color: "white"
+                        }
+
+                        QGCLabel {
                             anchors.right: parent.right
                             anchors.bottom: parent.bottom
                             anchors.margins: 2
+                            visible: photoImageSource.length > 0
                             text: String(photoSequence)
                             font.pointSize: ScreenTools.smallFontPointSize
                             color: "white"

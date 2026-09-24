@@ -53,6 +53,7 @@ class CaptureRequest:
     gcs_sequence: int | None = None
     session_directory: pathlib.Path | None = None
     planned_path: pathlib.Path | None = None
+    thumbnail_path: pathlib.Path | None = None
 
 
 def x25_crc(data: bytes, crc: int = 0xFFFF) -> int:
@@ -170,11 +171,9 @@ class CaptureWorker(threading.Thread):
         self._session_directory: pathlib.Path | None = None
         self._gcs_requests: set[tuple[str, int]] = set()
         self._gcs_planned_paths: dict[tuple[str, int], pathlib.Path] = {}
+        self._gcs_thumbnail_paths: dict[tuple[str, int], pathlib.Path] = {}
         self._request_lock = threading.Lock()
-        # rpicam-still is serial; reject new GCS triggers when the queue is deep
-        # so UDP replies stay timely and the GCS can back off instead of timing out.
-        self._max_queued_captures = 12
-
+        self._capture_active = False
         photo_root.mkdir(parents=True, exist_ok=True)
 
     def set_session_video_paused(self, paused: bool) -> None:
@@ -206,6 +205,42 @@ class CaptureWorker(threading.Thread):
                 LOGGER.info("Photo session closed: %s", self._session_directory)
             self._session_directory = None
 
+    def cancel_pending(self) -> int:
+        """Discard exposures which have not started; never cancel the active write."""
+        cancelled: list[CaptureRequest] = []
+        with self._requests.mutex:
+            retained = []
+            for request in self._requests.queue:
+                if isinstance(request, CaptureRequest):
+                    cancelled.append(request)
+                else:
+                    retained.append(request)
+            self._requests.queue.clear()
+            self._requests.queue.extend(retained)
+            self._requests.not_full.notify_all()
+
+        with self._request_lock:
+            for request in cancelled:
+                if request.gcs_sequence is None or request.session_directory is None:
+                    continue
+                key = (str(request.session_directory), request.gcs_sequence)
+                self._gcs_requests.discard(key)
+                self._gcs_planned_paths.pop(key, None)
+                self._gcs_thumbnail_paths.pop(key, None)
+        if cancelled:
+            LOGGER.info("Cancelled %d pending camera captures", len(cancelled))
+        return len(cancelled)
+
+    def wait_until_idle(self, timeout_sec: float) -> bool:
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        while time.monotonic() < deadline:
+            with self._request_lock:
+                if not self._capture_active:
+                    return True
+            time.sleep(0.05)
+        with self._request_lock:
+            return not self._capture_active
+
     def _plan_gcs_capture_path(
         self, session_directory: pathlib.Path, gcs_sequence: int
     ) -> pathlib.Path:
@@ -214,7 +249,14 @@ class CaptureWorker(threading.Thread):
             f"image_{gcs_sequence:04d}_gcs_{gcs_sequence:04d}_{timestamp}.jpg"
         )
 
-    def request(self, request: CaptureRequest) -> tuple[bool, pathlib.Path | None]:
+    def _plan_gcs_thumbnail_path(
+        self, session_directory: pathlib.Path, gcs_sequence: int
+    ) -> pathlib.Path:
+        return session_directory / f"image_{gcs_sequence:04d}_thumb.jpg"
+
+    def request(
+        self, request: CaptureRequest
+    ) -> tuple[bool, pathlib.Path | None, pathlib.Path | None]:
         if request.session_directory is None:
             request = dataclasses.replace(
                 request, session_directory=self.begin_session()
@@ -231,25 +273,25 @@ class CaptureWorker(threading.Thread):
                         request.session_directory,
                         request.gcs_sequence,
                     )
-                    return True, self._gcs_planned_paths[request_key]
+                    return (
+                        True,
+                        self._gcs_planned_paths[request_key],
+                        self._gcs_thumbnail_paths[request_key],
+                    )
                 planned_path = self._plan_gcs_capture_path(
+                    request.session_directory, request.gcs_sequence
+                )
+                thumbnail_path = self._plan_gcs_thumbnail_path(
                     request.session_directory, request.gcs_sequence
                 )
                 self._gcs_requests.add(request_key)
                 self._gcs_planned_paths[request_key] = planned_path
-            request = dataclasses.replace(request, planned_path=planned_path)
-
-        if request.gcs_sequence is not None and self._requests.qsize() >= self._max_queued_captures:
-            if request_key is not None:
-                with self._request_lock:
-                    self._gcs_requests.discard(request_key)
-                    self._gcs_planned_paths.pop(request_key, None)
-            LOGGER.warning(
-                "GCS capture queue full (%d); rejecting sequence=%s",
-                self._requests.qsize(),
-                request.gcs_sequence,
+                self._gcs_thumbnail_paths[request_key] = thumbnail_path
+            request = dataclasses.replace(
+                request,
+                planned_path=planned_path,
+                thumbnail_path=thumbnail_path,
             )
-            return False, None
 
         try:
             self._requests.put_nowait(request)
@@ -260,14 +302,15 @@ class CaptureWorker(threading.Thread):
                 request.gcs_sequence,
                 planned_path,
             )
-            return True, planned_path
+            return True, planned_path, request.thumbnail_path
         except queue.Full:
             if request_key is not None:
                 with self._request_lock:
                     self._gcs_requests.discard(request_key)
                     self._gcs_planned_paths.pop(request_key, None)
+                    self._gcs_thumbnail_paths.pop(request_key, None)
             LOGGER.error("Photo queue is full; dropping trigger from %s", request.source)
-            return False, None
+            return False, None, None
 
     def stop(self) -> None:
         try:
@@ -280,6 +323,8 @@ class CaptureWorker(threading.Thread):
             request = self._requests.get()
             if request is None:
                 return
+            with self._request_lock:
+                self._capture_active = True
             try:
                 self._capture(request)
             except Exception:
@@ -305,7 +350,11 @@ class CaptureWorker(threading.Thread):
                         with self._request_lock:
                             self._gcs_requests.discard(request_key)
                             self._gcs_planned_paths.pop(request_key, None)
+                            self._gcs_thumbnail_paths.pop(request_key, None)
                 LOGGER.exception("Full-resolution capture failed")
+            finally:
+                with self._request_lock:
+                    self._capture_active = False
 
     def _create_session_directory(self, photo_root: pathlib.Path) -> pathlib.Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -352,6 +401,7 @@ class CaptureWorker(threading.Thread):
                 f"image_{self._counter:06d}_{trigger_sequence}_{timestamp}.jpg"
             )
         temporary_filename = filename.with_suffix(".part.jpg")
+        capture_started = time.monotonic()
 
         manage_video_per_shot = not self._session_video_paused
         video_was_active = False
@@ -382,14 +432,17 @@ class CaptureWorker(threading.Thread):
                 "--timeout",
                 str(self._timeout_ms),
                 "--nopreview",
+                "--immediate",
                 "--autofocus-mode",
-                "auto",
+                "manual",
+                "--lens-position",
+                "0.0",
                 "--width",
                 "4608",
                 "--height",
                 "2592",
                 "--quality",
-                "95",
+                "85",
                 "--output",
                 str(temporary_filename),
             ]
@@ -401,7 +454,40 @@ class CaptureWorker(threading.Thread):
             if not temporary_filename.is_file() or temporary_filename.stat().st_size == 0:
                 raise RuntimeError("rpicam-still did not create a JPEG")
             temporary_filename.replace(filename)
-            LOGGER.info("Saved %s (%d bytes)", filename, filename.stat().st_size)
+            capture_elapsed = time.monotonic() - capture_started
+            LOGGER.info(
+                "Saved %s (%d bytes) in %.2f s (gcs_sequence=%s)",
+                filename,
+                filename.stat().st_size,
+                capture_elapsed,
+                request.gcs_sequence,
+            )
+            if capture_elapsed > 4.0:
+                LOGGER.warning(
+                    "Slow still capture gcs_sequence=%s took %.2f s — check SD "
+                    "utilization (iostat), thermal (vcgencmd get_throttled), "
+                    "and extract_jpeg_thumbnail blocking",
+                    request.gcs_sequence,
+                    capture_elapsed,
+                )
+            if request.thumbnail_path is not None:
+                thumbnail_command = [
+                    "/home/shreeon/extract_jpeg_thumbnail.py",
+                    str(filename),
+                    "--output",
+                    str(request.thumbnail_path),
+                    "--wait-seconds",
+                    "0",
+                ]
+                try:
+                    subprocess.run(thumbnail_command, check=True, timeout=5)
+                    LOGGER.info(
+                        "Saved thumbnail %s (%d bytes)",
+                        request.thumbnail_path,
+                        request.thumbnail_path.stat().st_size,
+                    )
+                except (OSError, subprocess.SubprocessError):
+                    LOGGER.exception("Could not generate %s", request.thumbnail_path)
             sidecar = filename.with_suffix(".json")
             sidecar.write_text(
                 json.dumps(
@@ -515,6 +601,9 @@ class RouteMappingService:
         return session_directory
 
     def resume_live_video(self) -> None:
+        self._capture_worker.cancel_pending()
+        if not self._capture_worker.wait_until_idle(10.0):
+            LOGGER.warning("Active camera exposure did not finish before video resume")
         self._gcs_controls_captures = False
         self._capture_worker.set_session_video_paused(False)
         subprocess.run(
@@ -644,21 +733,26 @@ class RouteMappingService:
                         address,
                     )
                     return
-                queued, planned_path = self._capture_worker.request(CaptureRequest(
-                    "gcs-udp",
-                    gcs_sequence=gcs_sequence,
-                    session_directory=session_directory,
-                ))
+                queued, planned_path, thumbnail_path = self._capture_worker.request(
+                    CaptureRequest(
+                        "gcs-udp",
+                        gcs_sequence=gcs_sequence,
+                        session_directory=session_directory,
+                    )
+                )
             else:
-                queued, planned_path = self._capture_worker.request(
+                queued, planned_path, thumbnail_path = self._capture_worker.request(
                     CaptureRequest("manual-udp")
                 )
             if queued:
                 if gcs_sequence is not None:
                     if planned_path is not None:
-                        response = (
-                            f"QUEUED seq={gcs_sequence} path={planned_path}\n"
-                        ).encode()
+                        response_text = (
+                            f"QUEUED seq={gcs_sequence} path={planned_path}"
+                        )
+                        if thumbnail_path is not None:
+                            response_text += f" thumb={thumbnail_path}"
+                        response = (response_text + "\n").encode()
                     else:
                         LOGGER.warning(
                             "GCS capture queued without planned path (sequence=%d)",
@@ -752,7 +846,7 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--capture-user", default="shreeon")
     parser.add_argument("--camera-service", default="wfb-camera.service")
     parser.add_argument("--camera-command", default="/usr/local/bin/rpicam-still")
-    parser.add_argument("--capture-timeout-ms", type=int, default=2000)
+    parser.add_argument("--capture-timeout-ms", type=int, default=1500)
     parser.add_argument(
         "--video-release-delay-sec",
         type=float,

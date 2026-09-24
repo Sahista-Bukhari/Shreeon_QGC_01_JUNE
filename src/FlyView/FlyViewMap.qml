@@ -198,8 +198,16 @@ FlightMap {
         return _routeMappingPhotoCapturePolyline()
     }
 
+    function _routeMappingPhotoProgressPath() {
+        var capturePath = _routeMappingPhotoCapturePolyline()
+        if (capturePath && capturePath.length >= 2) {
+            return capturePath
+        }
+        return _routeMappingTriggerPath()
+    }
+
     function routeMappingCoordinateAtDistanceAlongPath(distanceAlongPath) {
-        var path = _routeMappingTriggerPath()
+        var path = _routeMappingPhotoProgressPath()
         if (!path || path.length === 0) {
             return QtPositioning.coordinate()
         }
@@ -228,7 +236,7 @@ FlightMap {
     }
 
     function routeMappingPhotoCapturePathLength() {
-        var path = _routeMappingTriggerPath()
+        var path = _routeMappingPhotoProgressPath()
         if (!path || path.length < 2) {
             return 0
         }
@@ -236,7 +244,7 @@ FlightMap {
     }
 
     function routeMappingDistanceAlongPath(coord) {
-        var path = _routeMappingTriggerPath()
+        var path = _routeMappingPhotoProgressPath()
         if (!path || path.length < 2 || !coord || !coord.isValid) {
             return -1
         }
@@ -1586,6 +1594,7 @@ FlightMap {
             required property string photoImageSource
             required property bool photoReady
             required property bool photoFetchFailed
+            required property bool photoPlaceholder
 
             property real footprintSide: _root.routeMappingPhotoFootprintSide
             property real footprintFrontal: _root.routeMappingPhotoFootprintFrontal
@@ -1642,13 +1651,28 @@ FlightMap {
                     anchors.fill: parent
                     visible: mappingPhotoItem.photoImageSource.length === 0
                              && !mappingPhotoItem.photoFetchFailed
-                    color: Qt.rgba(0.15, 0.22, 0.28, 0.92)
-                    border.width: 0
+                    color: mappingPhotoItem.photoPlaceholder
+                           ? Qt.rgba(0.22, 0.26, 0.30, 0.94)
+                           : Qt.rgba(0.15, 0.22, 0.28, 0.92)
+                    border.width: mappingPhotoItem.photoPlaceholder ? 2 : 0
+                    border.color: Qt.rgba(0.43, 0.92, 0.09, 0.85)
+
+                    QGCLabel {
+                        anchors.centerIn: parent
+                        visible: mappingPhotoItem.photoPlaceholder
+                        text: String(mappingPhotoItem.photoSequence)
+                        font.bold: true
+                        font.pointSize: Math.max(
+                                          ScreenTools.smallFontPointSize,
+                                          Math.min(parent.width, parent.height) * 0.22)
+                        color: Qt.rgba(1, 1, 1, 0.92)
+                    }
 
                     BusyIndicator {
                         anchors.centerIn: parent
                         width: Math.min(parent.width, parent.height) * 0.45
                         height: width
+                        visible: !mappingPhotoItem.photoPlaceholder
                         running: mappingPhotoItem.photoImageSource.length === 0
                     }
                 }
@@ -1685,9 +1709,11 @@ FlightMap {
                     anchors.bottomMargin: 2
                     text: mappingPhotoItem.photoFetchFailed
                           ? qsTr("Photo %1 (failed)").arg(mappingPhotoItem.photoSequence)
-                          : (mappingPhotoItem.photoImageSource.length === 0
-                             ? qsTr("Photo %1 (waiting for Pi…)").arg(mappingPhotoItem.photoSequence)
-                             : qsTr("Photo %1").arg(mappingPhotoItem.photoSequence))
+                          : (mappingPhotoItem.photoPlaceholder
+                             ? qsTr("Photo %1 (triggered)").arg(mappingPhotoItem.photoSequence)
+                             : (mappingPhotoItem.photoImageSource.length === 0
+                                ? qsTr("Photo %1 (waiting for Pi…)").arg(mappingPhotoItem.photoSequence)
+                                : qsTr("Photo %1").arg(mappingPhotoItem.photoSequence)))
                     color: "white"
                     font.bold: true
                     font.pointSize: ScreenTools.smallFontPointSize
