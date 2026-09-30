@@ -91,14 +91,24 @@ elseif(LINUX)
         FILES "${QGC_APPIMAGE_APPRUN_PATH}"
         DESTINATION "${CMAKE_BINARY_DIR}/"
     )
-    # Pass variables to AppImage creation script
-    install(CODE "
-        set(CMAKE_PROJECT_NAME ${CMAKE_PROJECT_NAME})
-        set(CMAKE_PROJECT_VERSION ${CMAKE_PROJECT_VERSION})
-        set(QGC_PACKAGE_NAME ${QGC_PACKAGE_NAME})
-        set(CMAKE_SYSTEM_PROCESSOR ${CMAKE_SYSTEM_PROCESSOR})
-    ")
-    install(SCRIPT "${CMAKE_SOURCE_DIR}/cmake/install/CreateAppImage.cmake")
+    if(QGC_CREATE_APPIMAGE)
+        if(CMAKE_CROSSCOMPILING AND NOT "${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "${CMAKE_HOST_SYSTEM_PROCESSOR}")
+            install(CODE "
+                message(STATUS \"QGC: Skipping AppImage on cross-build host (${CMAKE_HOST_SYSTEM_PROCESSOR}).\")
+                message(STATUS \"QGC: AppDir is under: ${CMAKE_BINARY_DIR}/AppDir\")
+                message(STATUS \"QGC: On the Pi run deploy/linux/package-appimage-on-pi.sh (after sync-cross-build-for-appimage.sh).\")
+            ")
+        else()
+            install(CODE "
+                set(CMAKE_PROJECT_NAME \"${CMAKE_PROJECT_NAME}\")
+                set(CMAKE_PROJECT_VERSION \"${CMAKE_PROJECT_VERSION}\")
+                set(QGC_PACKAGE_NAME \"${QGC_PACKAGE_NAME}\")
+                set(CMAKE_SYSTEM_PROCESSOR \"${CMAKE_SYSTEM_PROCESSOR}\")
+                set(QGC_APPIMAGE_BUILD_DIR \"${CMAKE_BINARY_DIR}\")
+                include(\"${CMAKE_SOURCE_DIR}/cmake/install/CreateAppImage.cmake\")
+            ")
+        endif()
+    endif()
 
 # ----------------------------------------------------------------------------
 # Windows Installation & Installer Creation

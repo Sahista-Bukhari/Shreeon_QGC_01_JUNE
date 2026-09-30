@@ -693,10 +693,17 @@ void Vehicle::_handleCameraImageCaptured(const mavlink_message_t& message)
 
     mavlink_msg_camera_image_captured_decode(&message, &feedback);
 
-    QGeoCoordinate imageCoordinate((double)feedback.lat / qPow(10.0, 7.0), (double)feedback.lon / qPow(10.0, 7.0), feedback.alt);
+    QGeoCoordinate imageCoordinate(
+        static_cast<double>(feedback.lat) / qPow(10.0, 7.0),
+        static_cast<double>(feedback.lon) / qPow(10.0, 7.0),
+        static_cast<double>(feedback.alt) / 1000.0);
     qCDebug(VehicleLog) << "_handleCameraFeedback coord:index" << imageCoordinate << feedback.image_index << feedback.capture_result;
     if (feedback.capture_result == 1) {
         _cameraTriggerPoints.append(new QGCQGeoCoordinate(imageCoordinate, this));
+        emit cameraImageCapturedReceived(
+            feedback.image_index,
+            imageCoordinate,
+            static_cast<double>(feedback.relative_alt) / 1000.0);
     }
 }
 

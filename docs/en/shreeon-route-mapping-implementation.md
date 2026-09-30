@@ -10,15 +10,15 @@ For Pi-only install notes, see also [`deploy/pi-route-mapping/README.md`](../../
 
 1. Operator draws or imports a **survey pattern** in Route Mapping mode and uploads it to the vehicle.
 2. In **Fly View**, the transect overlay shows progress; each photo trigger creates a **map tile** (when the JPEG arrives).
-3. **Full-resolution stills** (4608×2592) are taken on the **Pi** via `rpicam-still`, not from the H.264 downlink.
-4. The **GCS** writes **geotag JSON** and copies each JPEG from the Pi with **SCP** into a local mission folder for reconstruction / backfill.
+3. **Full-resolution frames** (4608×2592) are taken on the **Pi** from a persistent `rpicam-vid --codec mjpeg` process, avoiding per-trigger camera startup delay.
+4. The **GCS** writes per-image JSON plus an ODM-compatible **`geo.txt`**, copies each JPEG from the Pi with **SCP**, and enables ODM stitching after every requested image has arrived.
 
 Two separate storage locations exist by design:
 
 | Side | Root path | Session folder | Per shot |
 |------|-----------|----------------|----------|
 | **Pi** | `/home/shreeon/mapping_photos` | `mission_YYYYMMDD_HHMMSS/` | `image_NNNN_gcs_NNNN_<timestamp>.jpg` |
-| **GCS** | `<App save path>/Photo/RouteMapping` | `Mission_<UTC>_<uuid>/` | `image_NNNN.jpg` + `image_NNNN.json` |
+| **GCS** | `<App save path>/Photo/RouteMapping` | `Mission_<UTC>_<uuid>/` | `images/image_NNNN.jpg` + `image_NNNN.json` + `geo.txt` |
 
 Daily build example on GCS:
 
@@ -53,7 +53,7 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
                 │ VIDEO_PAUSE, CAPTURE seq, STATUS│
 ┌───────────────▼───────────────────────────────▼───────────────┐
 │  Pi: shreeon_route_mapping.py — one still per CAPTURE seq only   │
-│      QGC_LED=1 disables UART auto-trigger; rpicam-still          │
+│  QGC_LED=1 disables UART auto-trigger; persistent rpicam-vid     │
 └─────────────────────────────────────────────────────────────────┘
                 │ PX4 flies uploaded survey mission (position only)
 ┌───────────────▼─────────────────────────────────────────────────┐
@@ -96,6 +96,12 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
    ```
 
 3. Confirm WFB/link so `10.5.0.2` is reachable when the vehicle is powered.
+4. Install Docker and confirm the user running QGC can access it:
+
+   ```bash
+   docker version
+   docker pull opendronemap/odm
+   ```
 
 **On the Pi**
 
@@ -132,22 +138,23 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 1. **Arm** — live photo model resets; Pi session is **not** started on arm (avoids blocking UI).
 2. **Start mission** (or first photo trigger) — GCS creates local `Mission_*` folder; Pi session starts **in a background thread** (SSH precheck + `VIDEO_PAUSE` + `STATUS` if needed).
 3. **QGC** (not MAVLink camera protocol) decides when to shoot:
-   - On plan upload, survey **`cameraShots`** (N) and **trigger distance** define a **fixed** schedule (`_routeMappingGcsTriggerDistances`).
-   - Fly View precomputes **N distances** along interior photo-capture legs (same math as `SurveyComplexItem`).
+   - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define a fixed schedule (`_routeMappingGcsTriggerDistances`). High is **6 m** and Low is **9 m**.
+   - Every transect starts with an immediate image, continues at the selected interval, and ends with an exit image. Turn connectors never schedule captures.
    - **Active photo-trigger phase** (all must hold): mission running, not `_routeMappingPhotoTriggersComplete`, mission index within the survey item (`sequenceNumber` … `lastSequenceNumber`), vehicle within corridor of photo-capture transects, max along-path progress on those legs.
-   - As progress crosses each planned distance, GCS fires **one CAPTURE per 250 ms tick** (Pi serial queue). Coordinates for geotag come from the **plan distance**, not ad-hoc “live” spacing.
-   - **Phase ends immediately** (sets `_routeMappingPhotoTriggersComplete`, `captureEnabled = false`) when any of: all N triggers sent; along-path progress passes the photo-capture path end; mission index moves past the survey (RTH/RTL item); mission stops; disarm.
+   - As progress crosses each planned distance, GCS fires **one CAPTURE per 250 ms tick**. The JPEG geotag uses the vehicle's live coordinate at the moment QGC sends `CAPTURE`; the planned coordinate is used only when live telemetry is invalid.
+   - **Phase ends immediately** (sets `_routeMappingPhotoTriggersComplete`, `captureEnabled = false`) when any of: all N triggers sent; mission index moves past the survey (RTH/RTL item); mission stops; disarm.
    - **RTH / post-pattern flight** does not increase along-path progress (off-transect) and does not re-open the trigger phase.
-   - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, Pi still + `image_NNNN_thumb.jpg`, **SCP thumbnail during flight** → map tile.
+   - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, save the first subsequent persistent-video frame, queue `image_NNNN_thumb.jpg` generation separately, then **SCP thumbnail during flight** → map tile.
    - Map tile and Photos count update when `photoFetched` succeeds. **Full-res archive SCP runs after disarm** (deferred queue); `photoFullFetched` when each archive JPEG replaces the thumb.
    - Pi **`QGC_LED=1`**: UART `CAMERA_TRIGGER` does not add captures during a QGC session.
 4. **Disarm** — trigger phase marked complete; GCS stops accepting new CAPTURE requests, drains the **in-flight thumb SCP** queue, sends **`VIDEO_RESUME`** when that live queue is empty, then continues **deferred full-res** archive SCP in the background (one at a time on the link).
 
 ### 3.4 After flight
 
-- **GCS photos:** `Photo/RouteMapping/Mission_*` and `latest_mission_session.txt` under `Photo/RouteMapping/`.
+- **GCS photos:** `Photo/RouteMapping/Mission_*/images`, with `geo.txt`, JSON sidecars, `session_manifest.json`, and eventually `odm.log` in the mission root.
 - **Pi photos:** `/home/shreeon/mapping_photos/mission_*`.
 - Match shots by sequence number and timestamps in JSON sidecars.
+- When Fly View shows **Reconstruction: Ready**, click **Start ODM Stitching**. QGC runs the `opendronemap/odm` Docker image and writes `odm_orthophoto/odm_orthophoto.tif` under the same mission directory.
 
 ---
 
@@ -180,7 +187,7 @@ printf 'CAPTURE 1\n' | nc -u -w 2 10.5.0.2 14551
 
 Duplicate `CAPTURE N` in the same Pi session is **idempotent** (same path returned, no second file).
 
-The `<timestamp>` in `image_NNNN_gcs_NNNN_<timestamp>.jpg` is stamped when **`CAPTURE N` is accepted** (path planned at queue time), **not** when `rpicam-still` finishes. Spacing in filenames reflects trigger/ack timing, not exposure duration. Use Pi logs `Saved … in X.XX s` for true still latency.
+The `<timestamp>` in `image_NNNN_gcs_NNNN_<timestamp>.jpg` is stamped when **`CAPTURE N` is accepted**. The Pi sidecar records `trigger_to_frame_seconds`, and journal logs report the same value for timing validation.
 
 GCS tests from the field laptop:
 
@@ -199,7 +206,9 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 - Resolves GCS root: `AppSettings::photoSavePath()` + `/RouteMapping`.
 - **`beginSession()`** — creates `Mission_<UTC>_<uuid>/` on disk, then calls **`beginSessionAsync()`** on the fetcher (Pi work off UI thread).
 - Sets **`sessionActive`** only after Pi session succeeds (`piSessionBeginComplete`).
-- **`requestPhotoCapture()`** — writes JSON, `triggerCapture()`, enqueues SCP via `fetchPhotoBySequence(..., remotePath)`.
+- **`requestPhotoCapture()`** — writes JSON, `triggerCapture()`, and enqueues SCP via `fetchPhotoBySequence(..., remotePath)`.
+- The first successful transfer appends the image pose to `geo.txt` (`EPSG:4326`, longitude, latitude, altitude, yaw). This is ODM's supported image-geolocation input and lets geotag preparation run while later images are still arriving.
+- **`startOdm()`** becomes available only after capture has ended, transfer queues are empty, and every requested image has a `geo.txt` row. It launches Docker without a shell and reports the orthophoto path on completion.
 - **Discoverability (Bug 5):**
   - `RouteMapping/README.txt` (once)
   - `RouteMapping/latest_mission_session.txt` (updated each session)
@@ -220,7 +229,7 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 
 1. **`triggerCapture(seq)`** — UDP/SSH `CAPTURE seq`; parse `QUEUED seq= path= thumb=` (thumb optional).
 2. **`fetchPhotoBySequence`** — if `thumb=` was present, SCP thumbnail during flight (`photoFetched`), defer full-res until **`finishSession()`** after disarm; if no thumb, legacy single SCP of `path=`; else session-scoped **find**.
-3. Pi still: **4608×2592**, quality **85**, `--immediate`, default exposure timeout **1500 ms** (tunable via `--capture-timeout-ms`).
+3. Pi mapping stream: persistent MJPEG at **4608×2592**, quality **85**, **5 fps**, and two in-flight buffers by default. The two-buffer setting is required for full-resolution allocation on the 512 MB aircraft Pi. Width, height, rate, quality, buffer count, and frame wait are configurable in `/etc/default/shreeon-route-mapping`.
 4. Retries: up to 400 attempts; re-send `CAPTURE` every 5th attempt when path unknown.
 
 **Session end**
@@ -278,13 +287,16 @@ sequenceDiagram
         GCS->>Fetch: triggerCapture + fetchPhotoBySequence(path)
         Fetch->>Pi: UDP CAPTURE seq
         Pi-->>Fetch: QUEUED seq= path=
-        Fetch->>Pi: scp path → image_NNNN.jpg
+        Fetch->>Pi: scp path → images/image_NNNN.jpg
         Fetch-->>Fly: photoFetched
+        GCS->>GCS: append image pose to geo.txt
     end
 
     User->>Fly: Disarm
     Fly->>GCS: endSession()
     Fetch->>Pi: VIDEO_RESUME (after SCP queue drained)
+    User->>GCS: Start ODM Stitching
+    GCS->>GCS: docker run opendronemap/odm
 ```
 
 ---
@@ -296,7 +308,7 @@ sequenceDiagram
 | SSH modal / precheck failed | No key, link down, wrong IP | `ssh-copy-id`, ping `10.5.0.2`, fix WFB |
 | Pi session failed / STATUS timeout | Link flap, old Pi script, camera stop slow | Deploy latest `shreeon_route_mapping.py`; test `nc` with 3 s delay before STATUS |
 | 0 / N photos forever | Session never became active, or capture disabled | Check logs; ensure mission running and transect overlay uploaded |
-| Wrong JPEG geotag | Old global find (pre-fix build) | Upgrade QGC; use path-based SCP |
+| Wrong JPEG geotag | Old build used the planned point, or Pi still-capture backlog | Upgrade both QGC and the Pi bundle; verify `capture_backend=persistent-rpicam-vid-mjpeg` and `trigger_to_frame_seconds` in the Pi JSON sidecar |
 | QGC “not responding” | Old build blocking GUI on session start | Rebuild with async `beginSessionAsync` |
 | Empty GCS folder | `photoSavePath` / save root empty | Application settings save path; see `RouteMapping/README.txt` |
 
@@ -325,10 +337,10 @@ FlyView.RouteMappingPhotoController
 
 | Priority | Change | Role |
 |----------|--------|------|
-| **A (shipped)** | **`photoPlaceholder`** on trigger — gray/green footprint + sequence on map and strip; real thumb on `photoFetched` | Perceived latency → ~0 |
-| **B (next)** | Pi **pushes** thumb to GCS (reverse SCP + `QFileSystemWatcher`) | Real thumb latency −1–2 s vs poll/SCP |
-| **Skip C1** | Small still before full still | Extra sensor time; wrong trade |
-| **C2 (later)** | libcamera one buffer → two JPEGs | Only if A + B insufficient |
+| **A (shipped)** | Persistent full-resolution `rpicam-vid` MJPEG process; save first frame after trigger | Removes per-photo startup delay and the post-mission exposure backlog |
+| **B (shipped)** | Generate the transfer preview on a separate worker | Thumbnail scaling cannot hold up the next exposure |
+| **C (shipped)** | **`photoPlaceholder`** on trigger; replace with real thumbnail after SCP | Immediate map feedback while transfer completes |
+| **D (later)** | Pi pushes thumbnails to GCS | Avoid polling/retry latency if still required |
 
 Parser tolerance (canonical `QUEUED … thumb=`, bare path, inferred thumb) and **thumb-only during flight / full-res after disarm** remain prerequisites.
 
@@ -336,7 +348,7 @@ Parser tolerance (canonical `QUEUED … thumb=`, bare path, inferred thumb) and 
 
 ## 11. Known limitations
 
-- **`triggerCapture`** still uses a **synchronous UDP wait** on the GUI thread per shot (up to ~8 s timeout). Session start is async; per-shot UDP could be moved to a worker in a follow-up.
+- The normal WFB downlink is unavailable during mapping capture because the inspected aircraft cannot open the camera from two independent processes. The service restores `wfb-camera.service` immediately after the mapping session.
 - **JSON metadata** does not yet include `state=requested/fetched/failed` (only trigger fields).
 - **GCS and Pi session folder names** differ by design; correlation is by sequence + path + timestamps.
 - **Mixed versions:** New QGC + old Pi works via STATUS + session-scoped find; full path protocol needs Pi script deploy from §3.1.

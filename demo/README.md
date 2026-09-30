@@ -10,20 +10,19 @@
 2. Connect this QGroundControl build to the SITL vehicle. In **Application
    Settings > General**, set **Video Source** to **UDP h.264 Video Stream** and
    use UDP port `5600`.
-3. Open Route Mapping and import `BaylandsRouteMapping.plan`.
-4. Confirm that **Est. Photo Count** is non-zero, then click **Upload**.
+3. Open **Route Mapping**, import `BaylandsRouteMapping.plan`, and choose the
+   resolution preset. High uses a 6 m trigger interval; Low uses 9 m.
+4. Confirm **Est. Photo Count**, then click **Upload**.
 5. Return to Fly View and start the mission.
 
-At the first pattern entry, the mission enables automatic distance-based camera
-capture and takes the first image immediately. Capture is stopped at every
-inner-transect endpoint and restarted at the next inner-transect entry, so no
-photos are taken on turns, connectors, takeoff, or RTL. Each live video frame
-is saved under QGroundControl's Photo directory and placed on the Fly View map
-at its capture coordinate. The image footprint follows the survey camera
-spacing and the nearest flight leg. Camera feedback supplies the exact
-coordinates when the vehicle supports it; the same live behavior is maintained
-in SITL when that feedback is unavailable.
+At every survey-transect entry, the mission enables distance-based triggering
+and requests the first image immediately. QGC sends the corresponding capture
+request to `shreeon@10.5.0.2`, receives preview/full-resolution JPEGs by SCP,
+and shows each image footprint on the Fly View map. Images, JSON metadata, and
+an ODM-compatible `geo.txt` are stored under the timestamped
+`Photo/RouteMapping/Mission_*` directory.
 
-After RTL has completed and the vehicle has landed/disarmed, the mapping JPEGs
-created by that flight are removed automatically from the Photo directory.
-Other photos in the directory are not deleted.
+After the mission ends and all images have arrived, the progress panel changes
+the reconstruction state to **Ready**. Click **Start ODM Stitching** to run the
+`opendronemap/odm` Docker image; the orthophoto is written below that same
+mission directory.

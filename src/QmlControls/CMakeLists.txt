@@ -203,6 +203,8 @@ qt_add_qml_module(QGroundControlControlsModule
         MissionItemMapVisual.qml
         MissionItemStatus.qml
         MissionSettingsEditor.qml
+        RouteMappingTaskSettings.qml
+        RouteMappingView.qml
         MissionStats.qml
         PlanEditToolbar.qml
         PlanToolBarIndicators.qml
@@ -211,8 +213,6 @@ qt_add_qml_module(QGroundControlControlsModule
         RallyPointEditorHeader.qml
         RallyPointItemEditor.qml
         RallyPointMapVisuals.qml
-        RouteMappingView.qml
-        RouteMappingTaskSettings.qml
         SimpleItemEditor.qml
         SimpleItemMapVisual.qml
         StructureScanEditor.qml

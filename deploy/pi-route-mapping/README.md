@@ -3,12 +3,14 @@
 **Full end-to-end guide (GCS + Pi + workflow + changelog):**  
 [`docs/en/shreeon-route-mapping-implementation.md`](../../docs/en/shreeon-route-mapping-implementation.md)
 
-This service keeps the existing WFB H.264 stream and captures full-resolution
-4608x2592 JPEG files on the Raspberry Pi. **Route Mapping photo count and timing
-come from QGC** (survey trigger distance and planned `cameraShots`); QGC sends
-one sequenced **`CAPTURE N`** per calculated trigger over UDP **14551**, then
-copies each JPEG with **SCP**. With **`QGC_LED=1`**, UART `CAMERA_TRIGGER` does
-not queue extra Pi captures during a QGC session.
+This service captures 4608x2592 JPEG frames from one persistent `rpicam-vid`
+MJPEG process on the Raspberry Pi. **Route Mapping photo count and timing come
+from QGC** (survey trigger distance and planned `cameraShots`); QGC sends one
+sequenced **`CAPTURE N`** per calculated trigger over UDP **14551**, then copies
+each JPEG with **SCP**. The first video frame completed after the trigger is
+saved, so slow per-photo camera startup cannot build a capture backlog. With
+**`QGC_LED=1`**, UART `CAMERA_TRIGGER` does not queue extra Pi captures during
+a QGC session.
 
 Photos are stored under:
 
@@ -102,8 +104,10 @@ in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. No
 for that session, and `VIDEO_RESUME` restores standalone UART triggering.
 
 During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
-starts (stops `wfb-camera.service` for the whole session so `rpicam-still` can
-use the sensor) and `VIDEO_RESUME` when the session ends:
+starts. The service stops `wfb-camera.service`, starts one persistent
+full-resolution `rpicam-vid --codec mjpeg` process, and waits for its first
+frame before accepting captures. `VIDEO_RESUME` cancels unsaved requests,
+stops the mapping process, and restores `wfb-camera.service`:
 
 ```bash
 printf 'VIDEO_PAUSE' | nc -u -w 1 10.5.0.2 14551

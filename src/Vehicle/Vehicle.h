@@ -832,6 +832,10 @@ signals:
     /// Emitted for the native MAVLink CAMERA_TRIGGER generated while executing
     /// distance-based camera trigger mission items.
     void cameraTriggerReceived           (quint32 sequence);
+    /// Emitted when the vehicle reports a successful CAMERA_IMAGE_CAPTURED.
+    /// PX4 configurations which do not stream CAMERA_TRIGGER still publish
+    /// this message for each distance-triggered exposure.
+    void cameraImageCapturedReceived     (qint32 imageIndex, QGeoCoordinate coordinate, double relativeAltitude);
     void homePositionChanged            (const QGeoCoordinate& homePosition);
     void armedPositionChanged();
     void armedChanged                   (bool armed);

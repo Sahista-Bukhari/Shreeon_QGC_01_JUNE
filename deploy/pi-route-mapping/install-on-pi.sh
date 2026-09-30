@@ -6,6 +6,7 @@ install -m 755 "$SCRIPT_DIR/shreeon_route_mapping.py" /usr/local/libexec/shreeon
 install -m 755 "$SCRIPT_DIR/capture.sh" /home/shreeon/capture.sh
 install -m 755 "$SCRIPT_DIR/extract_jpeg_thumbnail.py" /home/shreeon/extract_jpeg_thumbnail.py
 install -m 644 "$SCRIPT_DIR/shreeon-route-mapping.default" /etc/default/shreeon-route-mapping
+install -m 644 "$SCRIPT_DIR/route-mapping-capture.service" /etc/systemd/system/route-mapping-capture.service
 systemctl daemon-reload
 systemctl restart route-mapping-capture.service
 systemctl start wfb-camera.service

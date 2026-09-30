@@ -58,6 +58,10 @@ FlightMap {
     property real   routeMappingPhotoFootprintFrontal: 25
     property real   routeMappingTriggerDistance: 25
     property var    routeMappingLivePhotoModel: null
+    property string routeMappingOrthophotoUrl: ""
+    property var    routeMappingOrthophotoNorthWest: QtPositioning.coordinate()
+    property var    routeMappingOrthophotoSouthEast: QtPositioning.coordinate()
+    property bool   routeMappingOrthophotoReady: false
     property bool   hideVehicleMissionForUnuploadedRoute: false
     readonly property var _routeMappingTakeoffPath: {
         if (!routeMappingTakeoffCoordinate || !routeMappingTakeoffCoordinate.isValid
@@ -689,6 +693,44 @@ FlightMap {
     ObstacleDistanceOverlayMap {
         id: obstacleDistance
         showText: !pipMode
+    }
+
+    // NodeODM orthomosaic. Its on-screen dimensions are recomputed from the
+    // GeoTIFF's WGS84 bounds, so it remains geographically aligned at every
+    // map zoom instead of behaving like a fixed-size image.
+    MapQuickItem {
+        id: routeMappingOrthophotoOverlay
+        coordinate: routeMappingOrthophotoNorthWest
+        anchorPoint.x: 0
+        anchorPoint.y: 0
+        visible: routeMappingOrthophotoReady
+                 && routeMappingOrthophotoNorthWest
+                 && routeMappingOrthophotoNorthWest.isValid
+                 && routeMappingOrthophotoSouthEast
+                 && routeMappingOrthophotoSouthEast.isValid
+        z: QGroundControl.zOrderWaypointLines - 1
+
+        sourceItem: Image {
+            readonly property real _mapZoomDependency: _root.zoomLevel
+            readonly property point _northWestPoint: {
+                var unused = _mapZoomDependency
+                return _root.fromCoordinate(routeMappingOrthophotoNorthWest, false)
+            }
+            readonly property point _southEastPoint: {
+                var unused = _mapZoomDependency
+                return _root.fromCoordinate(routeMappingOrthophotoSouthEast, false)
+            }
+
+            width: Math.max(1, Math.abs(_southEastPoint.x - _northWestPoint.x))
+            height: Math.max(1, Math.abs(_southEastPoint.y - _northWestPoint.y))
+            source: routeMappingOrthophotoUrl
+            fillMode: Image.Stretch
+            asynchronous: true
+            cache: false
+            smooth: true
+            mipmap: true
+            opacity: 0.82
+        }
     }
 
     // Add trajectory lines to the map
@@ -1577,9 +1619,8 @@ FlightMap {
         z: QGroundControl.zOrderWaypointLines + 2
     }
 
-    // Each confirmed mapping capture becomes a georeferenced camera footprint.
-    // The image is a live frame saved at CAMERA_IMAGE_CAPTURED time and scales
-    // with map zoom so successive shots form an in-progress orthomosaic strip.
+    // Each native CAMERA_TRIGGER becomes a georeferenced camera footprint. It
+    // scales with map zoom so successive shots form an in-progress mosaic strip.
     MapItemView {
         model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
 
@@ -1590,14 +1631,21 @@ FlightMap {
             required property real photoLongitude
             required property real photoAltitude
             required property real photoHeading
+            required property real photoAgl
+            required property real photoFootprintSide
+            required property real photoFootprintFrontal
             required property int photoSequence
             required property string photoImageSource
             required property bool photoReady
             required property bool photoFetchFailed
             required property bool photoPlaceholder
 
-            property real footprintSide: _root.routeMappingPhotoFootprintSide
-            property real footprintFrontal: _root.routeMappingPhotoFootprintFrontal
+            property real footprintSide: mappingPhotoItem.photoFootprintSide > 0
+                                         ? mappingPhotoItem.photoFootprintSide
+                                         : _root.routeMappingPhotoFootprintSide
+            property real footprintFrontal: mappingPhotoItem.photoFootprintFrontal > 0
+                                            ? mappingPhotoItem.photoFootprintFrontal
+                                            : _root.routeMappingPhotoFootprintFrontal
             property real mapZoom: _root.zoomLevel
             property var mapCenter: _root.center
             property real mapBearing: _root.bearing
@@ -1682,7 +1730,9 @@ FlightMap {
                     anchors.fill: parent
                     visible: mappingPhotoItem.photoImageSource.length > 0
                     source: mappingPhotoItem.photoImageSource
-                    fillMode: Image.Stretch
+                    // Preserve the 1260x720 frame proportions. The surrounding
+                    // rectangle represents the IMX708 optical footprint at AGL.
+                    fillMode: Image.PreserveAspectCrop
                     asynchronous: true
                     cache: false
                     // MapItemView + ListModel can miss role updates; force reload when URL arrives.

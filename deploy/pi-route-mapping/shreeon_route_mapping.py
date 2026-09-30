@@ -20,6 +20,7 @@ import sys
 import termios
 import threading
 import time
+from collections import deque
 from collections.abc import Callable
 from datetime import datetime
 
@@ -54,6 +55,200 @@ class CaptureRequest:
     session_directory: pathlib.Path | None = None
     planned_path: pathlib.Path | None = None
     thumbnail_path: pathlib.Path | None = None
+    trigger_monotonic: float = dataclasses.field(default_factory=time.monotonic)
+
+
+class MjpegFrameSource:
+    """Keep rpicam-vid running and retain frames around each trigger time."""
+
+    def __init__(
+        self,
+        capture_user: str,
+        camera_command: str,
+        width: int,
+        height: int,
+        framerate: float,
+        quality: int,
+        buffer_count: int,
+        startup_timeout_sec: float,
+    ) -> None:
+        self._capture_user = capture_user
+        self._camera_command = camera_command
+        self._width = width
+        self._height = height
+        self._framerate = framerate
+        self._quality = quality
+        self._buffer_count = buffer_count
+        self._startup_timeout_sec = startup_timeout_sec
+        self._condition = threading.Condition()
+        self._frames: deque[tuple[float, bytes]] = deque(
+            maxlen=max(4, min(32, int(max(1.0, framerate) * 3)))
+        )
+        self._process: subprocess.Popen[bytes] | None = None
+        self._reader_thread: threading.Thread | None = None
+        self._stderr_thread: threading.Thread | None = None
+
+    @property
+    def running(self) -> bool:
+        process = self._process
+        return process is not None and process.poll() is None
+
+    def start(self) -> None:
+        if self.running:
+            return
+        self.stop()
+        with self._condition:
+            self._frames.clear()
+
+        capture_account = pwd.getpwnam(self._capture_user)
+        command = [
+            "/usr/bin/env",
+            f"XDG_RUNTIME_DIR=/run/user/{capture_account.pw_uid}",
+            self._camera_command,
+            "--timeout",
+            "0",
+            "--nopreview",
+            "--buffer-count",
+            str(self._buffer_count),
+            "--width",
+            str(self._width),
+            "--height",
+            str(self._height),
+            "--framerate",
+            str(self._framerate),
+            "--codec",
+            "mjpeg",
+            "--quality",
+            str(self._quality),
+            "--output",
+            "-",
+        ]
+        if os.geteuid() != capture_account.pw_uid:
+            command = [
+                "/usr/sbin/runuser",
+                "-u",
+                self._capture_user,
+                "--",
+                *command,
+            ]
+        LOGGER.info(
+            "Starting persistent mapping camera: %dx%d %.2f fps MJPEG",
+            self._width,
+            self._height,
+            self._framerate,
+        )
+        self._process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            bufsize=0,
+            start_new_session=True,
+        )
+        self._reader_thread = threading.Thread(
+            target=self._read_frames,
+            name="mapping-mjpeg-reader",
+            daemon=True,
+        )
+        self._stderr_thread = threading.Thread(
+            target=self._read_stderr,
+            name="mapping-camera-log",
+            daemon=True,
+        )
+        self._reader_thread.start()
+        self._stderr_thread.start()
+        # Do not acknowledge VIDEO_PAUSE until the camera is producing frames.
+        try:
+            self.frame_after(time.monotonic() - 1.0, self._startup_timeout_sec)
+        except Exception:
+            self.stop()
+            raise
+
+    def stop(self) -> None:
+        process = self._process
+        self._process = None
+        if process is None:
+            return
+        if process.poll() is None:
+            try:
+                os.killpg(process.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                process.wait(timeout=2)
+        with self._condition:
+            self._condition.notify_all()
+        if process.stdout is not None:
+            process.stdout.close()
+        if process.stderr is not None:
+            process.stderr.close()
+        LOGGER.info("Persistent mapping camera stopped")
+
+    def frame_after(self, trigger_monotonic: float, timeout_sec: float) -> tuple[bytes, float]:
+        deadline = time.monotonic() + max(0.1, timeout_sec)
+        with self._condition:
+            while True:
+                for frame_time, frame in self._frames:
+                    if frame_time >= trigger_monotonic:
+                        return frame, frame_time
+                process = self._process
+                if process is None or process.poll() is not None:
+                    raise RuntimeError("rpicam-vid stopped before a frame was captured")
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise TimeoutError("Timed out waiting for an rpicam-vid frame")
+                self._condition.wait(timeout=remaining)
+
+    def _read_frames(self) -> None:
+        process = self._process
+        if process is None or process.stdout is None:
+            return
+        buffer = bytearray()
+        try:
+            while process.poll() is None:
+                chunk = process.stdout.read(65536)
+                if not chunk:
+                    break
+                buffer.extend(chunk)
+                while True:
+                    start = buffer.find(b"\xff\xd8")
+                    if start < 0:
+                        if len(buffer) > 1:
+                            del buffer[:-1]
+                        break
+                    if start:
+                        del buffer[:start]
+                    end = buffer.find(b"\xff\xd9", 2)
+                    if end < 0:
+                        break
+                    frame = bytes(buffer[: end + 2])
+                    del buffer[: end + 2]
+                    frame_time = time.monotonic()
+                    with self._condition:
+                        self._frames.append((frame_time, frame))
+                        self._condition.notify_all()
+        except (OSError, ValueError):
+            LOGGER.exception("Persistent mapping camera output failed")
+        finally:
+            with self._condition:
+                self._condition.notify_all()
+
+    def _read_stderr(self) -> None:
+        process = self._process
+        if process is None or process.stderr is None:
+            return
+        try:
+            for raw_line in iter(process.stderr.readline, b""):
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if line:
+                    LOGGER.info("rpicam-vid: %s", line)
+        except (OSError, ValueError):
+            return
 
 
 def x25_crc(data: bytes, crc: int = 0xFFFF) -> int:
@@ -152,20 +347,44 @@ class CaptureWorker(threading.Thread):
         capture_user: str,
         camera_service: str,
         camera_command: str,
-        timeout_ms: int,
+        thumbnail_command: str,
+        mapping_width: int,
+        mapping_height: int,
+        mapping_framerate: float,
+        mapping_quality: int,
+        mapping_buffer_count: int,
+        frame_wait_sec: float,
         video_release_delay_sec: float,
     ) -> None:
         super().__init__(name="photo-capture", daemon=True)
         # A mapping mission can easily contain hundreds of photographs. The
-        # old 64-item cap silently discarded the tail of a fast survey while
-        # rpicam-still was still draining earlier requests.
+        # queue is unbounded, while the persistent video source keeps normal
+        # trigger handling faster than the 6 m / 9 m flight interval.
         self._requests: queue.Queue[CaptureRequest | None] = queue.Queue()
+        self._thumbnail_requests: queue.Queue[
+            tuple[pathlib.Path, pathlib.Path] | None
+        ] = queue.Queue()
+        self._thumbnail_thread = threading.Thread(
+            target=self._thumbnail_loop,
+            name="mapping-thumbnail",
+            daemon=True,
+        )
         self._photo_root = photo_root
         self._capture_user = capture_user
         self._camera_service = camera_service
-        self._camera_command = camera_command
-        self._timeout_ms = timeout_ms
+        self._thumbnail_command = thumbnail_command
+        self._frame_wait_sec = frame_wait_sec
         self._video_release_delay_sec = video_release_delay_sec
+        self._frame_source = MjpegFrameSource(
+            capture_user,
+            camera_command,
+            mapping_width,
+            mapping_height,
+            mapping_framerate,
+            mapping_quality,
+            mapping_buffer_count,
+            max(10.0, frame_wait_sec),
+        )
         self._session_video_paused = False
         self._counter = 0
         self._session_directory: pathlib.Path | None = None
@@ -178,6 +397,12 @@ class CaptureWorker(threading.Thread):
 
     def set_session_video_paused(self, paused: bool) -> None:
         self._session_video_paused = paused
+
+    def start_mapping_video(self) -> None:
+        self._frame_source.start()
+
+    def stop_mapping_video(self) -> None:
+        self._frame_source.stop()
 
     @property
     def session_directory(self) -> pathlib.Path | None:
@@ -319,9 +544,12 @@ class CaptureWorker(threading.Thread):
             LOGGER.warning("Photo queue is busy; stopping after queued captures")
 
     def run(self) -> None:
+        self._thumbnail_thread.start()
         while True:
             request = self._requests.get()
             if request is None:
+                self._thumbnail_requests.put(None)
+                self._thumbnail_thread.join(timeout=15)
                 return
             with self._request_lock:
                 self._capture_active = True
@@ -355,6 +583,30 @@ class CaptureWorker(threading.Thread):
             finally:
                 with self._request_lock:
                     self._capture_active = False
+
+    def _thumbnail_loop(self) -> None:
+        while True:
+            thumbnail_request = self._thumbnail_requests.get()
+            if thumbnail_request is None:
+                return
+            filename, thumbnail_path = thumbnail_request
+            thumbnail_command = [
+                self._thumbnail_command,
+                str(filename),
+                "--output",
+                str(thumbnail_path),
+                "--wait-seconds",
+                "0",
+            ]
+            try:
+                subprocess.run(thumbnail_command, check=True, timeout=10)
+                LOGGER.info(
+                    "Saved thumbnail %s (%d bytes)",
+                    thumbnail_path,
+                    thumbnail_path.stat().st_size,
+                )
+            except (OSError, subprocess.SubprocessError):
+                LOGGER.exception("Could not generate %s", thumbnail_path)
 
     def _create_session_directory(self, photo_root: pathlib.Path) -> pathlib.Path:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -420,74 +672,36 @@ class CaptureWorker(threading.Thread):
                     ["systemctl", "stop", self._camera_service], check=True
                 )
                 time.sleep(self._video_release_delay_sec)
+            if manage_video_per_shot:
+                self._frame_source.start()
 
-            command = [
-                "/usr/sbin/runuser",
-                "-u",
-                self._capture_user,
-                "--",
-                "/usr/bin/env",
-                "XDG_RUNTIME_DIR=/run/user/1000",
-                self._camera_command,
-                "--timeout",
-                str(self._timeout_ms),
-                "--nopreview",
-                "--immediate",
-                "--autofocus-mode",
-                "manual",
-                "--lens-position",
-                "0.0",
-                "--width",
-                "4608",
-                "--height",
-                "2592",
-                "--quality",
-                "85",
-                "--output",
-                str(temporary_filename),
-            ]
-            try:
-                subprocess.run(command, check=True, timeout=30)
-            except subprocess.CalledProcessError:
-                time.sleep(0.5)
-                subprocess.run(command, check=True, timeout=30)
-            if not temporary_filename.is_file() or temporary_filename.stat().st_size == 0:
-                raise RuntimeError("rpicam-still did not create a JPEG")
+            frame, frame_time = self._frame_source.frame_after(
+                request.trigger_monotonic,
+                self._frame_wait_sec,
+            )
+            if not frame.startswith(b"\xff\xd8") or not frame.endswith(b"\xff\xd9"):
+                raise RuntimeError("rpicam-vid returned an invalid MJPEG frame")
+            temporary_filename.write_bytes(frame)
             temporary_filename.replace(filename)
             capture_elapsed = time.monotonic() - capture_started
+            trigger_to_frame = frame_time - request.trigger_monotonic
             LOGGER.info(
-                "Saved %s (%d bytes) in %.2f s (gcs_sequence=%s)",
+                "Saved rpicam-vid frame %s (%d bytes) in %.3f s "
+                "(trigger-to-frame=%.3f s gcs_sequence=%s)",
                 filename,
                 filename.stat().st_size,
                 capture_elapsed,
+                trigger_to_frame,
                 request.gcs_sequence,
             )
-            if capture_elapsed > 4.0:
+            if trigger_to_frame > 1.0:
                 LOGGER.warning(
-                    "Slow still capture gcs_sequence=%s took %.2f s — check SD "
-                    "utilization (iostat), thermal (vcgencmd get_throttled), "
-                    "and extract_jpeg_thumbnail blocking",
+                    "Late mapping frame gcs_sequence=%s arrived %.3f s after trigger",
                     request.gcs_sequence,
-                    capture_elapsed,
+                    trigger_to_frame,
                 )
             if request.thumbnail_path is not None:
-                thumbnail_command = [
-                    "/home/shreeon/extract_jpeg_thumbnail.py",
-                    str(filename),
-                    "--output",
-                    str(request.thumbnail_path),
-                    "--wait-seconds",
-                    "0",
-                ]
-                try:
-                    subprocess.run(thumbnail_command, check=True, timeout=5)
-                    LOGGER.info(
-                        "Saved thumbnail %s (%d bytes)",
-                        request.thumbnail_path,
-                        request.thumbnail_path.stat().st_size,
-                    )
-                except (OSError, subprocess.SubprocessError):
-                    LOGGER.exception("Could not generate %s", request.thumbnail_path)
+                self._thumbnail_requests.put((filename, request.thumbnail_path))
             sidecar = filename.with_suffix(".json")
             sidecar.write_text(
                 json.dumps(
@@ -498,6 +712,8 @@ class CaptureWorker(threading.Thread):
                         "px4_sequence": request.sequence,
                         "filename": filename.name,
                         "captured_at": timestamp,
+                        "trigger_to_frame_seconds": round(trigger_to_frame, 6),
+                        "capture_backend": "persistent-rpicam-vid-mjpeg",
                     },
                     indent=2,
                 ),
@@ -506,10 +722,12 @@ class CaptureWorker(threading.Thread):
         finally:
             if temporary_filename.exists():
                 temporary_filename.unlink()
-            if manage_video_per_shot and video_was_active:
-                subprocess.run(
-                    ["systemctl", "start", self._camera_service], check=False
-                )
+            if manage_video_per_shot:
+                self._frame_source.stop()
+                if video_was_active:
+                    subprocess.run(
+                        ["systemctl", "start", self._camera_service], check=False
+                    )
 
 
 def open_serial(device: str, baud: int) -> int:
@@ -571,7 +789,13 @@ class RouteMappingService:
             arguments.capture_user,
             arguments.camera_service,
             arguments.camera_command,
-            arguments.capture_timeout_ms,
+            arguments.thumbnail_command,
+            arguments.mapping_width,
+            arguments.mapping_height,
+            arguments.mapping_framerate,
+            arguments.mapping_quality,
+            arguments.mapping_buffer_count,
+            arguments.frame_wait_sec,
             arguments.video_release_delay_sec,
         )
 
@@ -593,11 +817,19 @@ class RouteMappingService:
                     ["systemctl", "stop", self._arguments.camera_service], check=True
                 )
                 time.sleep(self._arguments.video_release_delay_sec)
+            self._capture_worker.start_mapping_video()
             self._capture_worker.set_session_video_paused(True)
         except Exception:
             self._gcs_controls_captures = False
+            self._capture_worker.stop_mapping_video()
+            subprocess.run(
+                ["systemctl", "start", self._arguments.camera_service], check=False
+            )
             raise
-        LOGGER.info("Live video paused for mapping still session %s", session_directory)
+        LOGGER.info(
+            "WFB video paused; persistent rpicam-vid mapping session ready: %s",
+            session_directory,
+        )
         return session_directory
 
     def resume_live_video(self) -> None:
@@ -605,6 +837,7 @@ class RouteMappingService:
         if not self._capture_worker.wait_until_idle(10.0):
             LOGGER.warning("Active camera exposure did not finish before video resume")
         self._gcs_controls_captures = False
+        self._capture_worker.stop_mapping_video()
         self._capture_worker.set_session_video_paused(False)
         subprocess.run(
             ["systemctl", "start", self._arguments.camera_service], check=False
@@ -638,8 +871,13 @@ class RouteMappingService:
                     LOGGER.exception("I/O callback failed")
             self._discard_old_trigger_ids()
 
+        self._capture_worker.cancel_pending()
         self._capture_worker.stop()
         self._capture_worker.join(timeout=35)
+        self._capture_worker.stop_mapping_video()
+        subprocess.run(
+            ["systemctl", "start", self._arguments.camera_service], check=False
+        )
         self._close_serial()
         self._selector.close()
         self._manual_socket.close()
@@ -845,13 +1083,21 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--photo-root", default="/home/shreeon/mapping_photos")
     parser.add_argument("--capture-user", default="shreeon")
     parser.add_argument("--camera-service", default="wfb-camera.service")
-    parser.add_argument("--camera-command", default="/usr/local/bin/rpicam-still")
-    parser.add_argument("--capture-timeout-ms", type=int, default=1500)
+    parser.add_argument("--camera-command", default="/usr/local/bin/rpicam-vid")
+    parser.add_argument(
+        "--thumbnail-command", default="/home/shreeon/extract_jpeg_thumbnail.py"
+    )
+    parser.add_argument("--mapping-width", type=int, default=4608)
+    parser.add_argument("--mapping-height", type=int, default=2592)
+    parser.add_argument("--mapping-framerate", type=float, default=5.0)
+    parser.add_argument("--mapping-quality", type=int, default=85)
+    parser.add_argument("--mapping-buffer-count", type=int, default=2)
+    parser.add_argument("--frame-wait-sec", type=float, default=3.0)
     parser.add_argument(
         "--video-release-delay-sec",
         type=float,
         default=2.0,
-        help="Wait after stopping wfb-camera before rpicam-still",
+        help="Wait after stopping wfb-camera before starting mapping rpicam-vid",
     )
     return parser.parse_args()
 

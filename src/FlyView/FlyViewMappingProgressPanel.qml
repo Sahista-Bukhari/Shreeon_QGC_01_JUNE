@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Controls
 import QtQuick.Layouts
 
 import QGroundControl
@@ -16,16 +17,34 @@ Rectangle {
     property bool photosVisible: true
     property var photoModel: null
     property string reconstructionText: qsTr("Pending")
+    property bool reconstructionReady: false
+    property bool reconstructionRunning: false
+    property bool reconstructionComplete: false
+    property int reconstructionProgress: 0
+
+    signal reconstructionRequested()
 
     readonly property real _thumbSize: ScreenTools.defaultFontPixelHeight * 4.2
 
     readonly property int _photosPercent: photosPlanned > 0
                                           ? Math.min(100, Math.floor((photosTaken / photosPlanned) * 100))
                                           : 0
+    readonly property bool _reconstructionPhaseActive: reconstructionReady
+                                                        || reconstructionRunning
+                                                        || reconstructionComplete
+    readonly property int _reconstructionPercent: reconstructionComplete
+                                                   ? 100
+                                                   : (reconstructionRunning
+                                                      ? reconstructionProgress
+                                                      : 0)
     readonly property int totalPercent: !photosVisible ? routePercent
-                                        : (photosTaken > 0
-                                           ? Math.floor((routePercent + _photosPercent) / 2)
-                                           : routePercent)
+                                        : (_reconstructionPhaseActive
+                                           ? Math.floor((routePercent
+                                                         + _photosPercent
+                                                         + _reconstructionPercent) / 3)
+                                           : (photosTaken > 0
+                                              ? Math.floor((routePercent + _photosPercent) / 2)
+                                              : routePercent))
 
     readonly property real _hPad: ScreenTools.defaultFontPixelWidth * 1.8
     readonly property real _vPad: ScreenTools.defaultFontPixelHeight * 0.5
@@ -185,6 +204,25 @@ Rectangle {
                 labelText: qsTr("Reconstruction")
                 valueText: root.reconstructionText
             }
+        }
+
+        QGCButton {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.photosVisible && (root.reconstructionReady || root.reconstructionRunning)
+            enabled: root.reconstructionReady && !root.reconstructionRunning
+            text: root.reconstructionRunning
+                  ? root.reconstructionText
+                  : qsTr("Start ODM Stitching")
+            onClicked: root.reconstructionRequested()
+        }
+
+        ProgressBar {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.photosVisible && root.reconstructionRunning
+            width: metricsRow.width
+            from: 0
+            to: 100
+            value: root.reconstructionProgress
         }
 
         QGCLabel {

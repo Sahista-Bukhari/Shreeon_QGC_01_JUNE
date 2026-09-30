@@ -405,7 +405,6 @@ Item {
         flyView.routeMappingExitCoordinate = overlayData.exitCoordinate
         flyView.routeMappingEntryHeading = overlayData.entryHeading
         flyView.routeMappingExitHeading = overlayData.exitHeading
-        flyView.routeMappingPlannedPhotoCount = 0
         flyView._routeMappingOverlayLocked = true
 
         if (flyView.mapControl) {

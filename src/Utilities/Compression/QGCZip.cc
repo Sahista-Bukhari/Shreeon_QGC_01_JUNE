@@ -2,6 +2,8 @@
 #include "QGCLoggingCategory.h"
 
 #include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QSaveFile>
 #include <QtCore/private/qzipreader_p.h>
 #include <QtCore/private/qzipwriter_p.h>
 
@@ -91,6 +93,51 @@ bool unzipFile(const QString &zipFilePath, const QString &outputDirectoryPath)
     }
 
     zipReader.close();
+    return true;
+}
+
+bool extractFile(const QString &zipFilePath, const QString &memberPath, const QString &outputFilePath)
+{
+    QFile zipFile(zipFilePath);
+    if (!zipFile.open(QIODevice::ReadOnly)) {
+        qCWarning(QGCZipLog) << "Could not open ZIP file:" << zipFilePath;
+        return false;
+    }
+
+    QZipReader zipReader(&zipFile);
+    if (!zipReader.isReadable()) {
+        qCWarning(QGCZipLog) << "Could not read ZIP file:" << zipFilePath;
+        return false;
+    }
+
+    bool memberFound = false;
+    const QList<QZipReader::FileInfo> entries = zipReader.fileInfoList();
+    for (const QZipReader::FileInfo &entry : entries) {
+        if (entry.isFile && entry.filePath == memberPath) {
+            memberFound = true;
+            break;
+        }
+    }
+    if (!memberFound) {
+        qCWarning(QGCZipLog) << "ZIP member was not found:" << memberPath;
+        return false;
+    }
+
+    const QFileInfo outputInfo(outputFilePath);
+    if (!QDir().mkpath(outputInfo.absolutePath())) {
+        qCWarning(QGCZipLog) << "Could not create output directory:" << outputInfo.absolutePath();
+        return false;
+    }
+
+    const QByteArray contents = zipReader.fileData(memberPath);
+    QSaveFile outputFile(outputFilePath);
+    if (!outputFile.open(QIODevice::WriteOnly)
+        || outputFile.write(contents) != contents.size()
+        || !outputFile.commit()) {
+        qCWarning(QGCZipLog) << "Could not extract ZIP member to:" << outputFilePath;
+        return false;
+    }
+
     return true;
 }
 

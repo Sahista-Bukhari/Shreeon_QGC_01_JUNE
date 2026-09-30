@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import fcntl
 import pathlib
+import subprocess
 import struct
 import time
 
@@ -100,12 +101,48 @@ def _publish_preview(
     if preview.is_file() and preview.stat().st_size > 0:
         return True
     thumbnail = _embedded_thumbnail(source)
-    if not thumbnail:
-        return False
     temporary = pathlib.Path(str(preview) + ".part")
-    temporary.write_bytes(thumbnail)
-    temporary.replace(preview)
-    return True
+    if thumbnail:
+        temporary.write_bytes(thumbnail)
+        temporary.replace(preview)
+        return True
+
+    # rpicam-vid MJPEG frames normally have no embedded EXIF thumbnail. Use
+    # the GStreamer packages already installed for the WFB camera pipeline to
+    # generate a small transfer preview without delaying the next exposure.
+    try:
+        subprocess.run(
+            [
+                "/usr/bin/gst-launch-1.0",
+                "-q",
+                "filesrc",
+                f"location={source}",
+                "!",
+                "jpegparse",
+                "!",
+                "jpegdec",
+                "!",
+                "videoscale",
+                "!",
+                "video/x-raw,width=640,height=360,pixel-aspect-ratio=1/1",
+                "!",
+                "jpegenc",
+                "quality=70",
+                "!",
+                "filesink",
+                f"location={temporary}",
+            ],
+            check=True,
+            timeout=10,
+        )
+        if temporary.is_file() and temporary.stat().st_size > 0:
+            temporary.replace(preview)
+            return True
+    except (OSError, subprocess.SubprocessError):
+        pass
+    if temporary.exists():
+        temporary.unlink()
+    return False
 
 
 def _watch_directory(directory: pathlib.Path, wait_seconds: float) -> int:

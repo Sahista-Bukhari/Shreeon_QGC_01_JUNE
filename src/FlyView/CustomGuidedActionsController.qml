@@ -11,3 +11,4 @@ QtObject {
         return false // false = action not handled here
     }
 }
+

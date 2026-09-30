@@ -2,6 +2,8 @@
 
 This guide installs, copies, builds, and runs this customized QGroundControl project on a Raspberry Pi 4.
 
+**Cross-compile on a PC and ship an AppImage (no second QGC compile):** see [RASPBERRY_PI_CROSS_BUILD_AND_APPIMAGE.md](RASPBERRY_PI_CROSS_BUILD_AND_APPIMAGE.md) and `deploy/linux/sync-cross-build-for-appimage.sh` / `package-appimage-on-pi.sh`.
+
 ## Requirements
 
 - Raspberry Pi 4 with 4 GB RAM or more

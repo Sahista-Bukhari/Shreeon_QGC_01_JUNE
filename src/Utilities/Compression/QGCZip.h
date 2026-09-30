@@ -10,4 +10,7 @@ namespace QGCZip {
 
     /// Method to unzip files to a given directory
     bool unzipFile(const QString &zipFilePath, const QString &outputDirectoryPath);
+
+    /// Extracts one exact archive member to a file.
+    bool extractFile(const QString &zipFilePath, const QString &memberPath, const QString &outputFilePath);
 } // namespace QGCZip

@@ -14,7 +14,15 @@ ExecStart=/usr/local/libexec/shreeon-route-mapping-capture \
     --wfb-port ${WFB_PORT} \
     --manual-host ${MANUAL_HOST} \
     --manual-port ${MANUAL_PORT} \
-    --photo-root ${PHOTO_ROOT}
+    --photo-root ${PHOTO_ROOT} \
+    --camera-command ${CAMERA_COMMAND} \
+    --thumbnail-command ${THUMBNAIL_COMMAND} \
+    --mapping-width ${MAPPING_WIDTH} \
+    --mapping-height ${MAPPING_HEIGHT} \
+    --mapping-framerate ${MAPPING_FRAMERATE} \
+    --mapping-quality ${MAPPING_QUALITY} \
+    --mapping-buffer-count ${MAPPING_BUFFER_COUNT} \
+    --frame-wait-sec ${FRAME_WAIT_SEC}
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=40

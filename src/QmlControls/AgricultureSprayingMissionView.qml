@@ -434,7 +434,6 @@ Item {
         flyView.routeMappingExitCoordinate = QtPositioning.coordinate()
         flyView.routeMappingEntryHeading = 0
         flyView.routeMappingExitHeading = 0
-        flyView.routeMappingPlannedPhotoCount = 0
     }
 
     // Hides map visuals, runs a plan change, then restores visuals after.
@@ -1599,7 +1598,6 @@ Item {
             flyView.routeMappingEntryHeading = routeMappingOverlayData.entryHeading
             flyView.routeMappingExitHeading = routeMappingOverlayData.exitHeading
             // Photo progress UI is Route Mapping only.
-            flyView.routeMappingPlannedPhotoCount = 0
             if (routeMappingOverlayData.transectPath
                     && routeMappingOverlayData.transectPath.length >= 2) {
                 flyView._routeMappingOverlayLocked = true

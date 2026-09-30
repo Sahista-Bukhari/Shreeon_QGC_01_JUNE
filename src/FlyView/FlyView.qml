@@ -43,6 +43,10 @@ Item {
     property int    routeMappingPlannedPhotoCount: 0
     property real   routeMappingPhotoFootprintSide: 25
     property real   routeMappingPhotoFootprintFrontal: 25
+    // Raspberry Pi Camera Module 3 (Sony IMX708), landscape/nadir mounting.
+    // Calculate each image's ground footprint from these optical FOVs and AGL.
+    readonly property real routeMappingCameraHorizontalFovDegrees: 66
+    readonly property real routeMappingCameraVerticalFovDegrees: 41
     // Native SurveyComplexItem camera trigger interval, always in raw meters.
     property real   routeMappingTriggerDistance: 25
     property var    routeMappingLivePhotoModel: _routeMappingLivePhotoModel
@@ -551,11 +555,13 @@ Item {
     property var    _routeMappingSessionPhotoFiles: []
     property int    _routeMappingPhotosRetrieved: 0
     property int    _routeMappingCaptureFailures: 0
-    // QGC-calculated photo schedule (source of truth); not MAVLink CAMERA_TRIGGER.
+    // Retained for planning/progress. Actual exposures are driven by PX4's
+    // MAVLink CAMERA_TRIGGER messages.
     property var    _routeMappingGcsTriggerDistances: []
     property int    _routeMappingGcsNextTriggerIndex: 0
-    property real   _routeMappingMaxAlongPathSeen: 0
     property int    _routeMappingTriggersReceived: 0
+    property var    _routeMappingNativeTriggerSequences: []
+    property real   _routeMappingLastNativeTriggerMs: 0
     property bool   _routeMappingGcsSessionPathAnnounced: false
     // Set when planned triggers are done, photo legs end, or mission leaves survey (RTH).
     property bool   _routeMappingPhotoTriggersComplete: false
@@ -696,6 +702,10 @@ Item {
             mainWindow.showMessageDialog(QGroundControl.appName, errorMessage)
         }
 
+        onOdmError: function(errorMessage) {
+            mainWindow.showMessageDialog(qsTr("Route Mapping Reconstruction"), errorMessage)
+        }
+
         onSessionActiveChanged: {
             if (_root.routeMappingPhotoProgressEnabled && _root.routeMappingPiPhotoFetchEnabled) {
                 if (routeMappingPhotoController.sessionActive) {
@@ -720,12 +730,15 @@ Item {
         _routeMappingPhotosRetrieved = 0
         _routeMappingCaptureFailures = 0
         _routeMappingGcsNextTriggerIndex = 0
-        _routeMappingMaxAlongPathSeen = 0
         _routeMappingTriggersReceived = 0
+        _routeMappingNativeTriggerSequences = []
+        _routeMappingLastNativeTriggerMs = 0
         _routeMappingGcsSessionPathAnnounced = false
         _routeMappingPhotoTriggersComplete = false
         _rebuildRouteMappingGcsTriggerSchedule()
-        routeMappingPhotoController.discardSessionStorage()
+        // Keep completed mission photos: they remain the input for geotagging
+        // and ODM after a later flight is armed.
+        routeMappingPhotoController.cancelSession()
         if (routeMappingPiPhotoFetchEnabled) {
             routeMappingPiPhotoFetcher.resumeLiveVideo()
         }
@@ -785,60 +798,58 @@ Item {
         _routeMappingSessionPhotoFiles = files
     }
 
-    /// Place N triggers along the same transect polyline used for route % progress.
+    /// Mirror the native survey trigger command: one image at each transect
+    /// entry, then the selected 6 m / 9 m interval, plus the exit image.
     function _rebuildRouteMappingGcsTriggerSchedule() {
         var schedule = []
         var spacing = Math.max(0.1, Number(routeMappingTriggerDistance))
         var planned = Number(routeMappingPlannedPhotoCount)
-        var path = routeMappingTransectPath
+        var points = routeMappingPhotoCaptureTransectPoints
 
-        if (path && path.length >= 2 && spacing > 0) {
-            var totalLen = 0
-            for (var seg = 1; seg < path.length; seg++) {
-                totalLen += path[seg - 1].distanceTo(path[seg])
-            }
-            if (totalLen > 0) {
-                if (planned > 0) {
-                    if (planned === 1) {
-                        schedule.push(0)
-                    } else {
-                        for (var n = 0; n < planned; n++) {
-                            schedule.push((n / (planned - 1)) * totalLen)
-                        }
-                    }
-                } else {
-                    var shots = Math.ceil(totalLen / spacing) + 1
-                    for (var j = 0; j < shots; j++) {
-                        schedule.push(Math.min(j * spacing, totalLen))
-                    }
+        if (points && points.length >= 2 && spacing > 0) {
+            var cumulative = 0
+            var previousEnd = null
+            for (var leg = 0; leg + 1 < points.length; leg += 2) {
+                var start = points[leg]
+                var end = points[leg + 1]
+                if (!start || !start.isValid || !end || !end.isValid) {
+                    continue
                 }
+                // The map helper uses the flattened [start,end,start,end]
+                // polyline. Include the turn connector in its coordinate space,
+                // but never schedule a photo on that connector.
+                if (previousEnd && previousEnd.isValid) {
+                    cumulative += previousEnd.distanceTo(start)
+                }
+                var legLen = start.distanceTo(end)
+                if (legLen <= 0) {
+                    previousEnd = end
+                    continue
+                }
+                var shotsOnLeg = Math.ceil(legLen / spacing) + 1
+                for (var i = 0; i < shotsOnLeg; i++) {
+                    schedule.push(cumulative + Math.min(i * spacing, legLen))
+                }
+                cumulative += legLen
+                previousEnd = end
             }
         }
 
         if (schedule.length === 0) {
-            var points = routeMappingPhotoCaptureTransectPoints
-            if (points && points.length >= 2) {
-                var cumulative = 0
-                for (var leg = 0; leg + 1 < points.length; leg += 2) {
-                    var start = points[leg]
-                    var end = points[leg + 1]
-                    if (!start || !start.isValid || !end || !end.isValid) {
-                        continue
-                    }
-                    var legLen = start.distanceTo(end)
-                    if (legLen <= 0) {
-                        continue
-                    }
-                    var shotsOnLeg = Math.ceil(legLen / spacing) + 1
-                    for (var i = 0; i < shotsOnLeg; i++) {
-                        schedule.push(cumulative + Math.min(i * spacing, legLen))
-                    }
-                    cumulative += legLen
+            var path = routeMappingTransectPath
+            if (path && path.length >= 2 && spacing > 0) {
+                var totalLen = 0
+                for (var seg = 1; seg < path.length; seg++) {
+                    totalLen += path[seg - 1].distanceTo(path[seg])
+                }
+                var shots = Math.ceil(totalLen / spacing) + 1
+                for (var j = 0; j < shots; j++) {
+                    schedule.push(Math.min(j * spacing, totalLen))
                 }
             }
-            if (planned > 0 && schedule.length > planned) {
-                schedule = schedule.slice(0, planned)
-            }
+        }
+        if (planned > 0 && schedule.length > planned) {
+            schedule = schedule.slice(0, planned)
         }
 
         _routeMappingGcsTriggerDistances = schedule
@@ -946,115 +957,6 @@ Item {
         return true
     }
 
-    function _issueGcsRouteMappingTriggerAtIndex(scheduleIndex, fallbackCoordinate) {
-        var schedule = _routeMappingGcsTriggerDistances
-        if (!schedule || scheduleIndex < 0 || scheduleIndex >= schedule.length) {
-            return false
-        }
-
-        var triggerDistance = schedule[scheduleIndex]
-        var triggerCoordinate = mapControl.routeMappingCoordinateAtDistanceAlongPath(triggerDistance)
-        if (!triggerCoordinate || !triggerCoordinate.isValid) {
-            triggerCoordinate = fallbackCoordinate
-        }
-        if (!triggerCoordinate || !triggerCoordinate.isValid) {
-            return false
-        }
-
-        var heading = mapControl.routeMappingHeadingAtCoordinate(triggerCoordinate)
-        var gcsSequence = scheduleIndex + 1
-        if (!_commitRouteMappingPhoto(
-                    triggerCoordinate, true, 0, heading, true, gcsSequence)) {
-            _routeMappingCaptureFailures++
-            return false
-        }
-
-        _routeMappingGcsNextTriggerIndex = scheduleIndex + 1
-        _routeMappingTriggersReceived++
-        return true
-    }
-
-    /// Fire Pi captures from QGC's precomputed trigger distances (exactly N photos).
-    function _processGcsCalculatedPhotoTriggers() {
-        if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled) {
-            return
-        }
-        if (_routeMappingPhotoTriggersComplete) {
-            return
-        }
-        if (!_routeMappingGcsCaptureAllowed() || !routeMappingPhotoController.captureEnabled) {
-            return
-        }
-        if (!_activeVehicle || !mapControl) {
-            return
-        }
-
-        var schedule = _routeMappingGcsTriggerDistances
-        if (!schedule || schedule.length === 0) {
-            return
-        }
-
-        var maxTriggers = _routeMappingPlannedTriggerCount()
-        if (_routeMappingGcsNextTriggerIndex >= maxTriggers) {
-            _markRouteMappingPhotoTriggersComplete("all planned triggers sent")
-            return
-        }
-
-        if (!_activeVehicle.missionItemIndex) {
-            return
-        }
-        var currentIdx = Number(_activeVehicle.missionItemIndex.rawValue)
-        var surveyLast = _routeMappingSurveyLastSequence()
-        if (surveyLast >= 0 && isFinite(currentIdx) && currentIdx > surveyLast) {
-            _markRouteMappingPhotoTriggersComplete("mission past survey (RTH/post-pattern)")
-            return
-        }
-
-        var spacing = Math.max(0.1, Number(routeMappingTriggerDistance))
-        var crossTolerance = Math.max(1.5, spacing * 0.35)
-        var vehicleCoordinate = _activeVehicle.coordinate
-        var alongPath = vehicleCoordinate && vehicleCoordinate.isValid
-                ? mapControl.routeMappingDistanceAlongPath(vehicleCoordinate) : -1
-        if (alongPath >= 0) {
-            _routeMappingMaxAlongPathSeen = Math.max(_routeMappingMaxAlongPathSeen, alongPath)
-        }
-        var progressAlong = _routeMappingMaxAlongPathSeen
-        var pathLength = mapControl.routeMappingPhotoCapturePathLength()
-        var pastPhotoPathEnd = pathLength > 0
-                && progressAlong >= pathLength - crossTolerance * 2
-
-        if (pastPhotoPathEnd) {
-            _markRouteMappingPhotoTriggersComplete("photo-capture path complete")
-            return
-        }
-
-        if (routeMappingPiPhotoFetchEnabled
-                && !routeMappingPhotoController.sessionActive
-                && !routeMappingPhotoController.piSessionPending) {
-            if (!routeMappingPhotoController.beginSession()) {
-                return
-            }
-        }
-
-        // The Pi camera is serial. Keeping one command outstanding prevents
-        // metadata/placeholders from running minutes ahead of real exposures.
-        if (routeMappingPhotoController.pendingCaptureCount > 0) {
-            return
-        }
-
-        if (alongPath < 0) {
-            return
-        }
-
-        var triggerDistance = schedule[_routeMappingGcsNextTriggerIndex]
-        if (progressAlong + crossTolerance < triggerDistance) {
-            return
-        }
-
-        // One planned trigger per tick at the precomputed along-path distance (Pi still serial).
-        _issueGcsRouteMappingTriggerAtIndex(_routeMappingGcsNextTriggerIndex, vehicleCoordinate)
-    }
-
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
         var triggerDistance = Math.max(1, Number(routeMappingTriggerDistance))
         var duplicateRadius = duplicateRadiusOverride > 0
@@ -1073,8 +975,107 @@ Item {
         return -1
     }
 
+    function _routeMappingCaptureAglMeters() {
+        if (!_activeVehicle) {
+            return 0
+        }
+
+        // Above-terrain is correct over sloped ground. Relative altitude is
+        // the dependable fallback when terrain data is unavailable.
+        var aboveTerrain = _activeVehicle.altitudeAboveTerr
+                ? Number(_activeVehicle.altitudeAboveTerr.rawValue) : Number.NaN
+        if (isFinite(aboveTerrain) && aboveTerrain > 0.5) {
+            return aboveTerrain
+        }
+        var relativeAltitude = _activeVehicle.altitudeRelative
+                ? Number(_activeVehicle.altitudeRelative.rawValue) : Number.NaN
+        return isFinite(relativeAltitude) && relativeAltitude > 0.5
+                ? relativeAltitude : 0
+    }
+
+    function _routeMappingGroundFootprint(aglMeters) {
+        if (!isFinite(aglMeters) || aglMeters <= 0) {
+            return {
+                side: Math.max(1, Number(routeMappingPhotoFootprintSide)),
+                frontal: Math.max(1, Number(routeMappingPhotoFootprintFrontal))
+            }
+        }
+
+        var radiansPerHalfDegree = Math.PI / 360
+        return {
+            side: 2 * aglMeters * Math.tan(
+                      routeMappingCameraHorizontalFovDegrees * radiansPerHalfDegree),
+            frontal: 2 * aglMeters * Math.tan(
+                         routeMappingCameraVerticalFovDegrees * radiansPerHalfDegree)
+        }
+    }
+
+    function _routeMappingCaptureHeading(coordinate) {
+        var vehicleHeading = _activeVehicle && _activeVehicle.heading
+                ? Number(_activeVehicle.heading.rawValue) : Number.NaN
+        if (isFinite(vehicleHeading) && vehicleHeading >= 0) {
+            return vehicleHeading
+        }
+        return mapControl.routeMappingHeadingAtCoordinate(coordinate)
+    }
+
+    function _handleRouteMappingCameraTrigger(nativeTriggerSequence, capturedCoordinate,
+                                               capturedRelativeAltitude) {
+        if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled
+                || !_routeMappingGcsCaptureAllowed()) {
+            return
+        }
+
+        var sequence = Number(nativeTriggerSequence)
+        if (!isFinite(sequence)) {
+            return
+        }
+        var sequenceKey = String(sequence)
+        if (_routeMappingNativeTriggerSequences.indexOf(sequenceKey) >= 0) {
+            return
+        }
+
+        // Some PX4 camera setups publish both CAMERA_TRIGGER and
+        // CAMERA_IMAGE_CAPTURED for the same exposure. They can use different
+        // counters, so suppress the paired report by arrival time as well.
+        var nowMs = Date.now()
+        if (_routeMappingLastNativeTriggerMs > 0
+                && nowMs - _routeMappingLastNativeTriggerMs < 500) {
+            return
+        }
+
+        var coordinate = capturedCoordinate && capturedCoordinate.isValid
+                ? capturedCoordinate : _activeVehicle.coordinate
+        if (!coordinate || !coordinate.isValid) {
+            console.warn("[RouteMapping] CAMERA_TRIGGER", sequence,
+                         "ignored because vehicle coordinate is invalid")
+            return
+        }
+
+        var seen = _routeMappingNativeTriggerSequences.slice()
+        seen.push(sequenceKey)
+        _routeMappingNativeTriggerSequences = seen
+        _routeMappingLastNativeTriggerMs = nowMs
+
+        if (_commitRouteMappingPhoto(
+                    coordinate,
+                    true,
+                    0,
+                    _routeMappingCaptureHeading(coordinate),
+                    true,
+                    sequence,
+                    capturedRelativeAltitude)) {
+            _routeMappingTriggersReceived++
+            _routeMappingGcsNextTriggerIndex = Math.min(
+                        _routeMappingGcsNextTriggerIndex + 1,
+                        _routeMappingPlannedTriggerCount())
+        } else {
+            _routeMappingCaptureFailures++
+        }
+    }
+
     function _commitRouteMappingPhoto(coordinate, telemetryConfirmed, duplicateRadiusOverride, heading,
-                                      authoritativeTrigger, nativeTriggerSequence) {
+                                      authoritativeTrigger, nativeTriggerSequence, captureAglOverride) {
         if (_routeMappingPhotoTriggersComplete) {
             return false
         }
@@ -1132,12 +1133,21 @@ Item {
             filePath = photoDirectory + separator + fileName
         }
 
+        var captureAgl = Number(captureAglOverride)
+        if (!isFinite(captureAgl) || captureAgl <= 0.5) {
+            captureAgl = _routeMappingCaptureAglMeters()
+        }
+        var groundFootprint = _routeMappingGroundFootprint(captureAgl)
+
         // Pi path: draw the map footprint immediately, then queue CAPTURE/SCP.
         _routeMappingLivePhotoModel.append({
             photoLatitude: coordinate.latitude,
             photoLongitude: coordinate.longitude,
             photoAltitude: coordinate.altitude,
             photoHeading: heading,
+            photoAgl: captureAgl,
+            photoFootprintSide: groundFootprint.side,
+            photoFootprintFrontal: groundFootprint.frontal,
             photoSequence: photoNumber,
             nativeTriggerSequence: Number(nativeTriggerSequence || 0),
             photoImageSource: routeMappingPiPhotoFetchEnabled ? "" : _mappingPhotoFileUrl(filePath),
@@ -1172,11 +1182,13 @@ Item {
 
     function _captureNewRouteMappingPhotos() {
         if (routeMappingPhotoProgressEnabled && routeMappingPiPhotoFetchEnabled) {
-            _processGcsCalculatedPhotoTriggers()
+            // Exposure timing comes from PX4 CAMERA_TRIGGER. Telemetry changes
+            // only provide opportunities to recover the Pi session.
+            _retryRouteMappingPiSessionIfNeeded()
         }
     }
 
-    // Progress panel: triggers sent vs JPEGs copied to the GCS (Pi SCP).
+    // Progress panel: native PX4 triggers accepted vs JPEGs copied to the GCS.
     readonly property int routeMappingPhotosTaken: {
         if (!routeMappingPhotoProgressEnabled) {
             return 0
@@ -1283,6 +1295,15 @@ Item {
             _root._captureNewRouteMappingPhotos()
         }
 
+        function onCameraTriggerReceived(sequence) {
+            _root._handleRouteMappingCameraTrigger(sequence)
+        }
+
+        function onCameraImageCapturedReceived(imageIndex, coordinate, relativeAltitude) {
+            _root._handleRouteMappingCameraTrigger(
+                        imageIndex, coordinate, relativeAltitude)
+        }
+
         function onInitialPlanRequestCompleteChanged(complete) {
             if (complete) {
                 _root._scheduleMissionResyncFromVehicle()
@@ -1322,7 +1343,9 @@ Item {
         running: _root.routeMappingPhotoProgressEnabled
                  && _root.routeMappingPiPhotoFetchEnabled
                  && _root.missionRunning
-        onTriggered: _root._processGcsCalculatedPhotoTriggers()
+        // CAMERA_TRIGGER is the exposure clock. This timer only keeps a failed
+        // or interrupted Pi session retriable; it never synthesizes exposures.
+        onTriggered: _root._retryRouteMappingPiSessionIfNeeded()
     }
 
     Timer {
@@ -1482,6 +1505,10 @@ Item {
             routeMappingPhotoFootprintFrontal: _root.routeMappingPhotoFootprintFrontal
             routeMappingTriggerDistance: _root.routeMappingTriggerDistance
             routeMappingLivePhotoModel: _root.routeMappingLivePhotoModel
+            routeMappingOrthophotoUrl: routeMappingPhotoController.orthophotoUrl
+            routeMappingOrthophotoNorthWest: routeMappingPhotoController.orthophotoNorthWest
+            routeMappingOrthophotoSouthEast: routeMappingPhotoController.orthophotoSouthEast
+            routeMappingOrthophotoReady: routeMappingPhotoController.orthophotoOverlayReady
             hideVehicleMissionForUnuploadedRoute: _root.hideVehicleMissionForUnuploadedRoute
             onWaypointAdded: function(coordinate) {
                 _root.insertSimpleItemAfterCurrent(coordinate)
@@ -1930,7 +1957,12 @@ Item {
         triggersReceived: _root.routeMappingPhotoProgressEnabled ? _root._routeMappingTriggersReceived : 0
         photosVisible: _root.routeMappingPhotoProgressEnabled
         photoModel: _root.routeMappingPhotoProgressEnabled ? _root.routeMappingLivePhotoModel : null
-        reconstructionText: qsTr("Pending")
+        reconstructionText: routeMappingPhotoController.reconstructionStatus
+        reconstructionReady: routeMappingPhotoController.odmReady
+        reconstructionRunning: routeMappingPhotoController.odmRunning
+        reconstructionComplete: routeMappingPhotoController.odmComplete
+        reconstructionProgress: routeMappingPhotoController.reconstructionProgress
+        onReconstructionRequested: routeMappingPhotoController.startOdm()
 
         visible: !_root.planEditMode
                  && !QGroundControl.videoManager.fullScreen

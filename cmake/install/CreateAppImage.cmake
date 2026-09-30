@@ -6,10 +6,15 @@
 # TODO: Implement go-appimage, update information with GitHub Releases, signing
 #
 
-message(STATUS "QGC: Creating AppImage...")
+if(NOT DEFINED QGC_APPIMAGE_BUILD_DIR OR QGC_APPIMAGE_BUILD_DIR STREQUAL "")
+    message(FATAL_ERROR "QGC: QGC_APPIMAGE_BUILD_DIR must be set before including CreateAppImage.cmake")
+endif()
 
-set(APPDIR_PATH "${CMAKE_BINARY_DIR}/AppDir")
-set(APPIMAGE_PATH "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-${CMAKE_SYSTEM_PROCESSOR}.AppImage")
+message(STATUS "QGC: Creating AppImage...")
+set(_qgc_appimage_build_dir "${QGC_APPIMAGE_BUILD_DIR}")
+
+set(APPDIR_PATH "${_qgc_appimage_build_dir}/AppDir")
+set(APPIMAGE_PATH "${_qgc_appimage_build_dir}/${CMAKE_PROJECT_NAME}-${CMAKE_SYSTEM_PROCESSOR}.AppImage")
 
 # ============================================================================
 # Helper Functions
@@ -18,9 +23,9 @@ set(APPIMAGE_PATH "${CMAKE_BINARY_DIR}/${CMAKE_PROJECT_NAME}-${CMAKE_SYSTEM_PROC
 # Download and cache build tools
 function(download_tool VAR URL)
     cmake_path(GET URL FILENAME _name)
-    set(_dest "${CMAKE_BINARY_DIR}/tools/${_name}")
+    set(_dest "${_qgc_appimage_build_dir}/tools/${_name}")
     if(NOT EXISTS "${_dest}")
-        file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/tools")
+        file(MAKE_DIRECTORY "${_qgc_appimage_build_dir}/tools")
         message(STATUS "QGC: Downloading ${_name} to ${_dest}")
         file(DOWNLOAD "${URL}" "${_dest}" STATUS _status)
         list(GET _status 0 _result)
@@ -57,7 +62,7 @@ execute_process(
             --appdir "${APPDIR_PATH}"
             --executable "${APPDIR_PATH}/usr/bin/${CMAKE_PROJECT_NAME}"
             --desktop-file "${APPDIR_PATH}/usr/share/applications/${QGC_PACKAGE_NAME}.desktop"
-            --custom-apprun "${CMAKE_BINARY_DIR}/AppRun"
+            --custom-apprun "${_qgc_appimage_build_dir}/AppRun"
             --icon-file "${APPDIR_PATH}/usr/share/icons/hicolor/256x256/apps/${CMAKE_PROJECT_NAME}.png"
     COMMAND_ECHO STDOUT
     COMMAND_ERROR_IS_FATAL ANY
@@ -73,7 +78,7 @@ set(ENV{ARCH} ${CMAKE_SYSTEM_PROCESSOR})
 set(ENV{VERSION} ${CMAKE_PROJECT_VERSION})
 
 execute_process(
-    COMMAND "${APPIMAGETOOL_PATH}" "${APPDIR_PATH}" "${APPIMAGE_PATH}"
+    COMMAND "${APPIMAGETOOL_PATH}" --no-appstream "${APPDIR_PATH}" "${APPIMAGE_PATH}"
     COMMAND_ECHO STDOUT
     COMMAND_ERROR_IS_FATAL ANY
 )
