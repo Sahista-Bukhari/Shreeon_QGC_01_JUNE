@@ -336,6 +336,45 @@ Item {
                                      && root._activeVehicle.flying
                                      && !root._activeVehicle.communicationLost
 
+    readonly property bool _agricultureSprayingMission: mainWindow.uploadedMissionEditor === "agricultureSpraying"
+    readonly property bool _agricultureSprayingLiveLogActive: root._agricultureSprayingMission
+                                                               && root.visible
+                                                               && root._activeVehicle
+                                                               && root._activeVehicle.flying
+
+    function _logAgricultureSprayingLiveTelemetry() {
+        if (!root._agricultureSprayingLiveLogActive) {
+            return
+        }
+        var plannedAlt = root._plannedMissionAltitude
+        var plannedSpeed = root._plannedMissionSpeed
+        console.info(
+                    "[AgricultureSpraying] Live — rel altitude (m):", root._altitude.toFixed(2),
+                    "ground speed (m/s):", root._groundSpeed.toFixed(2),
+                    "planned altitude (m):", isFinite(plannedAlt) ? plannedAlt.toFixed(2) : "n/a",
+                    "planned speed (m/s):", isFinite(plannedSpeed) ? plannedSpeed.toFixed(2) : "n/a",
+                    "flow (L/min):", root._displayFlowRate.toFixed(1))
+    }
+
+    Timer {
+        id: agricultureSprayingLiveTelemetryTimer
+        interval: 2000
+        repeat: true
+        running: root._agricultureSprayingLiveLogActive
+        onTriggered: root._logAgricultureSprayingLiveTelemetry()
+    }
+
+    Connections {
+        target: root._activeVehicle
+        ignoreUnknownSignals: true
+        function onFlyingChanged() {
+            if (!root._agricultureSprayingMission || !root._activeVehicle || !root._activeVehicle.flying) {
+                return
+            }
+            root._logAgricultureSprayingLiveTelemetry()
+        }
+    }
+
     Timer {
         interval: 1000
         repeat: true

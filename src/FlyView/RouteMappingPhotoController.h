@@ -19,7 +19,6 @@ class RouteMappingPhotoController : public QObject
 {
     Q_OBJECT
     QML_ELEMENT
-
     Q_PROPERTY(bool sessionActive READ sessionActive NOTIFY sessionActiveChanged)
     Q_PROPERTY(bool piSessionPending READ piSessionPending NOTIFY piSessionPendingChanged)
     Q_PROPERTY(QString sessionDirectory READ sessionDirectory NOTIFY sessionDirectoryChanged)
@@ -79,7 +78,7 @@ class RouteMappingPhotoController : public QObject
     Q_INVOKABLE void discardSessionStorage();
     Q_INVOKABLE QString imagePathForSequence(int sequence) const;
     Q_INVOKABLE QString metadataPathForSequence(int sequence) const;
-    Q_INVOKABLE bool requestPhotoCapture(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading);
+    Q_INVOKABLE bool requestPhotoCapture(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double relativeAltitude, double heading);
     Q_INVOKABLE bool startOdm();
 
    signals:
@@ -110,12 +109,13 @@ class RouteMappingPhotoController : public QObject
         quint32 nativeTriggerSequence = 0;
         double latitude = 0;
         double longitude = 0;
-        double altitude = 0;
+        double relativeAltitude = 0;
         double heading = 0;
+        qint64 captureTimeMsecsUtc = 0;
         int udpAttempts = 0;
     };
 
-    bool _writeMetadata(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading) const;
+    bool _writeMetadata(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double relativeAltitude, double heading, qint64 captureTimeMsecsUtc) const;
     bool _appendOdmGeotag(int sequence, const QString &localFilePath);
     enum class OdmState {
         Idle,
@@ -133,6 +133,7 @@ class RouteMappingPhotoController : public QObject
     void _downloadNodeOdmOrthophoto();
     void _finishNodeOdmDownload(QNetworkReply *reply);
     void _prepareOrthophotoOverlay();
+    void _reportOrthophotoOverlayError(const QString &errorMessage);
     void _setOdmState(OdmState state, int progress, const QString &detail = {});
     void _failOdm(const QString &errorMessage);
     void _writeOdmStateFile() const;
@@ -148,7 +149,7 @@ class RouteMappingPhotoController : public QObject
         int sequence,
         double latitude,
         double longitude,
-        double altitude,
+        double relativeAltitude,
         double heading,
         bool success,
         const QString &remotePhotoPath,

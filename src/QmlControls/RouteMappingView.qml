@@ -2442,6 +2442,7 @@ Item {
                 anchors.fill: parent
                 patternSectionTitle: qsTr("Route Mapping Pattern")
                 showPhotoSettings: true
+                synchronizeTakeoffAltitudeWithPattern: true
                 surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
                 takeoffItem: {
                     var itemCount = _missionController.visualItems.count

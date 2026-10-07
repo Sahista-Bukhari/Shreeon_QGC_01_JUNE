@@ -555,10 +555,11 @@ Item {
     property var    _routeMappingSessionPhotoFiles: []
     property int    _routeMappingPhotosRetrieved: 0
     property int    _routeMappingCaptureFailures: 0
-    // Retained for planning/progress. Actual exposures are driven by PX4's
-    // MAVLink CAMERA_TRIGGER messages.
+    // QGC-calculated photo schedule drives the Pi camera. Native MAVLink camera
+    // feedback is also accepted, but is de-duplicated against this schedule.
     property var    _routeMappingGcsTriggerDistances: []
     property int    _routeMappingGcsNextTriggerIndex: 0
+    property real   _routeMappingMaxAlongPathSeen: 0
     property int    _routeMappingTriggersReceived: 0
     property var    _routeMappingNativeTriggerSequences: []
     property real   _routeMappingLastNativeTriggerMs: 0
@@ -730,6 +731,7 @@ Item {
         _routeMappingPhotosRetrieved = 0
         _routeMappingCaptureFailures = 0
         _routeMappingGcsNextTriggerIndex = 0
+        _routeMappingMaxAlongPathSeen = 0
         _routeMappingTriggersReceived = 0
         _routeMappingNativeTriggerSequences = []
         _routeMappingLastNativeTriggerMs = 0
@@ -778,8 +780,9 @@ Item {
             return
         }
         _routeMappingPiFetchErrorShown = false
-        routeMappingPiPhotoFetcher.warmUpConnection()
         routeMappingPhotoController.captureEnabled = true
+        // beginSessionAsync performs the retrying SSH precheck and leaves its
+        // ControlMaster connection warm for subsequent SCP transfers.
         routeMappingPhotoController.beginSession()
     }
 
@@ -957,6 +960,82 @@ Item {
         return true
     }
 
+    function _issueGcsRouteMappingTriggerAtIndex(scheduleIndex, vehicleCoordinate) {
+        var schedule = _routeMappingGcsTriggerDistances
+        if (!schedule || scheduleIndex < 0 || scheduleIndex >= schedule.length
+                || !vehicleCoordinate || !vehicleCoordinate.isValid) {
+            return false
+        }
+
+        var heading = _routeMappingCaptureHeading(vehicleCoordinate)
+        if (!_commitRouteMappingPhoto(
+                    vehicleCoordinate, true, 0, heading, true, 0)) {
+            // Do not retry the same planned position forever if a capture was
+            // rejected. Record the missed shot and continue with the route.
+            _routeMappingCaptureFailures++
+            _routeMappingGcsNextTriggerIndex = scheduleIndex + 1
+            return false
+        }
+
+        _routeMappingGcsNextTriggerIndex = scheduleIndex + 1
+        _routeMappingTriggersReceived++
+        return true
+    }
+
+    /// Drive the Pi camera from the precomputed survey spacing. This is the
+    /// authoritative fallback on vehicles that execute DO_SET_CAM_TRIGG_DIST
+    /// but do not publish CAMERA_TRIGGER/CAMERA_IMAGE_CAPTURED telemetry.
+    function _processGcsCalculatedPhotoTriggers() {
+        if (!routeMappingPhotoProgressEnabled || !routeMappingPiPhotoFetchEnabled
+                || _routeMappingPhotoTriggersComplete
+                || !_routeMappingGcsCaptureAllowed()
+                || !routeMappingPhotoController.captureEnabled
+                || !_activeVehicle || !mapControl) {
+            return
+        }
+
+        var schedule = _routeMappingGcsTriggerDistances
+        var maxTriggers = _routeMappingPlannedTriggerCount()
+        if (!schedule || schedule.length === 0 || maxTriggers <= 0) {
+            return
+        }
+        if (_routeMappingGcsNextTriggerIndex >= maxTriggers) {
+            _markRouteMappingPhotoTriggersComplete("all planned triggers sent")
+            return
+        }
+
+        if (!routeMappingPhotoController.sessionActive) {
+            _retryRouteMappingPiSessionIfNeeded()
+            return
+        }
+
+        var vehicleCoordinate = _activeVehicle.coordinate
+        if (!vehicleCoordinate || !vehicleCoordinate.isValid
+                || !_routeMappingVehicleOnPhotoCapturePath()) {
+            return
+        }
+
+        var alongPath = mapControl.routeMappingDistanceAlongPath(vehicleCoordinate)
+        if (!isFinite(alongPath) || alongPath < 0) {
+            return
+        }
+        _routeMappingMaxAlongPathSeen = Math.max(_routeMappingMaxAlongPathSeen, alongPath)
+
+        var spacing = Math.max(0.1, Number(routeMappingTriggerDistance))
+        var triggerTolerance = Math.max(1.5, Math.min(6, spacing * 0.45))
+        var nextTriggerDistance = Number(schedule[_routeMappingGcsNextTriggerIndex])
+        if (!isFinite(nextTriggerDistance)
+                || _routeMappingMaxAlongPathSeen + triggerTolerance < nextTriggerDistance) {
+            return
+        }
+
+        // requestPhotoCapture queues the Pi commands and the controller sends
+        // them serially. Do not wait for SCP, which may take longer than the
+        // 6 m/9 m exposure interval.
+        _issueGcsRouteMappingTriggerAtIndex(
+                    _routeMappingGcsNextTriggerIndex, vehicleCoordinate)
+    }
+
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
         var triggerDistance = Math.max(1, Number(routeMappingTriggerDistance))
         var duplicateRadius = duplicateRadiusOverride > 0
@@ -1052,6 +1131,25 @@ Item {
             return
         }
 
+        // A native camera event can arrive just after the position scheduler
+        // has requested the same Pi exposure. Attach the native sequence to the
+        // existing shot instead of issuing a duplicate CAPTURE command.
+        var nativeDuplicateRadius = Math.max(
+                    2, Math.min(6, Number(routeMappingTriggerDistance) * 0.45))
+        var existingPhotoIndex = _mappingPhotoNearCoordinate(
+                    coordinate, nativeDuplicateRadius)
+        if (existingPhotoIndex >= 0) {
+            var duplicateSeen = _routeMappingNativeTriggerSequences.slice()
+            duplicateSeen.push(sequenceKey)
+            _routeMappingNativeTriggerSequences = duplicateSeen
+            _routeMappingLastNativeTriggerMs = nowMs
+            _routeMappingLivePhotoModel.setProperty(
+                        existingPhotoIndex, "nativeTriggerSequence", sequence)
+            _routeMappingLivePhotoModel.setProperty(
+                        existingPhotoIndex, "photoTelemetryConfirmed", true)
+            return
+        }
+
         var seen = _routeMappingNativeTriggerSequences.slice()
         seen.push(sequenceKey)
         _routeMappingNativeTriggerSequences = seen
@@ -1133,9 +1231,35 @@ Item {
             filePath = photoDirectory + separator + fileName
         }
 
-        var captureAgl = Number(captureAglOverride)
+        // Match m4_picam.py: its GLOBAL_POSITION_INT handler stores
+        // relative_alt and writes that value into GPSAltitude.
+        var captureRelativeAltitude = Number(captureAglOverride)
+        if (!isFinite(captureRelativeAltitude)) {
+            captureRelativeAltitude = _activeVehicle && _activeVehicle.altitudeRelative
+                    ? Number(_activeVehicle.altitudeRelative.rawValue) : Number.NaN
+        }
+        if (!isFinite(captureRelativeAltitude)) {
+            console.warn("[RouteMapping] Photo", photoNumber,
+                         "has no valid relative altitude; reference EXIF geotag cannot be written")
+            return false
+        }
+
+        // Keep the footprint based on actual height above the surface when it
+        // is available. This display value is independent from the reference
+        // script's relative-altitude EXIF field.
+        var captureAgl = _routeMappingCaptureAglMeters()
         if (!isFinite(captureAgl) || captureAgl <= 0.5) {
-            captureAgl = _routeMappingCaptureAglMeters()
+            captureAgl = captureRelativeAltitude
+        }
+
+        // MapQuickItem retains AMSL when available, although the JPEG EXIF
+        // intentionally follows the reference script's relative-altitude value.
+        var captureAltitudeAmsl = Number(coordinate.altitude)
+        if (!isFinite(captureAltitudeAmsl) && _activeVehicle && _activeVehicle.altitudeAMSL) {
+            captureAltitudeAmsl = Number(_activeVehicle.altitudeAMSL.rawValue)
+        }
+        if (!isFinite(captureAltitudeAmsl)) {
+            captureAltitudeAmsl = captureRelativeAltitude
         }
         var groundFootprint = _routeMappingGroundFootprint(captureAgl)
 
@@ -1143,7 +1267,7 @@ Item {
         _routeMappingLivePhotoModel.append({
             photoLatitude: coordinate.latitude,
             photoLongitude: coordinate.longitude,
-            photoAltitude: coordinate.altitude,
+            photoAltitude: captureAltitudeAmsl,
             photoHeading: heading,
             photoAgl: captureAgl,
             photoFootprintSide: groundFootprint.side,
@@ -1165,7 +1289,7 @@ Item {
                         Number(nativeTriggerSequence || 0),
                         coordinate.latitude,
                         coordinate.longitude,
-                        coordinate.altitude,
+                        captureRelativeAltitude,
                         heading)) {
                 _routeMappingLivePhotoModel.setProperty(committedIndex, "photoFetchFailed", true)
                 _routeMappingLivePhotoModel.setProperty(committedIndex, "photoPlaceholder", false)
@@ -1182,9 +1306,8 @@ Item {
 
     function _captureNewRouteMappingPhotos() {
         if (routeMappingPhotoProgressEnabled && routeMappingPiPhotoFetchEnabled) {
-            // Exposure timing comes from PX4 CAMERA_TRIGGER. Telemetry changes
-            // only provide opportunities to recover the Pi session.
             _retryRouteMappingPiSessionIfNeeded()
+            _processGcsCalculatedPhotoTriggers()
         }
     }
 
@@ -1250,6 +1373,7 @@ Item {
                 _root._retryRouteMappingPiSessionIfNeeded()
             }
         }
+
     }
 
     Connections {
@@ -1273,8 +1397,12 @@ Item {
                 // mission's survey photographs from the configured photo path.
                 _root._routeMappingSessionPhotoFiles = []
                 _root.resetRouteMappingLivePhotos()
-                // Do not start Pi SSH/VIDEO_PAUSE here — beginSession blocks the GUI
-                // thread for seconds. Session starts when the mission runs or on first capture.
+                // Session startup is asynchronous. Begin it while armed so SSH
+                // and VIDEO_PAUSE are ready before the first survey transect.
+                if (_root.routeMappingPhotoProgressEnabled
+                        && _root.routeMappingPiPhotoFetchEnabled) {
+                    _root._beginRouteMappingPhotoSession()
+                }
             } else {
                 if (_root.routeMappingPhotoProgressEnabled) {
                     _root._markRouteMappingPhotoTriggersComplete("disarmed")
@@ -1315,11 +1443,12 @@ Item {
         if (missionRunning && routeMappingPhotoProgressEnabled) {
             if (!_routeMappingPhotoTriggersComplete) {
                 routeMappingPhotoController.captureEnabled = true
-                // SSH warm-up before Pi VIDEO_PAUSE so SCP works as soon as captures start.
-                routeMappingPiPhotoFetcher.warmUpConnection()
                 if (!routeMappingPhotoController.sessionActive
                         && !routeMappingPhotoController.piSessionPending
                         && !routeMappingPiPhotoFetcher.piSessionStarting) {
+                    // This starts the retrying SSH precheck and warms the same
+                    // ControlMaster connection later used by SCP. Do not launch
+                    // a second warm-up handshake over the vehicle link.
                     routeMappingPhotoController.beginSession()
                 }
             }
@@ -1343,9 +1472,10 @@ Item {
         running: _root.routeMappingPhotoProgressEnabled
                  && _root.routeMappingPiPhotoFetchEnabled
                  && _root.missionRunning
-        // CAMERA_TRIGGER is the exposure clock. This timer only keeps a failed
-        // or interrupted Pi session retriable; it never synthesizes exposures.
-        onTriggered: _root._retryRouteMappingPiSessionIfNeeded()
+        onTriggered: {
+            _root._retryRouteMappingPiSessionIfNeeded()
+            _root._processGcsCalculatedPhotoTriggers()
+        }
     }
 
     Timer {

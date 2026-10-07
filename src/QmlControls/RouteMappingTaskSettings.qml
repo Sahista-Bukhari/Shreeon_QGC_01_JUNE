@@ -21,7 +21,8 @@ Rectangle {
     readonly property real  _radius:          ScreenTools.defaultFontPixelWidth * 0.75
 
     property int routeMode:   0   // 0 = Area Route, 1 = Boundary Route
-    property int resolution: 0   // 0 = Low, 1 = High
+    property int resolution: -1   // -1 = Custom/unselected, 0 = Low, 1 = High
+    readonly property bool _resolutionPresetSelected: resolution === 0 || resolution === 1
     property var surveyItem:  null
     property var takeoffItem: null
     property bool sprayPatternExpanded: false
@@ -42,6 +43,18 @@ Rectangle {
     // Vehicle SPRAY_* / nozzle controls are Agriculture Spraying only.
     property bool showSpraySettings: false
     property bool spraySettingsExpanded: true
+    // Route Mapping must finish its vertical takeoff before starting the
+    // horizontal transit. Matching the takeoff and survey heights prevents the
+    // first transit leg from becoming a gradual climb or descent.
+    property bool synchronizeTakeoffAltitudeWithPattern: false
+    // When set (e.g. "AgricultureSpraying"), altitude/speed commits log to the console.
+    property string consoleLogTag: ""
+
+    function _logPlanTelemetry(label, value, unit) {
+        if (root.consoleLogTag === "")
+            return
+        console.info("[" + root.consoleLogTag + "] Plan " + label + " (" + unit + "):", value)
+    }
 
     readonly property var _activeVehicle: QGroundControl.multiVehicleManager.activeVehicle
     readonly property bool _paramsReady: _activeVehicle
@@ -97,8 +110,8 @@ Rectangle {
     readonly property bool _patternAltitudeAvailable: _patternAltitudeFact !== null
     readonly property bool _patternSpeedAvailable: _patternSpeedFact !== null
 
-    // Mission altitude is bound directly to the takeoff item so it remains
-    // independent from the survey pattern altitude.
+    // Mission altitude is bound directly to the takeoff item. Route Mapping can
+    // opt into synchronizing it with the survey altitude.
     property Fact _missionAltitudeFact: takeoffItem && takeoffItem.altitude
                                         ? takeoffItem.altitude
                                         : null
@@ -143,7 +156,9 @@ Rectangle {
     // Matches TransectStyleComplexItem::applyNewAltitude so camera-calc
     // does not overwrite DistanceToSurface from GSD for known cameras.
     function _commitPatternAltitude(altitudeValue) {
-        if (!root._patternAltitudeFact || !root._cameraCalc) {
+        // A selected resolution preset owns the survey altitude. This guard
+        // also prevents a delayed slider/Save flush from overwriting it.
+        if (root._resolutionPresetSelected || !root._patternAltitudeFact || !root._cameraCalc) {
             return
         }
         var alt = Number(altitudeValue)
@@ -154,6 +169,8 @@ Rectangle {
             root._cameraCalc.valueSetIsDistance.value = true
         }
         root._patternAltitudeFact.value = alt
+        root._syncTakeoffAltitudeToPattern()
+        root._logPlanTelemetry("pattern altitude", alt, "m")
     }
 
     function _commitPatternSpeed(speedValue) {
@@ -168,6 +185,7 @@ Rectangle {
         // Enabling the override causes QGC to insert a speed command
         // before the pattern and restore the previous speed afterward.
         root.surveyItem.specifyPatternFlightSpeed = true
+        root._logPlanTelemetry("pattern speed", speed, "m/s")
     }
 
     function _commitMissionAltitude(altitudeValue) {
@@ -178,7 +196,32 @@ Rectangle {
         if (isNaN(alt)) {
             return
         }
-        root._missionAltitudeFact.value = alt
+        if (root.synchronizeTakeoffAltitudeWithPattern && root._patternAltitudeFact) {
+            alt = Number(root._patternAltitudeFact.rawValue)
+            root._missionAltitudeFact.rawValue = alt
+        } else {
+            root._missionAltitudeFact.value = alt
+        }
+        root._logPlanTelemetry("mission/takeoff altitude", alt, "m")
+    }
+
+    function _syncTakeoffAltitudeToPattern() {
+        if (!root.synchronizeTakeoffAltitudeWithPattern
+                || !root._missionAltitudeFact || !root._patternAltitudeFact) {
+            return
+        }
+
+        var patternAltitudeMeters = Number(root._patternAltitudeFact.rawValue)
+        if (!isFinite(patternAltitudeMeters)) {
+            return
+        }
+        var takeoffAltitudeMeters = Number(root._missionAltitudeFact.rawValue)
+        if (!isFinite(takeoffAltitudeMeters)
+                || Math.abs(takeoffAltitudeMeters - patternAltitudeMeters) > 0.01) {
+            root._missionAltitudeFact.rawValue = patternAltitudeMeters
+            root._logPlanTelemetry("synchronized takeoff altitude", patternAltitudeMeters, "m")
+        }
+        root._syncMissionAltitudeSlider()
     }
 
     Timer {
@@ -408,7 +451,7 @@ Rectangle {
     // AdjustedFootprintFrontal is QGC's camera trigger distance and is emitted
     // as MAV_CMD_DO_SET_CAM_TRIGG_DIST when the mission is built.
     function applyResolutionPreset() {
-        if (!root._cameraCalc || !root.surveyItem) {
+        if (!root._resolutionPresetSelected || !root._cameraCalc || !root.surveyItem) {
             return
         }
 
@@ -429,6 +472,7 @@ Rectangle {
         if (root._patternAltitudeFact) {
             root._patternAltitudeFact.rawValue = altitudeMeters
         }
+        root._syncTakeoffAltitudeToPattern()
         if (root._patternSpeedFact) {
             root._patternSpeedFact.rawValue = speedMetersPerSecond
             // QGC generates MAV_CMD_DO_CHANGE_SPEED around the survey only
@@ -447,7 +491,7 @@ Rectangle {
 
     function syncResolutionFromSurvey() {
         if (!root._cameraCalc) {
-            root.resolution = 0
+            root.resolution = -1
             return
         }
 
@@ -468,11 +512,14 @@ Rectangle {
             root.resolution = 1
         } else if (lowMatches) {
             root.resolution = 0
+        } else {
+            root.resolution = -1
         }
     }
 
     Component.onCompleted: {
         syncResolutionFromSurvey()
+        Qt.callLater(root._syncTakeoffAltitudeToPattern)
         root._refreshSprayFacts()
     }
 
@@ -490,8 +537,9 @@ Rectangle {
             root._commitPatternAltitude(patternAltitudeSlider.value)
         if (root._patternSpeedAvailable)
             root._commitPatternSpeed(patternSpeedSlider.value)
-        if (root._missionAltitudeAvailable)
+        if (root._missionAltitudeAvailable && !root.synchronizeTakeoffAltitudeWithPattern)
             root._commitMissionAltitude(missionAltitudeSlider.value)
+        root._syncTakeoffAltitudeToPattern()
         if (root.showSpraySettings) {
             if (root._sprayNozRateFact !== null) {
                 root._commitRateFactFromSlider(root._sprayNozRateFact, nozzleRateSlider.value)
@@ -1132,8 +1180,15 @@ Rectangle {
                             cursorShape:  Qt.PointingHandCursor
                             onClicked: function(mouse) {
                                 resolutionRipple.tap(mouse.x, mouse.y)
-                                root.resolution = index
-                                root.applyResolutionPreset()
+                                if (root.resolution === index) {
+                                    // Clicking the active preset clears it and
+                                    // returns altitude control to the user.
+                                    root.resolution = -1
+                                    patternAltitudeWriteTimer.stop()
+                                } else {
+                                    root.resolution = index
+                                    root.applyResolutionPreset()
+                                }
                             }
                         }
                     }
@@ -1144,8 +1199,10 @@ Rectangle {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.15
                 text:               root.resolution === 0
-                                    ? qsTr("60 m altitude, photos every 9 m, 5 m/s flight speed.")
-                                    : qsTr("30 m altitude, photos every 6 m, 5 m/s flight speed.")
+                                    ? qsTr("60 m altitude, photos every 9 m, 5 m/s flight speed. Select Low again to unlock altitude.")
+                                    : root.resolution === 1
+                                      ? qsTr("30 m altitude, photos every 6 m, 5 m/s flight speed. Select High again to unlock altitude.")
+                                      : qsTr("Select a resolution preset to set and lock the route altitude.")
                 color:              root._hintColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
                 visible:            root.showPhotoSettings
@@ -1335,7 +1392,9 @@ Rectangle {
                                         ? root._cameraCalc.distanceMode
                                         : QGroundControl.AltitudeModeNone
                     Layout.fillWidth:   true
-                    enabled:            root._patternAltitudeAvailable && root.missionSettingsEnabled
+                    enabled:            root._patternAltitudeAvailable
+                                        && root.missionSettingsEnabled
+                                        && !root._resolutionPresetSelected
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1357,7 +1416,9 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._patternAltitudeAvailable && root.missionSettingsEnabled
+                    enabled:                root._patternAltitudeAvailable
+                                            && root.missionSettingsEnabled
+                                            && !root._resolutionPresetSelected
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1570,7 +1631,9 @@ Rectangle {
                                         ? root.takeoffItem.altitudeMode
                                         : QGroundControl.AltitudeModeNone
                     Layout.fillWidth:   true
-                    enabled:            root._missionAltitudeAvailable && root.missionSettingsEnabled
+                    enabled:            root._missionAltitudeAvailable
+                                        && root.missionSettingsEnabled
+                                        && !root.synchronizeTakeoffAltitudeWithPattern
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1594,7 +1657,9 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._missionAltitudeAvailable && root.missionSettingsEnabled
+                    enabled:                root._missionAltitudeAvailable
+                                            && root.missionSettingsEnabled
+                                            && !root.synchronizeTakeoffAltitudeWithPattern
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1619,7 +1684,9 @@ Rectangle {
             QGCLabel {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.1
-                text:               qsTr("Takeoff altitude only. Survey Pattern altitude is separate — if Mission is higher than Survey, the vehicle will descend into the pattern after takeoff.")
+                text:               root.synchronizeTakeoffAltitudeWithPattern
+                                    ? qsTr("Takeoff altitude follows the Survey Pattern altitude so the vehicle climbs vertically first, then holds that altitude to the first waypoint.")
+                                    : qsTr("Takeoff altitude only. Survey Pattern altitude is separate — if Mission is higher than Survey, the vehicle will descend into the pattern after takeoff.")
                 color:              root._hintColor
                 font.pointSize:     ScreenTools.smallFontPointSize
                 wrapMode:           Text.WordWrap
@@ -1700,6 +1767,7 @@ Rectangle {
         ignoreUnknownSignals: true
         function onValueChanged() {
             root._syncPatternAltitudeSlider()
+            root._syncTakeoffAltitudeToPattern()
         }
     }
 

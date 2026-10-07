@@ -412,7 +412,9 @@ void RouteMappingPiPhotoFetcher::warmUpConnection()
     (void)QtConcurrent::run([self]() {
         QString errorMessage;
         if (!self->_runSshPrecheck(&errorMessage)) {
-            qCWarning(RouteMappingPiPhotoFetcherLog) << "SSH warm-up failed:" << errorMessage;
+            qCInfo(RouteMappingPiPhotoFetcherLog)
+                << "Optional SSH warm-up did not complete; session startup will retry:"
+                << errorMessage;
             return;
         }
         qCInfo(RouteMappingPiPhotoFetcherLog) << "SSH ControlMaster warm-up complete for" << self->_sshTarget();

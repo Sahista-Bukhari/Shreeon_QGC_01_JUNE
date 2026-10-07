@@ -13,6 +13,7 @@ import QGroundControl.FlightMap
 import QGroundControl.FlyView
 
 Item {
+
     id: _root
 
     // -------------------------------------------------------------------------
@@ -852,6 +853,8 @@ Item {
         }
 
         _planMasterController.setRouteMappingTelemetry(takeoffM, patternM, patternSpeedMps)
+        console.info("[AgricultureSpraying] Plan telemetry snapshot — takeoff alt (m):", takeoffM,
+                     "pattern alt (m):", patternM, "pattern speed (m/s):", patternSpeedMps)
     }
 
     function _copyRouteMappingTelemetryToFlyViewPlanController() {
@@ -2424,6 +2427,7 @@ Item {
             RouteMappingTaskSettings {
                 id: taskSettingsPanel
                 anchors.fill: parent
+                consoleLogTag: "AgricultureSpraying"
                 patternSectionTitle: qsTr("Agriculture Spraying Pattern")
                 showPhotoSettings: false
                 showSpraySettings: true

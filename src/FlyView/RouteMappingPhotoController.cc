@@ -16,6 +16,7 @@
 #include <QtCore/QProcess>
 #include <QtCore/QSaveFile>
 #include <QtCore/QStandardPaths>
+#include <QtCore/QTimeZone>
 #include <QtCore/QUrlQuery>
 #include <QtCore/QUuid>
 #include <QtCore/QTimer>
@@ -25,7 +26,9 @@
 #include <QtNetwork/QNetworkRequest>
 
 #include <utility>
+#include <cmath>
 #include <limits>
+#include <numeric>
 
 QGC_LOGGING_CATEGORY(RouteMappingPhotoControllerLog, "FlyView.RouteMappingPhotoController")
 
@@ -33,6 +36,235 @@ namespace {
 
 constexpr int kNodeOdmPollIntervalMs = 2000;
 constexpr auto kOrthophotoArchivePath = "odm_orthophoto/odm_orthophoto.tif";
+constexpr auto kOrthophotoOverlayPath = "odm_orthophoto/odm_orthophoto_overlay.png";
+
+const QByteArray kReferenceExifMake("RaspberryPi");
+const QByteArray kReferenceExifModel("Camera Module 3");
+const QByteArray kReferenceExifSoftware("PX4SurveyCamera");
+
+void appendLittleEndian16(QByteArray &data, quint16 value)
+{
+    data.append(static_cast<char>(value & 0xff));
+    data.append(static_cast<char>((value >> 8) & 0xff));
+}
+
+void appendLittleEndian32(QByteArray &data, quint32 value)
+{
+    data.append(static_cast<char>(value & 0xff));
+    data.append(static_cast<char>((value >> 8) & 0xff));
+    data.append(static_cast<char>((value >> 16) & 0xff));
+    data.append(static_cast<char>((value >> 24) & 0xff));
+}
+
+void appendBigEndian16(QByteArray &data, quint16 value)
+{
+    data.append(static_cast<char>((value >> 8) & 0xff));
+    data.append(static_cast<char>(value & 0xff));
+}
+
+void appendIfdEntry(
+    QByteArray &data, quint16 tag, quint16 type, quint32 count, quint32 valueOrOffset)
+{
+    appendLittleEndian16(data, tag);
+    appendLittleEndian16(data, type);
+    appendLittleEndian32(data, count);
+    appendLittleEndian32(data, valueOrOffset);
+}
+
+void appendRational(QByteArray &data, quint32 numerator, quint32 denominator)
+{
+    appendLittleEndian32(data, numerator);
+    appendLittleEndian32(data, denominator == 0 ? 1 : denominator);
+}
+
+void appendCoordinateRationals(QByteArray &data, double coordinate)
+{
+    const double absolute = std::abs(coordinate);
+    const quint32 degrees = static_cast<quint32>(std::floor(absolute));
+    const double minuteValue = (absolute - degrees) * 60.0;
+    const quint32 minutes = static_cast<quint32>(std::floor(minuteValue));
+    // Match m4_picam.py: seconds are rounded to five decimal places and then
+    // stored as the reduced rational produced by Fraction(str(value)).
+    const quint32 secondsScale = 100000;
+    const quint32 secondsNumerator = static_cast<quint32>(
+        std::llround((minuteValue - minutes) * 60.0 * secondsScale));
+    const quint32 divisor = std::gcd(secondsNumerator, secondsScale);
+
+    appendRational(data, degrees, 1);
+    appendRational(data, minutes, 1);
+    appendRational(
+        data,
+        divisor > 0 ? secondsNumerator / divisor : 0,
+        divisor > 0 ? secondsScale / divisor : 1);
+}
+
+void removeExistingExifSegments(QByteArray &jpeg)
+{
+    qsizetype offset = 2;
+    while (offset + 4 <= jpeg.size()
+           && static_cast<quint8>(jpeg.at(offset)) == 0xff) {
+        const quint8 marker = static_cast<quint8>(jpeg.at(offset + 1));
+        if (marker == 0xda || marker == 0xd9) { // Start of scan / end of image.
+            break;
+        }
+        const quint16 segmentLength =
+            (static_cast<quint8>(jpeg.at(offset + 2)) << 8)
+            | static_cast<quint8>(jpeg.at(offset + 3));
+        if (segmentLength < 2 || offset + 2 + segmentLength > jpeg.size()) {
+            break;
+        }
+        // JPEG readers disagree about which of multiple EXIF APP1 segments is
+        // authoritative. Replace existing EXIF (including stale camera GPS)
+        // with one route-mapping block, while preserving XMP and other APP1
+        // payloads.
+        if (marker == 0xe1
+            && jpeg.mid(offset + 4, 6) == QByteArrayLiteral("Exif\0\0")) {
+            jpeg.remove(offset, segmentLength + 2);
+            continue;
+        }
+        offset += segmentLength + 2;
+    }
+}
+
+QByteArray referenceCameraExifSegment(
+    double latitude,
+    double longitude,
+    double relativeAltitude,
+    qint64 captureTimeMsecsUtc)
+{
+    constexpr quint16 kTypeByte = 1;
+    constexpr quint16 kTypeAscii = 2;
+    constexpr quint16 kTypeShort = 3;
+    constexpr quint16 kTypeLong = 4;
+    constexpr quint16 kTypeRational = 5;
+    constexpr quint32 kIfd0Offset = 8;
+    constexpr quint16 kIfd0EntryCount = 10;
+    constexpr quint32 kExifIfdOffset =
+        kIfd0Offset + 2 + (kIfd0EntryCount * 12) + 4;
+    constexpr quint16 kExifEntryCount = 2;
+    constexpr quint32 kGpsIfdOffset =
+        kExifIfdOffset + 2 + (kExifEntryCount * 12) + 4;
+    constexpr quint16 kGpsEntryCount = 7;
+    constexpr quint32 kGpsDataOffset =
+        kGpsIfdOffset + 2 + (kGpsEntryCount * 12) + 4;
+    constexpr quint32 kXResolutionOffset = kGpsDataOffset;
+    constexpr quint32 kYResolutionOffset = kXResolutionOffset + 8;
+    constexpr quint32 kLatitudeOffset = kYResolutionOffset + 8;
+    constexpr quint32 kLongitudeOffset = kLatitudeOffset + 24;
+    constexpr quint32 kAltitudeOffset = kLongitudeOffset + 24;
+    constexpr quint32 kMakeOffset = kAltitudeOffset + 8;
+    constexpr quint32 kModelOffset = kMakeOffset + 12;
+    constexpr quint32 kSoftwareOffset = kModelOffset + 16;
+    constexpr quint32 kDateTimeOffset = kSoftwareOffset + 16;
+    constexpr quint32 kDateTimeOriginalOffset = kDateTimeOffset + 20;
+    constexpr quint32 kDateTimeDigitizedOffset = kDateTimeOriginalOffset + 20;
+
+    const QDateTime capturedAt = QDateTime::fromMSecsSinceEpoch(
+        captureTimeMsecsUtc > 0 ? captureTimeMsecsUtc
+                                : QDateTime::currentMSecsSinceEpoch());
+    const QByteArray dateTimeText =
+        capturedAt.toString(QStringLiteral("yyyy:MM:dd HH:mm:ss")).toLatin1();
+
+    QByteArray tiff;
+    tiff.reserve(448);
+    tiff.append("II", 2);
+    appendLittleEndian16(tiff, 42);
+    appendLittleEndian32(tiff, kIfd0Offset);
+
+    appendLittleEndian16(tiff, kIfd0EntryCount);
+    appendIfdEntry(tiff, 0x010f, kTypeAscii, 12, kMakeOffset);
+    appendIfdEntry(tiff, 0x0110, kTypeAscii, 16, kModelOffset);
+    appendIfdEntry(tiff, 0x011a, kTypeRational, 1, kXResolutionOffset);
+    appendIfdEntry(tiff, 0x011b, kTypeRational, 1, kYResolutionOffset);
+    appendIfdEntry(tiff, 0x0128, kTypeShort, 1, 2); // ResolutionUnit: inches.
+    appendIfdEntry(tiff, 0x0131, kTypeAscii, 16, kSoftwareOffset);
+    appendIfdEntry(tiff, 0x0132, kTypeAscii, 20, kDateTimeOffset);
+    appendIfdEntry(tiff, 0x0213, kTypeShort, 1, 1); // YCbCrPositioning: centered.
+    appendIfdEntry(tiff, 0x8769, kTypeLong, 1, kExifIfdOffset);
+    appendIfdEntry(tiff, 0x8825, kTypeLong, 1, kGpsIfdOffset);
+    appendLittleEndian32(tiff, 0); // No next IFD.
+
+    appendLittleEndian16(tiff, kExifEntryCount);
+    appendIfdEntry(tiff, 0x9003, kTypeAscii, 20, kDateTimeOriginalOffset);
+    appendIfdEntry(tiff, 0x9004, kTypeAscii, 20, kDateTimeDigitizedOffset);
+    appendLittleEndian32(tiff, 0); // No next EXIF IFD.
+
+    appendLittleEndian16(tiff, kGpsEntryCount);
+    appendIfdEntry(tiff, 0x0000, kTypeByte, 4, 0x00000002); // GPSVersionID 2.0.0.0
+    appendIfdEntry(tiff, 0x0001, kTypeAscii, 2, latitude < 0 ? 'S' : 'N');
+    appendIfdEntry(tiff, 0x0002, kTypeRational, 3, kLatitudeOffset);
+    appendIfdEntry(tiff, 0x0003, kTypeAscii, 2, longitude < 0 ? 'W' : 'E');
+    appendIfdEntry(tiff, 0x0004, kTypeRational, 3, kLongitudeOffset);
+    appendIfdEntry(tiff, 0x0005, kTypeByte, 1, 0); // Match reference: always above sea level.
+    appendIfdEntry(tiff, 0x0006, kTypeRational, 1, kAltitudeOffset);
+    appendLittleEndian32(tiff, 0); // No next GPS IFD.
+
+    appendRational(tiff, 72, 1);
+    appendRational(tiff, 72, 1);
+    appendCoordinateRationals(tiff, latitude);
+    appendCoordinateRationals(tiff, longitude);
+    appendRational(
+        tiff,
+        static_cast<quint32>(qMax<qint64>(0, std::llround(relativeAltitude))),
+        1);
+    tiff.append(kReferenceExifMake);
+    tiff.append('\0');
+    tiff.append(kReferenceExifModel);
+    tiff.append('\0');
+    tiff.append(kReferenceExifSoftware);
+    tiff.append('\0');
+    tiff.append(dateTimeText);
+    tiff.append('\0');
+    tiff.append(dateTimeText);
+    tiff.append('\0');
+    tiff.append(dateTimeText);
+    tiff.append('\0');
+
+    QByteArray payload("Exif\0\0", 6);
+    payload.append(tiff);
+    QByteArray segment("\xff\xe1", 2);
+    appendBigEndian16(segment, static_cast<quint16>(payload.size() + 2));
+    segment.append(payload);
+    return segment;
+}
+
+bool writeReferenceCameraExif(
+    const QString &imagePath,
+    double latitude,
+    double longitude,
+    double relativeAltitude,
+    qint64 captureTimeMsecsUtc)
+{
+    if (!std::isfinite(latitude) || latitude < -90.0 || latitude > 90.0
+        || !std::isfinite(longitude) || longitude < -180.0 || longitude > 180.0
+        || !std::isfinite(relativeAltitude)) {
+        return false;
+    }
+
+    QFile input(imagePath);
+    if (!input.open(QIODevice::ReadOnly)) {
+        return false;
+    }
+    QByteArray jpeg = input.readAll();
+    input.close();
+    if (jpeg.size() < 4
+        || static_cast<quint8>(jpeg.at(0)) != 0xff
+        || static_cast<quint8>(jpeg.at(1)) != 0xd8) {
+        return false;
+    }
+
+    removeExistingExifSegments(jpeg);
+    jpeg.insert(2, referenceCameraExifSegment(
+                       latitude, longitude, relativeAltitude, captureTimeMsecsUtc));
+
+    QSaveFile output(imagePath);
+    if (!output.open(QIODevice::WriteOnly)
+        || output.write(jpeg) != jpeg.size()
+        || !output.commit()) {
+        return false;
+    }
+    return true;
+}
 
 QUrl nodeOdmUrl(const QString &path)
 {
@@ -135,7 +367,9 @@ QString RouteMappingPhotoController::reconstructionStatus() const
         return _nodeOdmStatusText();
     }
     if (_odmComplete) {
-        return tr("Complete");
+        return _odmErrorMessage.isEmpty()
+                   ? tr("Complete")
+                   : tr("Complete — overlay unavailable");
     }
     if (!_odmErrorMessage.isEmpty()) {
         return tr("Failed");
@@ -291,7 +525,7 @@ void RouteMappingPhotoController::_ensureRouteMappingReadme(
 
     const QString saveRoot = SettingsManager::instance()->appSettings()->savePath()->rawValue().toString();
     const QString readme = QStringLiteral(
-                               "Route Mapping photos (JPEG + geotag JSON) are saved here.\n"
+                               "Route Mapping photos (GPS EXIF JPEG + geotag JSON) are saved here.\n"
                                "\n"
                                "Layout:\n"
                                "  %1/Mission_<UTC time>_<id>/images/image_NNNN.jpg\n"
@@ -571,7 +805,14 @@ QString RouteMappingPhotoController::metadataPathForSequence(int sequence) const
         QStringLiteral("image_%1.json").arg(sequence, 4, 10, QChar('0')));
 }
 
-bool RouteMappingPhotoController::_writeMetadata(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading) const
+bool RouteMappingPhotoController::_writeMetadata(
+    int sequence,
+    quint32 nativeTriggerSequence,
+    double latitude,
+    double longitude,
+    double relativeAltitude,
+    double heading,
+    qint64 captureTimeMsecsUtc) const
 {
     const QString metaPath = metadataPathForSequence(sequence);
     if (metaPath.isEmpty()) {
@@ -581,10 +822,13 @@ bool RouteMappingPhotoController::_writeMetadata(int sequence, quint32 nativeTri
     QJsonObject object;
     object.insert(QStringLiteral("triggerIndex"), sequence);
     object.insert(QStringLiteral("nativeCameraTriggerSequence"), static_cast<qint64>(nativeTriggerSequence));
-    object.insert(QStringLiteral("timestamp"), QDateTime::currentDateTimeUtc().toString(Qt::ISODate));
+    object.insert(
+        QStringLiteral("timestamp"),
+        QDateTime::fromMSecsSinceEpoch(captureTimeMsecsUtc, QTimeZone::utc())
+            .toString(Qt::ISODateWithMs));
     object.insert(QStringLiteral("latitude"), latitude);
     object.insert(QStringLiteral("longitude"), longitude);
-    object.insert(QStringLiteral("altitude"), altitude);
+    object.insert(QStringLiteral("altitude"), relativeAltitude);
     object.insert(QStringLiteral("heading"), heading);
 
     QFile file(metaPath);
@@ -597,12 +841,38 @@ bool RouteMappingPhotoController::_writeMetadata(int sequence, quint32 nativeTri
 
 bool RouteMappingPhotoController::_appendOdmGeotag(int sequence, const QString &localFilePath)
 {
-    if (_geotaggedSequences.contains(sequence)) {
-        return true;
-    }
     const auto metadataIt = _captureMetadata.constFind(sequence);
     if (metadataIt == _captureMetadata.cend() || _sessionDirectory.isEmpty()) {
         return false;
+    }
+
+    const PendingCapture &capture = metadataIt.value();
+    // The JPEG is the authoritative geotagged artifact. geo.txt remains as the
+    // companion format consumed by NodeODM, but it must never be the only place
+    // where the image position is stored. This runs for both the live thumbnail
+    // and the final full-resolution replacement.
+    if (!writeReferenceCameraExif(
+            localFilePath,
+            capture.latitude,
+            capture.longitude,
+            capture.relativeAltitude,
+            capture.captureTimeMsecsUtc)) {
+        _geotaggedSequences.remove(sequence);
+        _odmErrorMessage = tr("Could not write GPS EXIF metadata to image %1.")
+                               .arg(QFileInfo(localFilePath).fileName());
+        emit reconstructionStateChanged();
+        emit odmError(_odmErrorMessage);
+        return false;
+    }
+    _odmErrorMessage.clear();
+
+    // A full-resolution image can overwrite an already-tagged thumbnail. EXIF
+    // is therefore always rewritten above, while the ODM row is appended once.
+    if (_geotaggedSequences.contains(sequence)) {
+        qCInfo(RouteMappingPhotoControllerLog)
+            << "Refreshed GPS EXIF geotag on full-resolution Route Mapping image"
+            << sequence << localFilePath;
+        return true;
     }
 
     const QString geoPath = QDir(_sessionDirectory).filePath(QStringLiteral("geo.txt"));
@@ -618,12 +888,11 @@ bool RouteMappingPhotoController::_appendOdmGeotag(int sequence, const QString &
         geoFile.write("EPSG:4326\n");
     }
 
-    const PendingCapture &capture = metadataIt.value();
     const QString row = QStringLiteral("%1 %2 %3 %4 %5 0 0\n")
                             .arg(QFileInfo(localFilePath).fileName())
                             .arg(QString::number(capture.longitude, 'f', 9))
                             .arg(QString::number(capture.latitude, 'f', 9))
-                            .arg(QString::number(capture.altitude, 'f', 3))
+                            .arg(QString::number(capture.relativeAltitude, 'f', 3))
                             .arg(QString::number(capture.heading, 'f', 2));
     if (geoFile.write(row.toUtf8()) != row.toUtf8().size()) {
         _odmErrorMessage = tr("Could not finish writing ODM geolocation data.");
@@ -635,7 +904,7 @@ bool RouteMappingPhotoController::_appendOdmGeotag(int sequence, const QString &
 
     _geotaggedSequences.insert(sequence);
     qCInfo(RouteMappingPhotoControllerLog)
-        << "Added ODM geotag for Route Mapping image" << sequence << localFilePath;
+        << "Added EXIF and ODM geotags for Route Mapping image" << sequence << localFilePath;
     emit reconstructionStateChanged();
     return true;
 }
@@ -957,33 +1226,38 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
     emit orthophotoOverlayChanged();
 
     const QString gdalInfo = QStandardPaths::findExecutable(QStringLiteral("gdalinfo"));
-    if (gdalInfo.isEmpty()) {
-        qCWarning(RouteMappingPhotoControllerLog)
-            << "gdalinfo is not installed; the GeoTIFF was saved but cannot be positioned on the Fly View map";
+    const QString gdalTranslate = QStandardPaths::findExecutable(QStringLiteral("gdal_translate"));
+    if (gdalInfo.isEmpty() || gdalTranslate.isEmpty()) {
+        _reportOrthophotoOverlayError(tr(
+            "The orthomosaic was generated and saved, but it cannot be displayed on the Fly View map because GDAL is not installed."));
         return;
     }
 
+    const QString sourceOrthophotoPath = _orthophotoPath;
     auto *process = new QProcess(this);
     process->setProgram(gdalInfo);
-    process->setArguments({QStringLiteral("-json"), _orthophotoPath});
+    process->setArguments({QStringLiteral("-json"), sourceOrthophotoPath});
     connect(
         process,
         qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
         this,
-        [this, process](int exitCode, QProcess::ExitStatus exitStatus) {
+        [this, process, gdalTranslate, sourceOrthophotoPath](
+            int exitCode, QProcess::ExitStatus exitStatus) {
             const QByteArray output = process->readAllStandardOutput();
             const QByteArray errorOutput = process->readAllStandardError();
             process->deleteLater();
+            if (_orthophotoPath != sourceOrthophotoPath) {
+                return;
+            }
             if (exitStatus != QProcess::NormalExit || exitCode != 0) {
-                qCWarning(RouteMappingPhotoControllerLog)
-                    << "gdalinfo could not read the orthomosaic bounds:" << errorOutput;
+                _reportOrthophotoOverlayError(tr(
+                    "The orthomosaic was generated and saved, but its map bounds could not be read. GDAL reported: %1")
+                                                      .arg(QString::fromUtf8(errorOutput).trimmed()));
                 return;
             }
 
-            const QJsonObject extent = QJsonDocument::fromJson(output)
-                                           .object()
-                                           .value(QStringLiteral("wgs84Extent"))
-                                           .toObject();
+            const QJsonObject gdalDocument = QJsonDocument::fromJson(output).object();
+            const QJsonObject extent = gdalDocument.value(QStringLiteral("wgs84Extent")).toObject();
             const QJsonArray rings = extent.value(QStringLiteral("coordinates")).toArray();
             double minLongitude = std::numeric_limits<double>::max();
             double maxLongitude = std::numeric_limits<double>::lowest();
@@ -1010,20 +1284,101 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
             if (!foundCoordinate
                 || minLongitude >= maxLongitude
                 || minLatitude >= maxLatitude) {
-                qCWarning(RouteMappingPhotoControllerLog)
-                    << "The orthomosaic does not contain a usable WGS84 extent";
+                _reportOrthophotoOverlayError(tr(
+                    "The orthomosaic was generated and saved, but it does not contain usable WGS84 map bounds."));
                 return;
             }
 
-            _orthophotoNorthWest = QGeoCoordinate(maxLatitude, minLongitude);
-            _orthophotoSouthEast = QGeoCoordinate(minLatitude, maxLongitude);
-            _orthophotoUrl = QUrl::fromLocalFile(_orthophotoPath).toString();
-            emit orthophotoOverlayChanged();
-            qCInfo(RouteMappingPhotoControllerLog)
-                << "Orthomosaic overlay bounds"
-                << _orthophotoNorthWest << _orthophotoSouthEast;
+            const QGeoCoordinate northWest(maxLatitude, minLongitude);
+            const QGeoCoordinate southEast(minLatitude, maxLongitude);
+            const QString overlayPath = QDir(_odmSessionDirectory).filePath(
+                QString::fromLatin1(kOrthophotoOverlayPath));
+            QFile::remove(overlayPath);
+
+            // Qt Quick Image does not reliably decode GeoTIFF. Convert the
+            // georeferenced master to a display PNG, retaining the TIFF as the
+            // reconstruction output and using its WGS84 extent for placement.
+            QStringList translateArguments{
+                QStringLiteral("-of"),
+                QStringLiteral("PNG"),
+                QStringLiteral("-b"),
+                QStringLiteral("1"),
+                QStringLiteral("-b"),
+                QStringLiteral("2"),
+                QStringLiteral("-b"),
+                QStringLiteral("3"),
+            };
+            const QJsonArray bands = gdalDocument.value(QStringLiteral("bands")).toArray();
+            const bool hasDatasetMask = !bands.isEmpty()
+                                        && !bands.first()
+                                                .toObject()
+                                                .value(QStringLiteral("mask"))
+                                                .toObject()
+                                                .isEmpty();
+            if (hasDatasetMask) {
+                translateArguments.append({
+                    QStringLiteral("-b"),
+                    QStringLiteral("mask"),
+                    QStringLiteral("-colorinterp"),
+                    QStringLiteral("red,green,blue,alpha"),
+                });
+            } else {
+                translateArguments.append({
+                    QStringLiteral("-colorinterp"),
+                    QStringLiteral("red,green,blue"),
+                });
+            }
+            translateArguments.append({sourceOrthophotoPath, overlayPath});
+
+            auto *translateProcess = new QProcess(this);
+            translateProcess->setProgram(gdalTranslate);
+            translateProcess->setArguments(translateArguments);
+            connect(
+                translateProcess,
+                qOverload<int, QProcess::ExitStatus>(&QProcess::finished),
+                this,
+                [this,
+                 translateProcess,
+                 sourceOrthophotoPath,
+                 overlayPath,
+                 northWest,
+                 southEast](int translateExitCode, QProcess::ExitStatus translateExitStatus) {
+                    const QByteArray translateError = translateProcess->readAllStandardError();
+                    translateProcess->deleteLater();
+                    if (_orthophotoPath != sourceOrthophotoPath) {
+                        return;
+                    }
+                    if (translateExitStatus != QProcess::NormalExit
+                        || translateExitCode != 0
+                        || !QFileInfo::exists(overlayPath)) {
+                        qCWarning(RouteMappingPhotoControllerLog)
+                            << "gdal_translate could not create the Fly View orthomosaic overlay:"
+                            << translateError;
+                        _reportOrthophotoOverlayError(tr(
+                            "The orthomosaic was generated and saved, but its Fly View overlay could not be created. GDAL reported: %1")
+                                                          .arg(QString::fromUtf8(translateError).trimmed()));
+                        return;
+                    }
+
+                    _orthophotoNorthWest = northWest;
+                    _orthophotoSouthEast = southEast;
+                    _orthophotoUrl = QUrl::fromLocalFile(overlayPath).toString();
+                    emit orthophotoOverlayChanged();
+                    qCInfo(RouteMappingPhotoControllerLog)
+                        << "Orthomosaic overlay ready" << overlayPath
+                        << _orthophotoNorthWest << _orthophotoSouthEast;
+                });
+            translateProcess->start();
         });
     process->start();
+}
+
+void RouteMappingPhotoController::_reportOrthophotoOverlayError(const QString &errorMessage)
+{
+    _odmErrorMessage = errorMessage;
+    _setOdmState(OdmState::Complete, 100, errorMessage);
+    qCWarning(RouteMappingPhotoControllerLog) << errorMessage;
+    emit odmError(errorMessage);
 }
 
 void RouteMappingPhotoController::_setOdmState(
@@ -1113,7 +1468,7 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     int sequence,
     double latitude,
     double longitude,
-    double altitude,
+    double relativeAltitude,
     double heading,
     bool success,
     const QString &remotePhotoPath,
@@ -1138,7 +1493,7 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     } else {
         Q_UNUSED(latitude);
         Q_UNUSED(longitude);
-        Q_UNUSED(altitude);
+        Q_UNUSED(relativeAltitude);
         Q_UNUSED(heading);
         qCWarning(RouteMappingPhotoControllerLog)
             << "Route Mapping CAPTURE seq" << sequence << "failed after UDP retries";
@@ -1187,8 +1542,9 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
         pending.nativeTriggerSequence,
         pending.latitude,
         pending.longitude,
-        pending.altitude,
-        pending.heading);
+        pending.relativeAltitude,
+        pending.heading,
+        pending.captureTimeMsecsUtc);
 
     _captureUdpInFlight = true;
     _inFlightCapture = pending;
@@ -1230,7 +1586,7 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
             capture.sequence,
             capture.latitude,
             capture.longitude,
-            capture.altitude,
+            capture.relativeAltitude,
             capture.heading,
             false,
             {},
@@ -1242,7 +1598,7 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
         capture.sequence,
         capture.latitude,
         capture.longitude,
-        capture.altitude,
+        capture.relativeAltitude,
         capture.heading,
         true,
         remotePhotoPath,
@@ -1250,7 +1606,7 @@ void RouteMappingPhotoController::_onTriggerCaptureFinished(
 }
 
 bool RouteMappingPhotoController::requestPhotoCapture(
-    int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double altitude, double heading)
+    int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double relativeAltitude, double heading)
 {
     if (!_captureEnabled || sequence < 1 || !_fetcher || _sessionDirectory.isEmpty()) {
         return false;
@@ -1270,8 +1626,9 @@ bool RouteMappingPhotoController::requestPhotoCapture(
     pending.nativeTriggerSequence = nativeTriggerSequence;
     pending.latitude = latitude;
     pending.longitude = longitude;
-    pending.altitude = altitude;
+    pending.relativeAltitude = relativeAltitude;
     pending.heading = heading;
+    pending.captureTimeMsecsUtc = QDateTime::currentMSecsSinceEpoch();
     _requestedCaptureSequences.insert(sequence);
     _captureMetadata.insert(sequence, pending);
     _pendingCaptures.append(pending);

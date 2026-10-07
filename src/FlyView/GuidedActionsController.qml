@@ -975,6 +975,12 @@ Item {
             // the horizontal reposition target and climb away from the current
             // aircraft position.
             _activeVehicle.guidedModeChangeAltitude(altitudeChangeInMeters, true /* pauseVehicle */)
+            if (mainWindow.uploadedMissionEditor === "agricultureSpraying") {
+                console.info("[AgricultureSpraying] Fly View altitude change — target rel alt (m):",
+                             valueInMeters.toFixed(2),
+                             "delta (m):", altitudeChangeInMeters.toFixed(2),
+                             "was rel alt (m):", _activeVehicle.altitudeRelative.rawValue.toFixed(2))
+            }
             break
         case actionChangeLoiterRadius:
             _activeVehicle.guidedModeGotoLocation(
@@ -1026,6 +1032,10 @@ Item {
                    _activeVehicle.guidedModeChangeEquivalentAirspeedMetersSecond(metersSecondSpeed)
                 } else {
                     _activeVehicle.guidedModeChangeGroundSpeedMetersSecond(metersSecondSpeed)
+                }
+                if (mainWindow.uploadedMissionEditor === "agricultureSpraying") {
+                    console.info("[AgricultureSpraying] Fly View speed change — target ground speed (m/s):",
+                                 metersSecondSpeed.toFixed(2))
                 }
             }
             break

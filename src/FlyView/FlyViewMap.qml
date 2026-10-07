@@ -1621,8 +1621,11 @@ FlightMap {
 
     // Each native CAMERA_TRIGGER becomes a georeferenced camera footprint. It
     // scales with map zoom so successive shots form an in-progress mosaic strip.
+    // Once reconstruction finishes, the single aligned orthomosaic replaces
+    // these preview tiles.
     MapItemView {
-        model: !_root.planEditMode ? _root.routeMappingLivePhotoModel : null
+        model: !_root.planEditMode && !_root.routeMappingOrthophotoReady
+               ? _root.routeMappingLivePhotoModel : null
 
         delegate: MapQuickItem {
             id: mappingPhotoItem
@@ -1660,7 +1663,9 @@ FlightMap {
                             mappingPhotoItem.photoAltitude)
             anchorPoint.x: mappingPhotoTile.width / 2
             anchorPoint.y: mappingPhotoTile.height / 2
-            z: QGroundControl.zOrderWaypointLines + 1
+            // A photo footprint is map content, not a navigation control. Keep
+            // it below the route and, critically, below the live vehicle icon.
+            z: QGroundControl.zOrderWaypointLines - 1
 
             sourceItem: Item {
                 id: mappingPhotoTile
