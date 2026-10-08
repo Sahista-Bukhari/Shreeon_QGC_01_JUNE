@@ -3,7 +3,7 @@
 **Full end-to-end guide (GCS + Pi + workflow + changelog):**  
 [`docs/en/shreeon-route-mapping-implementation.md`](../../docs/en/shreeon-route-mapping-implementation.md)
 
-This service captures 4608x2592 JPEG frames from one persistent `rpicam-vid`
+This service captures 1920x1080 (Full HD) JPEG frames from one persistent `rpicam-vid`
 MJPEG process on the Raspberry Pi. **Route Mapping photo count and timing come
 from QGC** (survey trigger distance and planned `cameraShots`); QGC sends one
 sequenced **`CAPTURE N`** per calculated trigger over UDP **14551**, then copies
@@ -105,7 +105,7 @@ for that session, and `VIDEO_RESUME` restores standalone UART triggering.
 
 During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
 starts. The service stops `wfb-camera.service`, starts one persistent
-full-resolution `rpicam-vid --codec mjpeg` process, and waits for its first
+Full HD `rpicam-vid --codec mjpeg` process, and waits for its first
 frame before accepting captures. `VIDEO_RESUME` cancels unsaved requests,
 stops the mapping process, and restores `wfb-camera.service`:
 

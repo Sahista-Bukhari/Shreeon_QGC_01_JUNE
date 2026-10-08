@@ -1087,8 +1087,8 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument(
         "--thumbnail-command", default="/home/shreeon/extract_jpeg_thumbnail.py"
     )
-    parser.add_argument("--mapping-width", type=int, default=4608)
-    parser.add_argument("--mapping-height", type=int, default=2592)
+    parser.add_argument("--mapping-width", type=int, default=1920)
+    parser.add_argument("--mapping-height", type=int, default=1080)
     parser.add_argument("--mapping-framerate", type=float, default=5.0)
     parser.add_argument("--mapping-quality", type=int, default=85)
     parser.add_argument("--mapping-buffer-count", type=int, default=2)

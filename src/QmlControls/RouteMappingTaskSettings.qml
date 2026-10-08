@@ -489,6 +489,16 @@ Rectangle {
         root._syncPatternSpeedSlider()
     }
 
+    // A newly completed Route Mapping plan defaults to High Resolution. Keep
+    // an explicit Low/High choice made while drawing the route unchanged.
+    function selectHighResolutionByDefault() {
+        if (root._resolutionPresetSelected) {
+            return
+        }
+        root.resolution = 1
+        root.applyResolutionPreset()
+    }
+
     function syncResolutionFromSurvey() {
         if (!root._cameraCalc) {
             root.resolution = -1
@@ -1145,7 +1155,7 @@ Rectangle {
 
             RowLayout {
                 Layout.fillWidth:   true
-                spacing:            0
+                spacing:            ScreenTools.defaultFontPixelWidth * 0.6
                 clip:               true
                 visible:            root.showPhotoSettings
 

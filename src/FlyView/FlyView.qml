@@ -726,7 +726,7 @@ Item {
         }
     }
 
-    function resetRouteMappingLivePhotos() {
+    function resetRouteMappingLivePhotos(startingNewSession) {
         _routeMappingPiFetchErrorShown = false
         _routeMappingPhotosRetrieved = 0
         _routeMappingCaptureFailures = 0
@@ -741,7 +741,10 @@ Item {
         // Keep completed mission photos: they remain the input for geotagging
         // and ODM after a later flight is armed.
         routeMappingPhotoController.cancelSession()
-        if (routeMappingPiPhotoFetchEnabled) {
+        // Arming immediately starts a new Pi session. Do not insert a
+        // VIDEO_RESUME between cancelSession() and that new VIDEO_PAUSE;
+        // concurrent replies can otherwise invalidate the async startup.
+        if (routeMappingPiPhotoFetchEnabled && !startingNewSession) {
             routeMappingPiPhotoFetcher.resumeLiveVideo()
         }
         _routeMappingLivePhotoModel.clear()
@@ -773,6 +776,14 @@ Item {
         }
         if (_routeMappingPhotoTriggersComplete) {
             return
+        }
+        // Self-heal an interrupted async start. A pending controller with an
+        // idle fetcher can never receive piSessionBeginComplete, so clear that
+        // stale state before evaluating the normal retry conditions.
+        if (routeMappingPhotoController.piSessionPending
+                && !routeMappingPiPhotoFetcher.piSessionStarting) {
+            console.warn("[RouteMapping] Recovering stalled Pi photo session startup")
+            routeMappingPhotoController.cancelSession()
         }
         if (routeMappingPhotoController.sessionActive
                 || routeMappingPhotoController.piSessionPending
@@ -1393,10 +1404,19 @@ Item {
 
         function onArmedChanged(armed) {
             if (armed) {
+                // Some vehicle backends can notify the same armed state more
+                // than once. Never cancel an async startup that is already in
+                // progress: doing so used to leave the controller waiting for
+                // a completion signal from a stale fetcher generation.
+                if (routeMappingPhotoController.sessionActive
+                        || routeMappingPhotoController.piSessionPending
+                        || routeMappingPiPhotoFetcher.piSessionStarting) {
+                    return
+                }
                 // Start a new capture set without deleting the previous
                 // mission's survey photographs from the configured photo path.
                 _root._routeMappingSessionPhotoFiles = []
-                _root.resetRouteMappingLivePhotos()
+                _root.resetRouteMappingLivePhotos(true /* startingNewSession */)
                 // Session startup is asynchronous. Begin it while armed so SSH
                 // and VIDEO_PAUSE are ready before the first survey transect.
                 if (_root.routeMappingPhotoProgressEnabled

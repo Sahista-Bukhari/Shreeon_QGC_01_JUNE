@@ -673,6 +673,11 @@ Item {
             return
         }
 
+        // Route Mapping uses High Resolution as the completed-plan default.
+        // The settings helper preserves any explicit preset selected earlier.
+        taskSettingsPanel.selectHighResolutionByDefault()
+        _snapshotRouteMappingTelemetryFromPlan()
+
         // Safety net for plans started before RTL auto-insert existed.
         if (!_missionController.hasLandItem && _missionController.isInsertLandValid) {
             var endCoord = surveyItem.exitCoordinate

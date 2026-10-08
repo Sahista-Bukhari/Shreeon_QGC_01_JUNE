@@ -10,7 +10,7 @@ For Pi-only install notes, see also [`deploy/pi-route-mapping/README.md`](../../
 
 1. Operator draws or imports a **survey pattern** in Route Mapping mode and uploads it to the vehicle.
 2. In **Fly View**, the transect overlay shows progress; each photo trigger creates a **map tile** (when the JPEG arrives).
-3. **Full-resolution frames** (4608×2592) are taken on the **Pi** from a persistent `rpicam-vid --codec mjpeg` process, avoiding per-trigger camera startup delay.
+3. **Full HD frames** (1920×1080) are taken on the **Pi** from a persistent `rpicam-vid --codec mjpeg` process, avoiding per-trigger camera startup delay and full-sensor camera timeouts.
 4. The **GCS** writes per-image JSON plus an ODM-compatible **`geo.txt`**, copies each JPEG from the Pi with **SCP**, and enables ODM stitching after every requested image has arrived.
 
 Two separate storage locations exist by design:
@@ -229,7 +229,7 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 
 1. **`triggerCapture(seq)`** — UDP/SSH `CAPTURE seq`; parse `QUEUED seq= path= thumb=` (thumb optional).
 2. **`fetchPhotoBySequence`** — if `thumb=` was present, SCP thumbnail during flight (`photoFetched`), defer full-res until **`finishSession()`** after disarm; if no thumb, legacy single SCP of `path=`; else session-scoped **find**.
-3. Pi mapping stream: persistent MJPEG at **4608×2592**, quality **85**, **5 fps**, and two in-flight buffers by default. The two-buffer setting is required for full-resolution allocation on the 512 MB aircraft Pi. Width, height, rate, quality, buffer count, and frame wait are configurable in `/etc/default/shreeon-route-mapping`.
+3. Pi mapping stream: persistent MJPEG at **1920×1080 (Full HD)**, quality **85**, **5 fps**, and two in-flight buffers by default. This reduces camera/ISP load and memory pressure on the 512 MB aircraft Pi. Width, height, rate, quality, buffer count, and frame wait are configurable in `/etc/default/shreeon-route-mapping`.
 4. Retries: up to 400 attempts; re-send `CAPTURE` every 5th attempt when path unknown.
 
 **Session end**
@@ -352,7 +352,7 @@ Parser tolerance (canonical `QUEUED … thumb=`, bare path, inferred thumb) and 
 - **JSON metadata** does not yet include `state=requested/fetched/failed` (only trigger fields).
 - **GCS and Pi session folder names** differ by design; correlation is by sequence + path + timestamps.
 - **Mixed versions:** New QGC + old Pi works via STATUS + session-scoped find; full path protocol needs Pi script deploy from §3.1.
-- **Deferred full-res:** During flight the GCS JPEG is the thumb; 4608×2592 archive SCP runs after disarm. `VIDEO_RESUME` follows the thumb queue, not the archive drain.
+- **Deferred source image:** When a thumbnail is available, the GCS displays it during flight and the 1920×1080 source-image SCP runs after disarm. If the thumbnail is delayed, QGC immediately falls back to the source JPEG. `VIDEO_RESUME` follows the live fetch queue, not the archive drain.
 
 ---
 

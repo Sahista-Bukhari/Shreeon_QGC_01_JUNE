@@ -7,11 +7,11 @@ MANUAL_PORT=14551
 PHOTO_ROOT=/home/shreeon/mapping_photos
 CAMERA_COMMAND=/usr/local/bin/rpicam-vid
 THUMBNAIL_COMMAND=/home/shreeon/extract_jpeg_thumbnail.py
-MAPPING_WIDTH=1260
+MAPPING_WIDTH=1280
 MAPPING_HEIGHT=720
 MAPPING_FRAMERATE=5
 MAPPING_QUALITY=85
-# Full sensor resolution needs two in-flight buffers on the 512 MB aircraft Pi.
+# Keep the Full HD mapping stream bounded on the 512 MB aircraft Pi.
 MAPPING_BUFFER_COUNT=2
 FRAME_WAIT_SEC=3
 # When 1, UART CAMERA_TRIGGER does not queue captures (QGC-led UDP only).

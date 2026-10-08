@@ -205,7 +205,8 @@ QByteArray referenceCameraExifSegment(
     appendCoordinateRationals(tiff, longitude);
     appendRational(
         tiff,
-        static_cast<quint32>(qMax<qint64>(0, std::llround(relativeAltitude))),
+        static_cast<quint32>(qMax<qint64>(
+            0, static_cast<qint64>(std::nearbyint(relativeAltitude)))),
         1);
     tiff.append(kReferenceExifMake);
     tiff.append('\0');

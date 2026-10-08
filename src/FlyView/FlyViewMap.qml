@@ -63,6 +63,10 @@ FlightMap {
     property var    routeMappingOrthophotoSouthEast: QtPositioning.coordinate()
     property bool   routeMappingOrthophotoReady: false
     property bool   hideVehicleMissionForUnuploadedRoute: false
+    readonly property bool _routeMappingRasterVisible: !planEditMode
+                                                        && (routeMappingOrthophotoReady
+                                                            || (routeMappingLivePhotoModel
+                                                                && routeMappingLivePhotoModel.count > 0))
     readonly property var _routeMappingTakeoffPath: {
         if (!routeMappingTakeoffCoordinate || !routeMappingTakeoffCoordinate.isValid
                 || !routeMappingEntryCoordinate || !routeMappingEntryCoordinate.isValid) {
@@ -708,7 +712,10 @@ FlightMap {
                  && routeMappingOrthophotoNorthWest.isValid
                  && routeMappingOrthophotoSouthEast
                  && routeMappingOrthophotoSouthEast.isValid
-        z: QGroundControl.zOrderWaypointLines - 1
+        // Raster map content must stay below every navigation marker. Use a
+        // deliberately separate z range instead of relying on adjacent QGC
+        // map-item constants, which can still interleave across MapItemViews.
+        z: -1000
 
         sourceItem: Image {
             readonly property real _mapZoomDependency: _root.zoomLevel
@@ -764,7 +771,10 @@ FlightMap {
             coordinate:     object.coordinate
             map:            _root
             size:           pipMode ? ScreenTools.defaultFontPixelHeight : ScreenTools.defaultFontPixelHeight * 3
-            z:              QGroundControl.zOrderVehicles
+            visible:        !_root._routeMappingRasterVisible
+            // Keep the live navigator above photo/orthomosaic raster items,
+            // including when they originate from a later MapItemView.
+            z:              QGroundControl.zOrderTopMost
         }
     }
     // Add distance sensor view
@@ -1665,7 +1675,7 @@ FlightMap {
             anchorPoint.y: mappingPhotoTile.height / 2
             // A photo footprint is map content, not a navigation control. Keep
             // it below the route and, critically, below the live vehicle icon.
-            z: QGroundControl.zOrderWaypointLines - 1
+            z: -1000
 
             sourceItem: Item {
                 id: mappingPhotoTile
@@ -1735,7 +1745,7 @@ FlightMap {
                     anchors.fill: parent
                     visible: mappingPhotoItem.photoImageSource.length > 0
                     source: mappingPhotoItem.photoImageSource
-                    // Preserve the 1260x720 frame proportions. The surrounding
+                    // Preserve the 16:9 Full HD frame proportions. The surrounding
                     // rectangle represents the IMX708 optical footprint at AGL.
                     fillMode: Image.PreserveAspectCrop
                     asynchronous: true
@@ -1749,8 +1759,8 @@ FlightMap {
                         }
                     }
                     // Decode only what the map can display. Loading each
-                    // 4608x2592 JPEG as a full GPU texture exhausts memory and
-                    // exceeds the 4096px texture limit on common QGC devices.
+                    // Decode only the pixels needed by the map instead of
+                    // uploading every 1920x1080 source pixel as a GPU texture.
                     sourceSize.width: Math.max(32, Math.ceil(mappingPhotoTile.width * 2))
                     sourceSize.height: Math.max(32, Math.ceil(mappingPhotoTile.height * 2))
                     smooth: true
@@ -1777,6 +1787,25 @@ FlightMap {
                              || mappingPhotoItem.photoFetchFailed
                 }
             }
+        }
+    }
+
+    // Qt Location can preserve MapItemView insertion order ahead of delegate z
+    // order on some render backends. Recreate only the live vehicle after the
+    // raster view while mapping imagery is visible, guaranteeing that the
+    // navigator is submitted last and can never be covered by a photo tile.
+    MapItemView {
+        model: _root._routeMappingRasterVisible
+               ? QGroundControl.multiVehicleManager.vehicles : null
+
+        delegate: VehicleMapItem {
+            vehicle:    object
+            coordinate: object.coordinate
+            map:        _root
+            size:       pipMode
+                        ? ScreenTools.defaultFontPixelHeight
+                        : ScreenTools.defaultFontPixelHeight * 3
+            z:          QGroundControl.zOrderTopMost
         }
     }
 

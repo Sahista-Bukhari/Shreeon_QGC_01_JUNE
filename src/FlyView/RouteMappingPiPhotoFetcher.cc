@@ -292,13 +292,15 @@ void RouteMappingPiPhotoFetcher::_completeBeginSessionOnMainThread(
     const QString &sessionPath,
     const QString &errorMessage)
 {
+    // A cancelled startup may finish after a replacement startup has begun.
+    // It must not clear the replacement's piSessionStarting flag.
+    if (generation != _generation) {
+        return;
+    }
+
     if (_piSessionStarting) {
         _piSessionStarting = false;
         emit piSessionStartingChanged();
-    }
-
-    if (generation != _generation) {
-        return;
     }
 
     if (success) {
@@ -359,6 +361,10 @@ void RouteMappingPiPhotoFetcher::resetSession()
 
 void RouteMappingPiPhotoFetcher::cancelSession()
 {
+    if (_piSessionStarting) {
+        _piSessionStarting = false;
+        emit piSessionStartingChanged();
+    }
     ++_generation;
     _acceptingCaptures = false;
     if (!_piSessionPath.isEmpty()) {
@@ -1441,9 +1447,15 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(
 
         if (exitStatus != QProcess::NormalExit || exitCode != 0) {
             if (remoteScpTargetMissing(stderrText)) {
-                qCInfo(RouteMappingPiPhotoFetcherLog)
-                    << "Pi photo not written yet (will retry SCP):" << cleanedPath;
-                if (thumbnailTier && request.attempt >= 6 && !request.remotePhotoPath.isEmpty()) {
+                // The Pi's mapping MJPEG stream can keep its software thumbnail
+                // generator busy until the mapping camera is stopped. The
+                // full JPEG is already atomically published at this point, so
+                // do not leave the Fly View on placeholders while repeatedly
+                // waiting for an optional sidecar preview. Try the preview
+                // once, then immediately fall back to the authoritative JPEG.
+                if (thumbnailTier && !request.remotePhotoPath.isEmpty()) {
+                    qCInfo(RouteMappingPiPhotoFetcherLog)
+                        << "Pi thumbnail is not ready; fetching full JPEG instead:" << cleanedPath;
                     FetchRequest fullRequest = request;
                     fullRequest.remoteThumbnailPath.clear();
                     fullRequest.thumbFetched = true;
@@ -1451,11 +1463,14 @@ void RouteMappingPiPhotoFetcher::_downloadRemotePhoto(
                     if (index >= 0) {
                         _queue[index] = fullRequest;
                     }
-                    _activeFetchCount = qMax(0, _activeFetchCount - 1);
+                    // This is the same active request changing tiers; retain
+                    // its concurrency slot while starting the full JPEG SCP.
                     _beginFetchTransfer(fullRequest);
                     _startNextFetch();
                     return;
                 }
+                qCInfo(RouteMappingPiPhotoFetcherLog)
+                    << "Pi photo not written yet (will retry SCP):" << cleanedPath;
                 _scheduleRetry(request, kRetryDelayRemoteMissingMs);
             } else {
                 qCWarning(RouteMappingPiPhotoFetcherLog) << "SCP failed for" << cleanedPath << stderrText;

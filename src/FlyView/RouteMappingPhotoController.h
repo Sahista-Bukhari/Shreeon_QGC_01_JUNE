@@ -67,8 +67,8 @@ class RouteMappingPhotoController : public QObject
     bool orthophotoOverlayReady() const
     {
         return !_orthophotoUrl.isEmpty()
-               && _orthophotoNorthWest.isValid()
-               && _orthophotoSouthEast.isValid();
+        && _orthophotoNorthWest.isValid()
+            && _orthophotoSouthEast.isValid();
     }
 
     Q_INVOKABLE void setPhotoFetcher(QObject *fetcher);

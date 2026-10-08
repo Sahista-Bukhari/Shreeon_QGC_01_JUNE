@@ -1,5 +1,5 @@
 [Unit]
-Description=Shreeon PX4 full-resolution route-mapping capture
+Description=Shreeon PX4 Full HD route-mapping capture
 After=wifibroadcast@drone.service wfb-camera.service
 Wants=wifibroadcast@drone.service wfb-camera.service
 
