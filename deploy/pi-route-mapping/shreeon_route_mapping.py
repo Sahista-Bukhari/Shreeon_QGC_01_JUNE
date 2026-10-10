@@ -369,6 +369,8 @@ class CaptureWorker(threading.Thread):
             name="mapping-thumbnail",
             daemon=True,
         )
+        self._thumbnail_processing_allowed = threading.Event()
+        self._thumbnail_processing_allowed.set()
         self._photo_root = photo_root
         self._capture_user = capture_user
         self._camera_service = camera_service
@@ -399,10 +401,22 @@ class CaptureWorker(threading.Thread):
         self._session_video_paused = paused
 
     def start_mapping_video(self) -> None:
+        # JPEG decoding competes with the camera for contiguous buffers on the
+        # 512 MB aircraft Pi. Keep thumbnails queued until the mapping stream
+        # has released the sensor; QGC can fetch the authoritative JPEG while
+        # a thumbnail is pending.
+        self._thumbnail_processing_allowed.clear()
         self._frame_source.start()
 
     def stop_mapping_video(self) -> None:
         self._frame_source.stop()
+
+    def resume_thumbnail_processing(self) -> None:
+        self._thumbnail_processing_allowed.set()
+
+    @property
+    def mapping_video_running(self) -> bool:
+        return self._frame_source.running
 
     @property
     def session_directory(self) -> pathlib.Path | None:
@@ -538,6 +552,7 @@ class CaptureWorker(threading.Thread):
             return False, None, None
 
     def stop(self) -> None:
+        self._thumbnail_processing_allowed.set()
         try:
             self._requests.put_nowait(None)
         except queue.Full:
@@ -590,6 +605,7 @@ class CaptureWorker(threading.Thread):
             if thumbnail_request is None:
                 return
             filename, thumbnail_path = thumbnail_request
+            self._thumbnail_processing_allowed.wait()
             thumbnail_command = [
                 self._thumbnail_command,
                 str(filename),
@@ -599,7 +615,7 @@ class CaptureWorker(threading.Thread):
                 "0",
             ]
             try:
-                subprocess.run(thumbnail_command, check=True, timeout=10)
+                subprocess.run(thumbnail_command, check=True, timeout=20)
                 LOGGER.info(
                     "Saved thumbnail %s (%d bytes)",
                     thumbnail_path,
@@ -673,6 +689,7 @@ class CaptureWorker(threading.Thread):
                 )
                 time.sleep(self._video_release_delay_sec)
             if manage_video_per_shot:
+                self._thumbnail_processing_allowed.clear()
                 self._frame_source.start()
 
             frame, frame_time = self._frame_source.frame_after(
@@ -728,6 +745,7 @@ class CaptureWorker(threading.Thread):
                     subprocess.run(
                         ["systemctl", "start", self._camera_service], check=False
                     )
+                self._thumbnail_processing_allowed.set()
 
 
 def open_serial(device: str, baud: int) -> int:
@@ -800,6 +818,21 @@ class RouteMappingService:
         )
 
     def pause_live_video(self) -> pathlib.Path:
+        # VIDEO_PAUSE can be retried when its UDP acknowledgement is lost.
+        # Reuse the active QGC session instead of creating another directory or
+        # touching the camera pipeline a second time.
+        if self._gcs_controls_captures:
+            session_directory = self._capture_worker.session_directory
+            if (
+                session_directory is not None
+                and self._capture_worker.mapping_video_running
+            ):
+                LOGGER.info(
+                    "Mapping camera already paused for QGC session: %s",
+                    session_directory,
+                )
+                return session_directory
+
         # VIDEO_PAUSE is the arm/start boundary for a mapping flight. Creating
         # the folder here (rather than in the daemon constructor) keeps its
         # timestamp and lifetime aligned with the actual mission.
@@ -825,6 +858,7 @@ class RouteMappingService:
             subprocess.run(
                 ["systemctl", "start", self._arguments.camera_service], check=False
             )
+            self._capture_worker.resume_thumbnail_processing()
             raise
         LOGGER.info(
             "WFB video paused; persistent rpicam-vid mapping session ready: %s",
@@ -833,6 +867,14 @@ class RouteMappingService:
         return session_directory
 
     def resume_live_video(self) -> None:
+        # QGC discovers an active vehicle during application startup. Older
+        # builds sent VIDEO_RESUME from that reset path even though no mapping
+        # session existed. Treat the command as a strict no-op so startup can
+        # never cancel a standalone capture or churn the camera service.
+        if not self._gcs_controls_captures:
+            LOGGER.info("Ignoring VIDEO_RESUME: no QGC mapping session is active")
+            return
+
         self._capture_worker.cancel_pending()
         if not self._capture_worker.wait_until_idle(10.0):
             LOGGER.warning("Active camera exposure did not finish before video resume")
@@ -842,6 +884,7 @@ class RouteMappingService:
         subprocess.run(
             ["systemctl", "start", self._arguments.camera_service], check=False
         )
+        self._capture_worker.resume_thumbnail_processing()
         self._capture_worker.close_session()
         LOGGER.info("Live video resumed after mapping still session")
 
@@ -1012,8 +1055,11 @@ class RouteMappingService:
             session_directory = self.pause_live_video()
             response = f"OK session={session_directory}\n".encode()
         elif parts[0].upper() == "VIDEO_RESUME":
+            # Acknowledge before the mapping process releases buffers and WFB
+            # restarts; the camera transition must never block QGC's UI.
+            self._manual_socket.sendto(b"OK\n", address)
             self.resume_live_video()
-            response = b"OK\n"
+            return
         else:
             response = b"ERROR use VIDEO_PAUSE, CAPTURE [seq], STATUS, VIDEO_RESUME\n"
         self._manual_socket.sendto(response, address)

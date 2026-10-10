@@ -62,6 +62,14 @@ sudo bash install-on-pi.sh
 Do not run `install-on-pi.sh` on the GCS — it only exists in the repo and must
 run on the Raspberry Pi.
 
+After an update, verify that the installed service is using the bounded Full
+HD preset rather than the old full-sensor setting:
+
+```bash
+grep -E '^MAPPING_(WIDTH|HEIGHT)=' /etc/default/shreeon-route-mapping
+# Expected: 1920 and 1080
+```
+
 The service also bridges MAVLink between `/dev/ttyAMA0` and the WFB UDP endpoint
 at `127.0.0.1:14550`. The default serial speed is 57600 baud and can be changed
 in `/etc/default/shreeon-route-mapping`.
@@ -85,6 +93,13 @@ printf 'CAPTURE' | nc -u -w 1 127.0.0.1 14551
 printf 'VIDEO_RESUME' | nc -u -w 1 127.0.0.1 14551
 ```
 
+Inspect the test JPEG before flight. The camera optical axis must point at
+nadir (straight down), and the lens must sit below or outside the landing-gear
+silhouette. Rotation or software cropping cannot remove a physical occlusion
+without changing the calibrated field of view and survey overlap. Reposition
+the mount (or retract the gear, if the aircraft supports it) until no vehicle
+part is visible anywhere in the frame.
+
 `VIDEO_PAUSE` creates a folder at the current flight start time and returns its
 authoritative path. QGroundControl stores that reply and sends sequenced,
 idempotent triggers over the WFB LAN:
@@ -99,9 +114,10 @@ idempotent triggers over the WFB LAN:
 Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the returned
 `mission_YYYYMMDD_HHMMSS` directory. Repeating the same sequence within that
 session is safe and does not take a duplicate photo. Set `MANUAL_HOST=0.0.0.0`
-in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. No
-`QGC_LED` setting is required: `VIDEO_PAUSE` selects QGC as capture authority
-for that session, and `VIDEO_RESUME` restores standalone UART triggering.
+in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. Keep
+`QGC_LED=1` for the QGC-led workflow so UART camera feedback cannot create a
+second physical exposure; `VIDEO_PAUSE` also selects QGC as the session's
+capture authority.
 
 During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
 starts. The service stops `wfb-camera.service`, starts one persistent
@@ -113,6 +129,10 @@ stops the mapping process, and restores `wfb-camera.service`:
 printf 'VIDEO_PAUSE' | nc -u -w 1 10.5.0.2 14551
 printf 'VIDEO_RESUME' | nc -u -w 1 10.5.0.2 14551
 ```
+
+Both commands are idempotent. A repeated `VIDEO_PAUSE` returns the active
+session, while `VIDEO_RESUME` is a no-op when QGC has not started a mapping
+session. Merely opening QGC therefore does not touch the Pi camera process.
 
 The same test can be requested without netcat:
 

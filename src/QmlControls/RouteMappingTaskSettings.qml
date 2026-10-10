@@ -43,6 +43,7 @@ Rectangle {
     // Vehicle SPRAY_* / nozzle controls are Agriculture Spraying only.
     property bool showSpraySettings: false
     property bool spraySettingsExpanded: true
+    property string cameraTriggerConfigurationError: ""
     // Route Mapping must finish its vertical takeoff before starting the
     // horizontal transit. Matching the takeoff and survey heights prevents the
     // first transit leg from becoming a gradual climb or descent.
@@ -86,7 +87,7 @@ Rectangle {
     // Recreate with the current active vehicle (controller captures vehicle at construct time).
     Loader {
         id: paramControllerLoader
-        active: root.showSpraySettings
+        active: root.showSpraySettings || root.showPhotoSettings
         sourceComponent: FactPanelController { }
         onLoaded: root._refreshSprayFacts()
     }
@@ -274,9 +275,58 @@ Rectangle {
         }
     }
 
-    function _reloadSprayParamController() {
+    function _reloadParamController() {
         paramControllerLoader.active = false
-        paramControllerLoader.active = root.showSpraySettings
+        paramControllerLoader.active = root.showSpraySettings || root.showPhotoSettings
+    }
+
+    // Route Mapping depends on PX4's distance-trigger survey mode to emit the
+    // native CAMERA_TRIGGER events consumed by Fly View. Configure only the
+    // PX4 parameters which select that mode and MAVLink interface; the mission
+    // itself supplies the selected 6 m / 9 m trigger distance.
+    function configureRouteMappingCameraTriggerParameters() {
+        root.cameraTriggerConfigurationError = ""
+        if (!root.showPhotoSettings) {
+            return true
+        }
+        if (!root._activeVehicle) {
+            root.cameraTriggerConfigurationError = qsTr("Connect the vehicle before uploading the Route Mapping mission.")
+            return false
+        }
+        if (!root._activeVehicle.px4Firmware) {
+            // TRIG_MODE and TRIG_INTERFACE are PX4-specific. Other firmware
+            // families continue to use their normal mission-command handling.
+            return true
+        }
+        if (!root._paramsReady || !paramControllerLoader.item) {
+            root.cameraTriggerConfigurationError = qsTr("Vehicle parameters are still loading. Wait for parameter download to finish, then upload again.")
+            return false
+        }
+
+        var controller = paramControllerLoader.item
+        if (!controller.parameterExists(-1, "TRIG_MODE")
+                || !controller.parameterExists(-1, "TRIG_INTERFACE")) {
+            root.cameraTriggerConfigurationError = qsTr("This PX4 vehicle does not provide the required TRIG_MODE and TRIG_INTERFACE camera-trigger parameters.")
+            return false
+        }
+
+        var triggerModeFact = controller.getParameterFact(-1, "TRIG_MODE", false)
+        var triggerInterfaceFact = controller.getParameterFact(-1, "TRIG_INTERFACE", false)
+        if (!triggerModeFact || !triggerInterfaceFact) {
+            root.cameraTriggerConfigurationError = qsTr("QGC could not access the PX4 camera-trigger parameters. Refresh vehicle parameters and try again.")
+            return false
+        }
+
+        // Select the output interface before enabling the trigger mode so a
+        // previously configured PWM/GPIO interface is never activated first.
+        if (Number(triggerInterfaceFact.rawValue) !== 3) {
+            triggerInterfaceFact.rawValue = 3
+        }
+        if (Number(triggerModeFact.rawValue) !== 4) {
+            triggerModeFact.rawValue = 4
+        }
+        console.info("[RouteMapping] Camera trigger parameters enabled: TRIG_MODE=4, TRIG_INTERFACE=3")
+        return true
     }
 
     function _setEnableDisableFact(fact, enabled) {
@@ -1808,11 +1858,12 @@ Rectangle {
     Connections {
         target: QGroundControl.multiVehicleManager
         function onActiveVehicleChanged(activeVehicle) {
-            root._reloadSprayParamController()
+            root._reloadParamController()
         }
     }
 
-    onShowSpraySettingsChanged: root._reloadSprayParamController()
+    onShowSpraySettingsChanged: root._reloadParamController()
+    onShowPhotoSettingsChanged: root._reloadParamController()
     on_ParamsReadyChanged: root._refreshSprayFacts()
 
     onSurveyItemChanged: {

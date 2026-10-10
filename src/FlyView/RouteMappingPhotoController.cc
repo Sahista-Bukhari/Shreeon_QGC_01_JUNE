@@ -25,6 +25,7 @@
 #include <QtNetwork/QNetworkReply>
 #include <QtNetwork/QNetworkRequest>
 
+#include <algorithm>
 #include <utility>
 #include <cmath>
 #include <limits>
@@ -37,6 +38,7 @@ namespace {
 constexpr int kNodeOdmPollIntervalMs = 2000;
 constexpr auto kOrthophotoArchivePath = "odm_orthophoto/odm_orthophoto.tif";
 constexpr auto kOrthophotoOverlayPath = "odm_orthophoto/odm_orthophoto_overlay.png";
+constexpr int kMinimumOdmImageCount = 2;
 
 const QByteArray kReferenceExifMake("RaspberryPi");
 const QByteArray kReferenceExifModel("Camera Module 3");
@@ -357,7 +359,7 @@ bool RouteMappingPhotoController::odmReady() const
            && _fetcher
            && _fetcher->pendingFetchCount() == 0
            && !_requestedCaptureSequences.isEmpty()
-           && _geotaggedSequences.size() == _requestedCaptureSequences.size()
+           && _geotaggedSequences.size() >= kMinimumOdmImageCount
            && !odmRunning()
            && !_odmComplete;
 }
@@ -372,11 +374,18 @@ QString RouteMappingPhotoController::reconstructionStatus() const
                    ? tr("Complete")
                    : tr("Complete — overlay unavailable");
     }
+    if (odmReady()) {
+        const int missingCount = qMax(
+            0, _requestedCaptureSequences.size() - _geotaggedSequences.size());
+        return missingCount > 0
+                   ? tr("Ready %1 / %2 — %3 missing")
+                         .arg(_geotaggedSequences.size())
+                         .arg(_requestedCaptureSequences.size())
+                         .arg(missingCount)
+                   : tr("Ready");
+    }
     if (!_odmErrorMessage.isEmpty()) {
         return tr("Failed");
-    }
-    if (odmReady()) {
-        return tr("Ready");
     }
     if (_requestedCaptureSequences.isEmpty()) {
         return tr("Pending");
@@ -729,6 +738,22 @@ void RouteMappingPhotoController::endSession()
     emit reconstructionStateChanged();
 }
 
+void RouteMappingPhotoController::finishCaptureQueue()
+{
+    // The survey scheduler has issued its final trigger. Reject any later
+    // telemetry duplicates, but preserve requests which already carry their
+    // survey coordinate. setCaptureEnabled(false) cannot be used here because
+    // it intentionally drops queued requests for mission-exit/RTH safety.
+    if (_captureEnabled) {
+        _captureEnabled = false;
+        emit captureEnabledChanged();
+    }
+    _finishRequested = true;
+    _scheduleCapturePump();
+    _finishSessionIfReady();
+    emit reconstructionStateChanged();
+}
+
 void RouteMappingPhotoController::cancelSession()
 {
     _pendingCaptures.clear();
@@ -930,25 +955,42 @@ void RouteMappingPhotoController::_onFetcherPendingCountChanged()
 bool RouteMappingPhotoController::startOdm()
 {
     if (!odmReady()) {
-        const QString errorMessage = tr("ODM can start only after the mission has ended and every requested image has reached the GCS with geolocation data.");
+        const QString errorMessage = tr(
+            "ODM can start after the mission and photo transfers have ended, with at least %1 successfully transferred and geotagged images.")
+                                         .arg(kMinimumOdmImageCount);
         emit odmError(errorMessage);
         return false;
     }
 
     const QDir imageDirectory(QDir(_sessionDirectory).filePath(QStringLiteral("images")));
-    const QFileInfoList imageFiles = imageDirectory.entryInfoList(
-        {QStringLiteral("*.jpg"), QStringLiteral("*.jpeg"), QStringLiteral("*.JPG"), QStringLiteral("*.JPEG")},
-        QDir::Files | QDir::Readable,
-        QDir::Name);
     const QString geoPath = QDir(_sessionDirectory).filePath(QStringLiteral("geo.txt"));
-    if (imageFiles.isEmpty() || !QFileInfo::exists(geoPath)) {
+    if (!QFileInfo::exists(geoPath)) {
         _failOdm(tr("The mission images or geo.txt file are missing."));
         return false;
     }
 
+    // Build the NodeODM input from confirmed geotagged sequences instead of
+    // every JPEG in the directory. This permits reconstruction when one or
+    // more transfers failed and excludes untagged/partial files.
     _odmInputFiles.clear();
-    for (const QFileInfo &imageFile : imageFiles) {
-        _odmInputFiles.append(imageFile.absoluteFilePath());
+    QList<int> geotaggedSequences = _geotaggedSequences.values();
+    std::sort(geotaggedSequences.begin(), geotaggedSequences.end());
+    for (const int sequence : std::as_const(geotaggedSequences)) {
+        const QString imagePath = imageDirectory.filePath(
+            QStringLiteral("image_%1.jpg").arg(sequence, 4, 10, QChar('0')));
+        const QFileInfo imageInfo(imagePath);
+        if (imageInfo.isFile() && imageInfo.isReadable()) {
+            _odmInputFiles.append(imageInfo.absoluteFilePath());
+        } else {
+            qCWarning(RouteMappingPhotoControllerLog)
+                << "Skipping missing geotagged ODM input" << sequence << imagePath;
+        }
+    }
+    if (_odmInputFiles.size() < kMinimumOdmImageCount) {
+        _failOdm(tr("Only %1 readable geotagged images remain; ODM requires at least %2.")
+                     .arg(_odmInputFiles.size())
+                     .arg(kMinimumOdmImageCount));
+        return false;
     }
     _odmInputFiles.append(geoPath);
 
@@ -1513,7 +1555,10 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
         return;
     }
 
-    if (!_captureEnabled) {
+    // finishCaptureQueue() disables new requests while allowing already
+    // positioned survey triggers to drain. A normal disable/RTH leaves
+    // _finishRequested false and must never take a late exposure.
+    if (!_captureEnabled && !_finishRequested) {
         return;
     }
 

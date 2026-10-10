@@ -11,7 +11,7 @@ For Pi-only install notes, see also [`deploy/pi-route-mapping/README.md`](../../
 1. Operator draws or imports a **survey pattern** in Route Mapping mode and uploads it to the vehicle.
 2. In **Fly View**, the transect overlay shows progress; each photo trigger creates a **map tile** (when the JPEG arrives).
 3. **Full HD frames** (1920×1080) are taken on the **Pi** from a persistent `rpicam-vid --codec mjpeg` process, avoiding per-trigger camera startup delay and full-sensor camera timeouts.
-4. The **GCS** writes per-image JSON plus an ODM-compatible **`geo.txt`**, copies each JPEG from the Pi with **SCP**, and enables ODM stitching after every requested image has arrived.
+4. The **GCS** writes per-image JSON plus an ODM-compatible **`geo.txt`**, copies each JPEG from the Pi with **SCP**, and enables ODM stitching after transfers finish when at least two images arrived with valid geotags. Missing transfers are excluded instead of blocking the whole reconstruction.
 
 Two separate storage locations exist by design:
 
@@ -125,6 +125,15 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
    Expected (current script): `OK session=/home/shreeon/mapping_photos/mission_…`  
    Legacy Pi may reply bare `OK`; QGC falls back to `STATUS` (see §5).
 
+4. Take one disarmed test frame and inspect the entire image. The camera must
+   point at nadir, with the lens below or outside the landing-gear silhouette.
+   If gear is visible, physically lower/reposition the mount (or retract the
+   gear) before flight. Rotation and cropping do not remove an optical
+   obstruction without changing the field of view used for survey overlap.
+5. Confirm `/etc/default/shreeon-route-mapping` contains
+   `MAPPING_WIDTH=1920` and `MAPPING_HEIGHT=1080`. The old 4608×2592 stream is
+   not suitable for the 512 MB aircraft Pi.
+
 ### 3.2 Plan and upload
 
 1. Open **Route Mapping** from the mode selector.
@@ -135,14 +144,22 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 
 ### 3.3 Mission and photos
 
-1. **Arm** — live photo model resets; Pi session is **not** started on arm (avoids blocking UI).
-2. **Start mission** (or first photo trigger) — GCS creates local `Mission_*` folder; Pi session starts **in a background thread** (SSH precheck + `VIDEO_PAUSE` + `STATUS` if needed).
+1. **Arm** — live photo model resets and the Pi session starts in a background
+   thread, so SSH and the Full HD mapping stream are ready before the first
+   transect without blocking the UI.
+2. **Start mission** — the already-started session is reused; if arming did not
+   start it, the first mission/trigger update retries the same asynchronous
+   SSH precheck + `VIDEO_PAUSE` + `STATUS` sequence.
 3. **QGC** (not MAVLink camera protocol) decides when to shoot:
+   - Immediately before a Route Mapping upload, QGC configures PX4 with **`TRIG_MODE=4`** (distance based, on command / Survey mode) and **`TRIG_INTERFACE=3`** (MAVLink). Upload is stopped with a clear message if the connected PX4 parameter set is not ready or does not expose both parameters. Non-PX4 vehicles are left unchanged.
    - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define a fixed schedule (`_routeMappingGcsTriggerDistances`). High is **6 m** and Low is **9 m**.
    - Every transect starts with an immediate image, continues at the selected interval, and ends with an exit image. Turn connectors never schedule captures.
    - **Active photo-trigger phase** (all must hold): mission running, not `_routeMappingPhotoTriggersComplete`, mission index within the survey item (`sequenceNumber` … `lastSequenceNumber`), vehicle within corridor of photo-capture transects, max along-path progress on those legs.
    - As progress crosses each planned distance, GCS fires **one CAPTURE per 250 ms tick**. The JPEG geotag uses the vehicle's live coordinate at the moment QGC sends `CAPTURE`; the planned coordinate is used only when live telemetry is invalid.
-   - **Phase ends immediately** (sets `_routeMappingPhotoTriggersComplete`, `captureEnabled = false`) when any of: all N triggers sent; mission index moves past the survey (RTH/RTL item); mission stops; disarm.
+   - When all N planned triggers are scheduled, new triggers are blocked but
+     already-positioned requests drain to the Pi. When the mission exits the
+     survey, enters RTH/RTL, stops, or disarms, unsent requests are cancelled
+     instead so no photo is taken at the return/landing position.
    - **RTH / post-pattern flight** does not increase along-path progress (off-transect) and does not re-open the trigger phase.
    - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, save the first subsequent persistent-video frame, queue `image_NNNN_thumb.jpg` generation separately, then **SCP thumbnail during flight** → map tile.
    - Map tile and Photos count update when `photoFetched` succeeds. **Full-res archive SCP runs after disarm** (deferred queue); `photoFullFetched` when each archive JPEG replaces the thumb.
@@ -180,10 +197,10 @@ printf 'CAPTURE 1\n' | nc -u -w 2 10.5.0.2 14551
 
 | Command | Pi action | Reply (current script) |
 |---------|-----------|-------------------------|
-| `VIDEO_PAUSE` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release | `OK session=/home/shreeon/mapping_photos/mission_…` |
+| `VIDEO_PAUSE` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release; repeated command reuses the active session | `OK session=/home/shreeon/mapping_photos/mission_…` |
 | `CAPTURE N` | Enqueue still (no `BUSY` drop); path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg thumb=/…/image_NNNN_thumb.jpg` |
 | `STATUS` | Report active session | `SESSION /path` or `SESSION NONE` |
-| `VIDEO_RESUME` | Restart camera, close session | `OK` |
+| `VIDEO_RESUME` | Restart camera and close a QGC mapping session; no-op if none is active | `OK` |
 
 Duplicate `CAPTURE N` in the same Pi session is **idempotent** (same path returned, no second file).
 
@@ -206,9 +223,15 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 - Resolves GCS root: `AppSettings::photoSavePath()` + `/RouteMapping`.
 - **`beginSession()`** — creates `Mission_<UTC>_<uuid>/` on disk, then calls **`beginSessionAsync()`** on the fetcher (Pi work off UI thread).
 - Sets **`sessionActive`** only after Pi session succeeds (`piSessionBeginComplete`).
-- **`requestPhotoCapture()`** — writes JSON, `triggerCapture()`, and enqueues SCP via `fetchPhotoBySequence(..., remotePath)`.
+- **`requestPhotoCapture()`** — records the live GPS pose and trigger time,
+  writes JSON, sends a sequence-idempotent capture, and enqueues SCP via
+  `fetchPhotoBySequence(..., remotePath)`.
+- **`finishCaptureQueue()`** — after the Nth planned distance trigger, rejects
+  later duplicates but drains every request which already has its survey pose.
+  `endSession()` remains the RTH/disarm safety path and cancels anything which
+  never reached the camera.
 - The first successful transfer appends the image pose to `geo.txt` (`EPSG:4326`, longitude, latitude, altitude, yaw). This is ODM's supported image-geolocation input and lets geotag preparation run while later images are still arriving.
-- **`startOdm()`** becomes available only after capture has ended, transfer queues are empty, and every requested image has a `geo.txt` row. It launches Docker without a shell and reports the orthophoto path on completion.
+- **`startOdm()`** becomes available after capture has ended, transfer queues are empty, and at least two successfully transferred images have `geo.txt` rows. It submits only that valid geotagged subset, so one or more missing photos no longer block reconstruction, and reports the orthophoto path on completion.
 - **Discoverability (Bug 5):**
   - `RouteMapping/README.txt` (once)
   - `RouteMapping/latest_mission_session.txt` (updated each session)
@@ -240,7 +263,10 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 
 ### 5.3 Fly View integration
 
-- Photo session starts on **`missionRunning`** or first capture path, **not on arm**.
+- Photo session starts asynchronously on **arm** and is reused by mission start;
+  mission/trigger updates retry startup if the link was not ready at arm time.
+- Active-vehicle discovery at QGC startup sends no camera command. Both QGC and
+  the Pi also guard `VIDEO_RESUME` with actual QGC session state.
 - **GCS trigger state machine** (`FlyView.qml`): `_rebuildRouteMappingGcsTriggerSchedule()` at plan load; `_processGcsCalculatedPhotoTriggers()` on 250 ms timer + position/mission-index updates; `_markRouteMappingPhotoTriggersComplete(reason)` latches end-of-phase; reset on arm via `resetRouteMappingLivePhotos()`.
 - Helpers: `_routeMappingSurveyLastSequence()`, `_routeMappingVehicleOnPhotoCapturePath()` (corridor vs `routeMappingPhotoCaptureInfo`), `_routeMappingPlannedTriggerCount()`.
 - Errors: modals via `mainWindow.showMessageDialog` (do **not** use `qgcApp()` in QML — C++ only).
@@ -258,9 +284,12 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 | SSH UI | Dialog always said “install ssh-copy-id” | Show real `ssh` stderr + link/WFB hints |
 | UDP | `Unexpected VIDEO_PAUSE response: OK` | Ignore stale bare `OK`; wait for `session=` or STATUS after camera settle |
 | UDP | `Timed out waiting for STATUS` | Retries, multi-packet read, delay before STATUS after VIDEO_PAUSE |
-| UI freeze | GUI blocked 12s+ on SSH/UDP | `beginSessionAsync()` via `QtConcurrent`; no session start on arm; removed blocking “photos save here” modal |
+| UI freeze | GUI blocked 12s+ on SSH/UDP | `beginSessionAsync()` via `QtConcurrent`; arm-time preparation stays off the UI thread; removed blocking “photos save here” modal |
 | QML | `ReferenceError: qgcApp is not defined` | Replaced with `mainWindow.showMessageDialog` / console.info |
 | Build | `'findRoot' is not captured` | Lambda capture in `_listRemotePhotos` |
+| Camera startup | QGC active-vehicle reset sent `VIDEO_RESUME` with no mapping session | QGC resumes only a session it started; Pi ignores idle resume and repeated pause reuses the same session |
+| Pi resources | Installed service still requested 4608×2592 and thumbnail decoding competed with camera buffers | Install preset aligned to 1920×1080; thumbnail work waits until the mapping stream releases the sensor |
+| Final photos | Marking all triggers complete disabled capture and could discard queued final shots | `finishCaptureQueue()` drains already-positioned triggers; RTH/disarm still cancel late work |
 
 ---
 
@@ -311,6 +340,8 @@ sequenceDiagram
 | Wrong JPEG geotag | Old build used the planned point, or Pi still-capture backlog | Upgrade both QGC and the Pi bundle; verify `capture_backend=persistent-rpicam-vid-mjpeg` and `trigger_to_frame_seconds` in the Pi JSON sidecar |
 | QGC “not responding” | Old build blocking GUI on session start | Rebuild with async `beginSessionAsync` |
 | Empty GCS folder | `photoSavePath` / save root empty | Application settings save path; see `RouteMapping/README.txt` |
+| `imx708_wide` static-properties/sensor-delay warning | Pi libcamera database lacks optional metadata for this sensor build | Non-fatal if configuration and frames follow; update the Pi camera/libcamera packages separately if desired |
+| Camera busy only in independent test | `wfb-camera.service` already owns the single sensor | Do not run `rpicam-still` beside WFB; let `VIDEO_PAUSE` stop WFB before the mapping `rpicam-vid` starts |
 
 **Log filters (Qt logging):**
 
@@ -326,8 +357,10 @@ FlyView.RouteMappingPhotoController
 - [ ] GCS: QGC built from this repo installed.
 - [ ] GCS: `ssh-copy-id shreeon@10.5.0.2` succeeds with BatchMode.
 - [ ] Pi: `sudo bash install-on-pi.sh` from `deploy/pi-route-mapping`.
+- [ ] Pi: installed environment says `MAPPING_WIDTH=1920` and `MAPPING_HEIGHT=1080`.
 - [ ] Pi: `VIDEO_PAUSE` returns `OK session=…` (upgrade if only `OK`).
 - [ ] Pi: `CAPTURE 1` returns `QUEUED seq=1 path=…`.
+- [ ] Camera: disarmed test frame is nadir and contains no landing gear or airframe.
 - [ ] Link: UDP and SSH to `10.5.0.2` stable during mission.
 - [ ] Mission: Route mapping plan uploaded; Fly View shows transect and photo total N.
 
@@ -337,7 +370,7 @@ FlyView.RouteMappingPhotoController
 
 | Priority | Change | Role |
 |----------|--------|------|
-| **A (shipped)** | Persistent full-resolution `rpicam-vid` MJPEG process; save first frame after trigger | Removes per-photo startup delay and the post-mission exposure backlog |
+| **A (shipped)** | Persistent Full HD `rpicam-vid` MJPEG process; save first frame after trigger | Removes per-photo startup delay and the post-mission exposure backlog |
 | **B (shipped)** | Generate the transfer preview on a separate worker | Thumbnail scaling cannot hold up the next exposure |
 | **C (shipped)** | **`photoPlaceholder`** on trigger; replace with real thumbnail after SCP | Immediate map feedback while transfer completes |
 | **D (later)** | Pi pushes thumbnails to GCS | Avoid polling/retry latency if still required |

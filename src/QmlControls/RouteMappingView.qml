@@ -6,11 +6,11 @@ import QtPositioning
 import QtQuick.Layouts
 import QtQuick.Window
 
-
 import QGroundControl
 import QGroundControl.Controls
 import QGroundControl.FlightMap
 import QGroundControl.FlyView
+
 
 Item {
     id: _root
@@ -1230,6 +1230,16 @@ Item {
             mainWindow.showMessageDialog(
                         qsTr("Upload"),
                         qsTr("Survey pattern is not ready yet. Wait for the yellow grid to finish calculating, then upload again."))
+            return
+        }
+
+        // Enable PX4's command-controlled distance trigger before writing the
+        // Route Mapping mission. Abort instead of uploading a mission which
+        // cannot produce the native CAMERA_TRIGGER events used for capture.
+        if (!taskSettingsPanel.configureRouteMappingCameraTriggerParameters()) {
+            mainWindow.showMessageDialog(
+                        qsTr("Camera Trigger"),
+                        taskSettingsPanel.cameraTriggerConfigurationError)
             return
         }
 

@@ -641,7 +641,9 @@ Item {
         }
 
         onFetchQueueDrained: {
-            if (!routeMappingPhotoController.sessionActive && _root.routeMappingPiPhotoFetchEnabled) {
+            if (!routeMappingPhotoController.sessionActive
+                    && _root.routeMappingPiPhotoFetchEnabled
+                    && routeMappingPiPhotoFetcher.piSessionPath.length > 0) {
                 routeMappingPiPhotoFetcher.resumeLiveVideo()
             }
         }
@@ -727,6 +729,14 @@ Item {
     }
 
     function resetRouteMappingLivePhotos(startingNewSession) {
+        // Capture this before cancelSession() clears the local path. QGC must
+        // restore live video only if this process actually started (or may be
+        // starting) a Pi mapping session. Active-vehicle discovery at QGC
+        // startup must not operate the aircraft camera.
+        var hadPiPhotoSession = routeMappingPhotoController.sessionActive
+                || routeMappingPhotoController.piSessionPending
+                || routeMappingPiPhotoFetcher.piSessionStarting
+                || routeMappingPiPhotoFetcher.piSessionPath.length > 0
         _routeMappingPiFetchErrorShown = false
         _routeMappingPhotosRetrieved = 0
         _routeMappingCaptureFailures = 0
@@ -744,7 +754,7 @@ Item {
         // Arming immediately starts a new Pi session. Do not insert a
         // VIDEO_RESUME between cancelSession() and that new VIDEO_PAUSE;
         // concurrent replies can otherwise invalidate the async startup.
-        if (routeMappingPiPhotoFetchEnabled && !startingNewSession) {
+        if (routeMappingPiPhotoFetchEnabled && !startingNewSession && hadPiPhotoSession) {
             routeMappingPiPhotoFetcher.resumeLiveVideo()
         }
         _routeMappingLivePhotoModel.clear()
@@ -757,7 +767,10 @@ Item {
         routeMappingPhotoController.captureEnabled = true
         if (!routeMappingPhotoController.beginSession()) {
             routeMappingPhotoController.captureEnabled = false
-            routeMappingPiPhotoFetcher.resumeLiveVideo()
+            if (routeMappingPiPhotoFetcher.piSessionStarting
+                    || routeMappingPiPhotoFetcher.piSessionPath.length > 0) {
+                routeMappingPiPhotoFetcher.resumeLiveVideo()
+            }
             return false
         }
         return true
@@ -926,14 +939,23 @@ Item {
         return info.distanceToSegment <= corridorMeters
     }
 
-    function _markRouteMappingPhotoTriggersComplete(reason) {
+    function _markRouteMappingPhotoTriggersComplete(reason, drainScheduledCaptures) {
         if (_routeMappingPhotoTriggersComplete) {
             return
         }
         _routeMappingPhotoTriggersComplete = true
-        routeMappingPhotoController.captureEnabled = false
-        if (routeMappingPiPhotoFetchEnabled) {
-            routeMappingPiPhotoFetcher.haltNewCaptures()
+        if (drainScheduledCaptures) {
+            // Every request already has the GPS pose recorded at its planned
+            // distance. Let those requests reach the Pi before closing the
+            // session; this prevents the final queued shots being discarded.
+            routeMappingPhotoController.finishCaptureQueue()
+        } else {
+            // Mission exit, disarm, or RTH: never expose at the return/landing
+            // position for a request which did not reach the camera in time.
+            routeMappingPhotoController.captureEnabled = false
+            if (routeMappingPiPhotoFetchEnabled) {
+                routeMappingPiPhotoFetcher.haltNewCaptures()
+            }
         }
         console.info("[RouteMapping] Photo trigger phase complete:", reason)
     }
@@ -1011,7 +1033,8 @@ Item {
             return
         }
         if (_routeMappingGcsNextTriggerIndex >= maxTriggers) {
-            _markRouteMappingPhotoTriggersComplete("all planned triggers sent")
+            _markRouteMappingPhotoTriggersComplete(
+                        "all planned triggers scheduled", true /* drainScheduledCaptures */)
             return
         }
 
@@ -1045,6 +1068,13 @@ Item {
         // 6 m/9 m exposure interval.
         _issueGcsRouteMappingTriggerAtIndex(
                     _routeMappingGcsNextTriggerIndex, vehicleCoordinate)
+        // Latch completion in the same telemetry callback as the Nth request.
+        // Waiting for another position tick allowed mission/RTH state to win
+        // the race and discard that final queued exposure.
+        if (_routeMappingGcsNextTriggerIndex >= maxTriggers) {
+            _markRouteMappingPhotoTriggersComplete(
+                        "all planned triggers scheduled", true /* drainScheduledCaptures */)
+        }
     }
 
     function _mappingPhotoNearCoordinate(coordinate, duplicateRadiusOverride) {
@@ -1175,9 +1205,15 @@ Item {
                     sequence,
                     capturedRelativeAltitude)) {
             _routeMappingTriggersReceived++
+            var plannedTriggerCount = _routeMappingPlannedTriggerCount()
             _routeMappingGcsNextTriggerIndex = Math.min(
                         _routeMappingGcsNextTriggerIndex + 1,
-                        _routeMappingPlannedTriggerCount())
+                        plannedTriggerCount)
+            if (plannedTriggerCount > 0
+                    && _routeMappingGcsNextTriggerIndex >= plannedTriggerCount) {
+                _markRouteMappingPhotoTriggersComplete(
+                            "all planned triggers scheduled", true /* drainScheduledCaptures */)
+            }
         } else {
             _routeMappingCaptureFailures++
         }

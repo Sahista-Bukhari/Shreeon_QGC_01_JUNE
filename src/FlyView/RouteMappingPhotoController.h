@@ -73,6 +73,8 @@ class RouteMappingPhotoController : public QObject
 
     Q_INVOKABLE void setPhotoFetcher(QObject *fetcher);
     Q_INVOKABLE bool beginSession();
+    /// Stop accepting new triggers but send every capture already positioned by the survey schedule.
+    Q_INVOKABLE void finishCaptureQueue();
     Q_INVOKABLE void endSession();
     Q_INVOKABLE void cancelSession();
     Q_INVOKABLE void discardSessionStorage();
