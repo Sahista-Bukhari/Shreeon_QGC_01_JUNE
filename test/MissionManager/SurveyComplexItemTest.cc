@@ -475,3 +475,30 @@ void SurveyComplexItemTest::_testRouteMappingResolutionPreset(void)
     QCOMPARE(loadedSurveyItem->patternFlightSpeed()->rawValue().toDouble(), speedMetersPerSecond);
     QVERIFY(loadedSurveyItem->specifyPatternFlightSpeed());
 }
+
+void SurveyComplexItemTest::_testRouteMappingTerrainFrame(void)
+{
+    constexpr double distanceAboveTerrainMeters = 60.0;
+
+    // Resolution preset values may also be used with vehicle terrain
+    // following. The altitude remains AGL and the generated coordinate items
+    // must retain MAV_FRAME_GLOBAL_TERRAIN_ALT; Route Mapping takeoff syncing
+    // is deliberately bypassed for this mode.
+    _surveyItem->cameraCalc()->setDistanceMode(QGroundControlQmlGlobal::AltitudeModeTerrainFrame);
+    _surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
+    _surveyItem->cameraCalc()->distanceToSurface()->setRawValue(distanceAboveTerrainMeters);
+
+    QList<MissionItem*> missionItems;
+    _surveyItem->appendMissionItems(missionItems, this);
+
+    int coordinateItemCount = 0;
+    for (const MissionItem* missionItem : std::as_const(missionItems)) {
+        if (missionItem->command() == MAV_CMD_NAV_WAYPOINT
+                || missionItem->command() == MAV_CMD_CONDITION_GATE) {
+            QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_TERRAIN_ALT);
+            QCOMPARE(missionItem->param7(), distanceAboveTerrainMeters);
+            ++coordinateItemCount;
+        }
+    }
+    QVERIFY(coordinateItemCount > 0);
+}

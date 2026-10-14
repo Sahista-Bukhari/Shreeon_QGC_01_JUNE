@@ -37,6 +37,7 @@ class RouteMappingPhotoController : public QObject
     Q_PROPERTY(QGeoCoordinate orthophotoNorthWest READ orthophotoNorthWest NOTIFY orthophotoOverlayChanged)
     Q_PROPERTY(QGeoCoordinate orthophotoSouthEast READ orthophotoSouthEast NOTIFY orthophotoOverlayChanged)
     Q_PROPERTY(bool orthophotoOverlayReady READ orthophotoOverlayReady NOTIFY orthophotoOverlayChanged)
+    Q_PROPERTY(bool orthophotoLoading READ orthophotoLoading NOTIFY orthophotoOverlayChanged)
 
    public:
     explicit RouteMappingPhotoController(QObject *parent = nullptr);
@@ -70,6 +71,7 @@ class RouteMappingPhotoController : public QObject
         && _orthophotoNorthWest.isValid()
             && _orthophotoSouthEast.isValid();
     }
+    bool orthophotoLoading() const { return _orthophotoLoading; }
 
     Q_INVOKABLE void setPhotoFetcher(QObject *fetcher);
     Q_INVOKABLE bool beginSession();
@@ -82,6 +84,10 @@ class RouteMappingPhotoController : public QObject
     Q_INVOKABLE QString metadataPathForSequence(int sequence) const;
     Q_INVOKABLE bool requestPhotoCapture(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double relativeAltitude, double heading);
     Q_INVOKABLE bool startOdm();
+    /// Load a previously generated georeferenced TIFF without modifying the current mission.
+    Q_INVOKABLE bool loadOrthophoto(const QString &filePath);
+    /// Hide the current raster. The source GeoTIFF remains untouched on disk.
+    Q_INVOKABLE void clearOrthophotoOverlay();
 
    signals:
     void sessionActiveChanged();
@@ -188,5 +194,7 @@ class RouteMappingPhotoController : public QObject
     QString _orthophotoUrl;
     QGeoCoordinate _orthophotoNorthWest;
     QGeoCoordinate _orthophotoSouthEast;
+    bool _orthophotoLoading = false;
+    bool _orthophotoImportPending = false;
     bool _odmComplete = false;
 };

@@ -111,6 +111,14 @@ Rectangle {
     readonly property bool _patternAltitudeAvailable: _patternAltitudeFact !== null
     readonly property bool _patternSpeedAvailable: _patternSpeedFact !== null
 
+    // A Route Mapping preset is an AGL/relative-height contract only while the
+    // survey uses the normal relative-altitude frame. Terrain-following and
+    // absolute-altitude surveys own a different vertical profile and must not
+    // have their takeoff item rewritten from DistanceToSurface.
+    readonly property bool _takeoffFollowsPattern: synchronizeTakeoffAltitudeWithPattern
+                                                   && _cameraCalc
+                                                   && _cameraCalc.distanceMode === QGroundControl.AltitudeModeRelative
+
     // Mission altitude is bound directly to the takeoff item. Route Mapping can
     // opt into synchronizing it with the survey altitude.
     property Fact _missionAltitudeFact: takeoffItem && takeoffItem.altitude
@@ -197,7 +205,7 @@ Rectangle {
         if (isNaN(alt)) {
             return
         }
-        if (root.synchronizeTakeoffAltitudeWithPattern && root._patternAltitudeFact) {
+        if (root._takeoffFollowsPattern && root._patternAltitudeFact) {
             alt = Number(root._patternAltitudeFact.rawValue)
             root._missionAltitudeFact.rawValue = alt
         } else {
@@ -207,7 +215,7 @@ Rectangle {
     }
 
     function _syncTakeoffAltitudeToPattern() {
-        if (!root.synchronizeTakeoffAltitudeWithPattern
+        if (!root._takeoffFollowsPattern
                 || !root._missionAltitudeFact || !root._patternAltitudeFact) {
             return
         }
@@ -223,6 +231,26 @@ Rectangle {
             root._logPlanTelemetry("synchronized takeoff altitude", patternAltitudeMeters, "m")
         }
         root._syncMissionAltitudeSlider()
+    }
+
+    // Upload-time invariant for ordinary (non-terrain) Route Mapping: the
+    // NAV_TAKEOFF target and every generated survey coordinate must use the
+    // same relative altitude. This catches a missing/stale Fact binding before
+    // a mismatched mission can reach the flight controller.
+    function altitudeProfileReadyForUpload() {
+        if (!root._takeoffFollowsPattern) {
+            return true
+        }
+        if (!root._missionAltitudeFact || !root._patternAltitudeFact) {
+            return false
+        }
+
+        root._syncTakeoffAltitudeToPattern()
+        var takeoffAltitudeMeters = Number(root._missionAltitudeFact.rawValue)
+        var patternAltitudeMeters = Number(root._patternAltitudeFact.rawValue)
+        return isFinite(takeoffAltitudeMeters)
+                && isFinite(patternAltitudeMeters)
+                && Math.abs(takeoffAltitudeMeters - patternAltitudeMeters) <= 0.01
     }
 
     Timer {
@@ -597,7 +625,7 @@ Rectangle {
             root._commitPatternAltitude(patternAltitudeSlider.value)
         if (root._patternSpeedAvailable)
             root._commitPatternSpeed(patternSpeedSlider.value)
-        if (root._missionAltitudeAvailable && !root.synchronizeTakeoffAltitudeWithPattern)
+        if (root._missionAltitudeAvailable && !root._takeoffFollowsPattern)
             root._commitMissionAltitude(missionAltitudeSlider.value)
         root._syncTakeoffAltitudeToPattern()
         if (root.showSpraySettings) {
@@ -1693,7 +1721,7 @@ Rectangle {
                     Layout.fillWidth:   true
                     enabled:            root._missionAltitudeAvailable
                                         && root.missionSettingsEnabled
-                                        && !root.synchronizeTakeoffAltitudeWithPattern
+                                        && !root._takeoffFollowsPattern
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1719,7 +1747,7 @@ Rectangle {
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
                     enabled:                root._missionAltitudeAvailable
                                             && root.missionSettingsEnabled
-                                            && !root.synchronizeTakeoffAltitudeWithPattern
+                                            && !root._takeoffFollowsPattern
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1744,7 +1772,7 @@ Rectangle {
             QGCLabel {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.1
-                text:               root.synchronizeTakeoffAltitudeWithPattern
+                text:               root._takeoffFollowsPattern
                                     ? qsTr("Takeoff altitude follows the Survey Pattern altitude so the vehicle climbs vertically first, then holds that altitude to the first waypoint.")
                                     : qsTr("Takeoff altitude only. Survey Pattern altitude is separate — if Mission is higher than Survey, the vehicle will descend into the pattern after takeoff.")
                 color:              root._hintColor
@@ -1873,9 +1901,11 @@ Rectangle {
         }
         root._syncPatternAltitudeSlider()
         root._syncPatternSpeedSlider()
+        Qt.callLater(root._syncTakeoffAltitudeToPattern)
     }
 
     onTakeoffItemChanged: {
         root._syncMissionAltitudeSlider()
+        Qt.callLater(root._syncTakeoffAltitudeToPattern)
     }
 }

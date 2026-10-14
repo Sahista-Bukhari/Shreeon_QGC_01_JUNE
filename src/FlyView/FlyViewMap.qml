@@ -62,6 +62,7 @@ FlightMap {
     property var    routeMappingOrthophotoNorthWest: QtPositioning.coordinate()
     property var    routeMappingOrthophotoSouthEast: QtPositioning.coordinate()
     property bool   routeMappingOrthophotoReady: false
+    property real   routeMappingOrthophotoOpacity: 0.82
     property bool   hideVehicleMissionForUnuploadedRoute: false
     readonly property bool _routeMappingRasterVisible: !planEditMode
                                                         && (routeMappingOrthophotoReady
@@ -712,19 +713,28 @@ FlightMap {
                  && routeMappingOrthophotoNorthWest.isValid
                  && routeMappingOrthophotoSouthEast
                  && routeMappingOrthophotoSouthEast.isValid
-        // Raster map content must stay below every navigation marker. Use a
-        // deliberately separate z range instead of relying on adjacent QGC
-        // map-item constants, which can still interleave across MapItemViews.
-        z: -1000
+                 && _root.mapReady
+        // Stay above map tiles, but below takeoff/return/transect lines (47+)
+        // and vehicle chrome. Negative z draws under the Map's own content on
+        // some Qt Location builds, which made the orthomosaic look unloaded.
+        z: Math.max(1, QGroundControl.zOrderWaypointLines - 10)
 
         sourceItem: Image {
+            id: routeMappingOrthophotoImage
+            // Recompute screen size when the view moves, not only on zoom.
             readonly property real _mapZoomDependency: _root.zoomLevel
+            readonly property var _mapCenterDependency: _root.center
+            readonly property real _mapBearingDependency: _root.bearing
             readonly property point _northWestPoint: {
-                var unused = _mapZoomDependency
+                var unusedZoom = _mapZoomDependency
+                var unusedCenter = _mapCenterDependency
+                var unusedBearing = _mapBearingDependency
                 return _root.fromCoordinate(routeMappingOrthophotoNorthWest, false)
             }
             readonly property point _southEastPoint: {
-                var unused = _mapZoomDependency
+                var unusedZoom = _mapZoomDependency
+                var unusedCenter = _mapCenterDependency
+                var unusedBearing = _mapBearingDependency
                 return _root.fromCoordinate(routeMappingOrthophotoSouthEast, false)
             }
 
@@ -732,11 +742,21 @@ FlightMap {
             height: Math.max(1, Math.abs(_southEastPoint.y - _northWestPoint.y))
             source: routeMappingOrthophotoUrl
             fillMode: Image.Stretch
-            asynchronous: true
+            // Async loads often never push a texture into MapQuickItem; load
+            // synchronously so the mosaic is painted as soon as bounds are ready.
+            asynchronous: false
             cache: false
             smooth: true
-            mipmap: true
-            opacity: 0.82
+            // Non-power-of-two GeoTIFF-derived PNGs can fail to upload as
+            // mipmapped textures on some GL drivers.
+            mipmap: false
+            opacity: Math.max(0, Math.min(1, routeMappingOrthophotoOpacity))
+
+            onStatusChanged: {
+                if (status === Image.Error) {
+                    console.warn("[RouteMapping] Orthomosaic image failed to load:", source)
+                }
+            }
         }
     }
 

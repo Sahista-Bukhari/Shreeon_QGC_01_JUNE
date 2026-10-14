@@ -37,7 +37,7 @@ namespace {
 
 constexpr int kNodeOdmPollIntervalMs = 2000;
 constexpr auto kOrthophotoArchivePath = "odm_orthophoto/odm_orthophoto.tif";
-constexpr auto kOrthophotoOverlayPath = "odm_orthophoto/odm_orthophoto_overlay.png";
+constexpr auto kOrthophotoOverlayFileName = "odm_orthophoto_overlay.png";
 constexpr int kMinimumOdmImageCount = 2;
 
 const QByteArray kReferenceExifMake("RaspberryPi");
@@ -333,7 +333,7 @@ QHttpPart nodeOdmTextPart(const QString &name, const QByteArray &value)
 
 RouteMappingPhotoController::RouteMappingPhotoController(QObject *parent)
     : QObject(parent)
-    , _nodeOdmNetworkManager(new QNetworkAccessManager(this))
+      , _nodeOdmNetworkManager(new QNetworkAccessManager(this))
 {
     _odmPollTimer.setInterval(kNodeOdmPollIntervalMs);
     _odmPollTimer.setSingleShot(false);
@@ -352,16 +352,16 @@ bool RouteMappingPhotoController::odmRunning() const
 bool RouteMappingPhotoController::odmReady() const
 {
     return !_sessionDirectory.isEmpty()
-           && !_sessionActive
-           && !_waitingForPiSession
-           && !_captureUdpInFlight
-           && _pendingCaptures.isEmpty()
-           && _fetcher
-           && _fetcher->pendingFetchCount() == 0
-           && !_requestedCaptureSequences.isEmpty()
-           && _geotaggedSequences.size() >= kMinimumOdmImageCount
-           && !odmRunning()
-           && !_odmComplete;
+    && !_sessionActive
+        && !_waitingForPiSession
+        && !_captureUdpInFlight
+        && _pendingCaptures.isEmpty()
+        && _fetcher
+        && _fetcher->pendingFetchCount() == 0
+        && !_requestedCaptureSequences.isEmpty()
+        && _geotaggedSequences.size() >= kMinimumOdmImageCount
+        && !odmRunning()
+        && !_odmComplete;
 }
 
 QString RouteMappingPhotoController::reconstructionStatus() const
@@ -371,8 +371,8 @@ QString RouteMappingPhotoController::reconstructionStatus() const
     }
     if (_odmComplete) {
         return _odmErrorMessage.isEmpty()
-                   ? tr("Complete")
-                   : tr("Complete — overlay unavailable");
+        ? tr("Complete")
+        : tr("Complete — overlay unavailable");
     }
     if (odmReady()) {
         const int missingCount = qMax(
@@ -398,7 +398,7 @@ QString RouteMappingPhotoController::reconstructionStatus() const
         && _fetcher->pendingFetchCount() == 0
         && _geotaggedSequences.size() < _requestedCaptureSequences.size()) {
         return tr("Incomplete %1 / %2")
-            .arg(_geotaggedSequences.size())
+        .arg(_geotaggedSequences.size())
             .arg(_requestedCaptureSequences.size());
     }
     return tr("Geotagging %1 / %2")
@@ -409,24 +409,25 @@ QString RouteMappingPhotoController::reconstructionStatus() const
 QString RouteMappingPhotoController::_nodeOdmStatusText() const
 {
     switch (_odmState) {
-    case OdmState::Connecting:
-        return tr("Connecting…");
-    case OdmState::Uploading:
-        return tr("Uploading %1%").arg(_odmProgress);
-    case OdmState::Queued:
-        return _odmStateDetail.isEmpty() ? tr("Queued") : _odmStateDetail;
-    case OdmState::Processing:
-        return _odmStateDetail.isEmpty()
-                   ? tr("Processing %1%").arg(_odmProgress)
-                   : tr("%1 — %2%").arg(_odmStateDetail).arg(_odmProgress);
-    case OdmState::Downloading:
-        return tr("Downloading GeoTIFF %1%").arg(_odmProgress);
-    case OdmState::Complete:
-        return tr("Complete");
-    case OdmState::Failed:
-        return tr("Failed");
-    case OdmState::Idle:
-        break;
+        case OdmState::Connecting:
+            return tr("Connecting…");
+        case OdmState::Uploading:
+            return tr("Uploading %1%").arg(_odmProgress);
+        case OdmState::Queued:
+            return _odmStateDetail.isEmpty() ? tr("Queued") : _odmStateDetail;
+        case OdmState::Processing:
+            return _odmStateDetail.isEmpty()
+                       ? tr("Processing %1%").arg(_odmProgress)
+                       : tr("%1 — %2%").arg(_odmStateDetail).arg(_odmProgress);
+        case OdmState::Downloading:
+            return tr("Downloading GeoTIFF %1%").arg(_odmProgress);
+        case OdmState::Complete:
+            return tr("Complete");
+        case OdmState::Failed:
+            return tr("Failed");
+
+        case OdmState::Idle:
+            break;
     }
     return {};
 }
@@ -440,8 +441,8 @@ void RouteMappingPhotoController::setCaptureEnabled(bool enabled)
     if (!enabled) {
         if (!_pendingCaptures.isEmpty()) {
             qCInfo(RouteMappingPhotoControllerLog)
-                << "Discarding" << _pendingCaptures.size()
-                << "queued Route Mapping capture(s); trigger phase inactive";
+            << "Discarding" << _pendingCaptures.size()
+            << "queued Route Mapping capture(s); trigger phase inactive";
         }
         _pendingCaptures.clear();
         _notifyPendingCaptureCountChanged();
@@ -571,14 +572,14 @@ void RouteMappingPhotoController::_removeFailedSessionDirectory(const QString &s
         return;
     }
 
-    // This path is used only when Pi session startup fails, before capture can
-    // begin. Remove the mission skeleton, including its empty images folder.
+            // This path is used only when Pi session startup fails, before capture can
+            // begin. Remove the mission skeleton, including its empty images folder.
     if (sessionDir.removeRecursively()) {
         qCInfo(RouteMappingPhotoControllerLog)
-            << "Removed empty Route Mapping mission folder after failed Pi session:" << sessionPath;
+        << "Removed empty Route Mapping mission folder after failed Pi session:" << sessionPath;
     } else {
         qCWarning(RouteMappingPhotoControllerLog)
-            << "Could not remove empty Route Mapping mission folder:" << sessionPath;
+        << "Could not remove empty Route Mapping mission folder:" << sessionPath;
     }
 }
 
@@ -641,12 +642,10 @@ bool RouteMappingPhotoController::beginSession()
     _odmDownloadPath.clear();
     _odmSessionDirectory.clear();
     _odmErrorMessage.clear();
-    _orthophotoPath.clear();
-    _orthophotoUrl.clear();
-    _orthophotoNorthWest = {};
-    _orthophotoSouthEast = {};
+    // The orthomosaic is an independent reference layer. Keep the currently
+    // displayed field when a new capture session starts; a new ODM result or
+    // an explicit Hide/Replace action will update it later.
     _odmComplete = false;
-    emit orthophotoOverlayChanged();
     const QString routeMappingRoot = _routeMappingRoot(true);
     if (routeMappingRoot.isEmpty()) {
         const QString errorMessage = tr(
@@ -786,7 +785,7 @@ void RouteMappingPhotoController::discardSessionStorage()
     cancelSession();
     if (odmRunning()) {
         qCWarning(RouteMappingPhotoControllerLog)
-            << "Keeping Route Mapping session while ODM is running:" << sessionPath;
+        << "Keeping Route Mapping session while ODM is running:" << sessionPath;
         return;
     }
     if (sessionPath.isEmpty()) {
@@ -800,10 +799,10 @@ void RouteMappingPhotoController::discardSessionStorage()
 
     if (sessionDir.removeRecursively()) {
         qCInfo(RouteMappingPhotoControllerLog)
-            << "Removed Route Mapping photo folder after plan clear:" << sessionPath;
+        << "Removed Route Mapping photo folder after plan clear:" << sessionPath;
     } else {
         qCWarning(RouteMappingPhotoControllerLog)
-            << "Could not remove Route Mapping photo folder:" << sessionPath;
+        << "Could not remove Route Mapping photo folder:" << sessionPath;
     }
 }
 
@@ -892,12 +891,12 @@ bool RouteMappingPhotoController::_appendOdmGeotag(int sequence, const QString &
     }
     _odmErrorMessage.clear();
 
-    // A full-resolution image can overwrite an already-tagged thumbnail. EXIF
-    // is therefore always rewritten above, while the ODM row is appended once.
+            // A full-resolution image can overwrite an already-tagged thumbnail. EXIF
+            // is therefore always rewritten above, while the ODM row is appended once.
     if (_geotaggedSequences.contains(sequence)) {
         qCInfo(RouteMappingPhotoControllerLog)
-            << "Refreshed GPS EXIF geotag on full-resolution Route Mapping image"
-            << sequence << localFilePath;
+        << "Refreshed GPS EXIF geotag on full-resolution Route Mapping image"
+        << sequence << localFilePath;
         return true;
     }
 
@@ -942,7 +941,7 @@ void RouteMappingPhotoController::_onPhotoFetched(
         (void)_appendOdmGeotag(requestId, localFilePath);
     } else if (!errorMessage.isEmpty()) {
         qCWarning(RouteMappingPhotoControllerLog)
-            << "Photo transfer failed before ODM geotagging" << requestId << errorMessage;
+        << "Photo transfer failed before ODM geotagging" << requestId << errorMessage;
     }
     emit reconstructionStateChanged();
 }
@@ -954,9 +953,15 @@ void RouteMappingPhotoController::_onFetcherPendingCountChanged()
 
 bool RouteMappingPhotoController::startOdm()
 {
+    if (_orthophotoLoading) {
+        const QString errorMessage = tr(
+            "Wait for the selected orthomosaic to finish loading before starting ODM.");
+        emit odmError(errorMessage);
+        return false;
+    }
     if (!odmReady()) {
         const QString errorMessage = tr(
-            "ODM can start after the mission and photo transfers have ended, with at least %1 successfully transferred and geotagged images.")
+                                         "ODM can start after the mission and photo transfers have ended, with at least %1 successfully transferred and geotagged images.")
                                          .arg(kMinimumOdmImageCount);
         emit odmError(errorMessage);
         return false;
@@ -969,9 +974,9 @@ bool RouteMappingPhotoController::startOdm()
         return false;
     }
 
-    // Build the NodeODM input from confirmed geotagged sequences instead of
-    // every JPEG in the directory. This permits reconstruction when one or
-    // more transfers failed and excludes untagged/partial files.
+            // Build the NodeODM input from confirmed geotagged sequences instead of
+            // every JPEG in the directory. This permits reconstruction when one or
+            // more transfers failed and excludes untagged/partial files.
     _odmInputFiles.clear();
     QList<int> geotaggedSequences = _geotaggedSequences.values();
     std::sort(geotaggedSequences.begin(), geotaggedSequences.end());
@@ -983,7 +988,7 @@ bool RouteMappingPhotoController::startOdm()
             _odmInputFiles.append(imageInfo.absoluteFilePath());
         } else {
             qCWarning(RouteMappingPhotoControllerLog)
-                << "Skipping missing geotagged ODM input" << sequence << imagePath;
+            << "Skipping missing geotagged ODM input" << sequence << imagePath;
         }
     }
     if (_odmInputFiles.size() < kMinimumOdmImageCount) {
@@ -997,6 +1002,7 @@ bool RouteMappingPhotoController::startOdm()
     _odmErrorMessage.clear();
     _odmComplete = false;
     _orthophotoPath.clear();
+    _orthophotoImportPending = false;
     _odmSessionDirectory = _sessionDirectory;
     _odmTaskUuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
     _odmPollFailures = 0;
@@ -1036,6 +1042,55 @@ bool RouteMappingPhotoController::startOdm()
         << "Connecting to NodeODM for mission" << _odmSessionDirectory
         << "task" << _odmTaskUuid;
     return true;
+}
+
+bool RouteMappingPhotoController::loadOrthophoto(const QString &filePath)
+{
+    if (odmRunning()) {
+        const QString errorMessage = tr(
+            "An ODM reconstruction is currently running. Wait for it to finish before loading another orthomosaic.");
+        qCWarning(RouteMappingPhotoControllerLog) << errorMessage;
+        emit odmError(errorMessage);
+        return false;
+    }
+
+    const QUrl suppliedUrl(filePath);
+    const QString localPath = suppliedUrl.isLocalFile() ? suppliedUrl.toLocalFile() : filePath;
+    const QFileInfo orthophotoInfo(localPath);
+    const QString suffix = orthophotoInfo.suffix().toLower();
+    if (!orthophotoInfo.isFile() || !orthophotoInfo.isReadable()
+        || (suffix != QStringLiteral("tif") && suffix != QStringLiteral("tiff"))) {
+        const QString errorMessage = tr(
+            "Select a readable georeferenced orthomosaic GeoTIFF file (.tif or .tiff).");
+        qCWarning(RouteMappingPhotoControllerLog) << errorMessage << localPath;
+        emit odmError(errorMessage);
+        return false;
+    }
+
+    // Changing this path also invalidates any older asynchronous GDAL result.
+    // The mission/session state is intentionally left alone: a historical
+    // raster is a display layer, not a replacement for the active mission.
+    _orthophotoPath = orthophotoInfo.canonicalFilePath();
+    if (_orthophotoPath.isEmpty()) {
+        _orthophotoPath = orthophotoInfo.absoluteFilePath();
+    }
+    _odmErrorMessage.clear();
+    _orthophotoImportPending = true;
+    emit reconstructionStateChanged();
+    _prepareOrthophotoOverlay();
+    return true;
+}
+
+void RouteMappingPhotoController::clearOrthophotoOverlay()
+{
+    _orthophotoPath.clear();
+    _orthophotoUrl.clear();
+    _orthophotoNorthWest = {};
+    _orthophotoSouthEast = {};
+    _orthophotoLoading = false;
+    _orthophotoImportPending = false;
+    emit reconstructionStateChanged();
+    emit orthophotoOverlayChanged();
 }
 
 void RouteMappingPhotoController::_beginNodeOdmUpload()
@@ -1160,26 +1215,26 @@ void RouteMappingPhotoController::_pollNodeOdmTask()
             100);
 
         switch (statusCode) {
-        case 10:
-            _setOdmState(OdmState::Queued, progress);
-            break;
-        case 20:
-            _setOdmState(OdmState::Processing, progress);
-            break;
-        case 30:
-            _failOdm(tr("NodeODM task %1 failed. Check the NodeODM container logs for details.")
-                         .arg(_odmTaskUuid));
-            break;
-        case 40:
-            _odmPollTimer.stop();
-            _downloadNodeOdmOrthophoto();
-            break;
-        case 50:
-            _failOdm(tr("NodeODM task %1 was canceled.").arg(_odmTaskUuid));
-            break;
-        default:
-            _failOdm(tr("NodeODM returned an unknown task status (%1).").arg(statusCode));
-            break;
+            case 10:
+                _setOdmState(OdmState::Queued, progress);
+                break;
+            case 20:
+                _setOdmState(OdmState::Processing, progress);
+                break;
+            case 30:
+                _failOdm(tr("NodeODM task %1 failed. Check the NodeODM container logs for details.")
+                             .arg(_odmTaskUuid));
+                break;
+            case 40:
+                _odmPollTimer.stop();
+                _downloadNodeOdmOrthophoto();
+                break;
+            case 50:
+                _failOdm(tr("NodeODM task %1 was canceled.").arg(_odmTaskUuid));
+                break;
+            default:
+                _failOdm(tr("NodeODM returned an unknown task status (%1).").arg(statusCode));
+                break;
         }
     });
 }
@@ -1253,6 +1308,7 @@ void RouteMappingPhotoController::_finishNodeOdmDownload(QNetworkReply *reply)
     QFile::remove(_odmDownloadPath);
 
     _orthophotoPath = expectedOrthophoto;
+    _orthophotoImportPending = false;
     _odmComplete = true;
     _odmErrorMessage.clear();
     _setOdmState(OdmState::Complete, 100);
@@ -1266,13 +1322,14 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
     _orthophotoUrl.clear();
     _orthophotoNorthWest = {};
     _orthophotoSouthEast = {};
+    _orthophotoLoading = true;
     emit orthophotoOverlayChanged();
 
     const QString gdalInfo = QStandardPaths::findExecutable(QStringLiteral("gdalinfo"));
     const QString gdalTranslate = QStandardPaths::findExecutable(QStringLiteral("gdal_translate"));
     if (gdalInfo.isEmpty() || gdalTranslate.isEmpty()) {
         _reportOrthophotoOverlayError(tr(
-            "The orthomosaic was generated and saved, but it cannot be displayed on the Fly View map because GDAL is not installed."));
+            "The orthomosaic cannot be displayed on the map because GDAL is not installed."));
         return;
     }
 
@@ -1290,12 +1347,13 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
             const QByteArray errorOutput = process->readAllStandardError();
             process->deleteLater();
             if (_orthophotoPath != sourceOrthophotoPath) {
+                // A newer load/replace superseded this GDAL job.
                 return;
             }
             if (exitStatus != QProcess::NormalExit || exitCode != 0) {
                 _reportOrthophotoOverlayError(tr(
-                    "The orthomosaic was generated and saved, but its map bounds could not be read. GDAL reported: %1")
-                                                      .arg(QString::fromUtf8(errorOutput).trimmed()));
+                                                  "The orthomosaic map bounds could not be read. GDAL reported: %1")
+                                                  .arg(QString::fromUtf8(errorOutput).trimmed()));
                 return;
             }
 
@@ -1328,14 +1386,18 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                 || minLongitude >= maxLongitude
                 || minLatitude >= maxLatitude) {
                 _reportOrthophotoOverlayError(tr(
-                    "The orthomosaic was generated and saved, but it does not contain usable WGS84 map bounds."));
+                    "The selected orthomosaic does not contain usable WGS84 map bounds."));
                 return;
             }
 
             const QGeoCoordinate northWest(maxLatitude, minLongitude);
             const QGeoCoordinate southEast(minLatitude, maxLongitude);
-            const QString overlayPath = QDir(_odmSessionDirectory).filePath(
-                QString::fromLatin1(kOrthophotoOverlayPath));
+            // Keep the derived display PNG beside its GeoTIFF. This works for
+            // both a newly downloaded NodeODM result and a historical result
+            // selected from an older Route Mapping mission directory.
+            const QString overlayPath = QFileInfo(sourceOrthophotoPath)
+                                            .dir()
+                                            .filePath(QString::fromLatin1(kOrthophotoOverlayFileName));
             QFile::remove(overlayPath);
 
             // Qt Quick Image does not reliably decode GeoTIFF. Convert the
@@ -1352,13 +1414,29 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                 QStringLiteral("3"),
             };
             const QJsonArray bands = gdalDocument.value(QStringLiteral("bands")).toArray();
+            // Prefer a real alpha band when present. Falling back to the dataset
+            // mask still works for 3-band ODM outputs.
+            const bool hasAlphaBand = bands.size() >= 4
+                                      && bands.at(3)
+                                             .toObject()
+                                             .value(QStringLiteral("colorInterpretation"))
+                                             .toString()
+                                             .compare(QStringLiteral("Alpha"), Qt::CaseInsensitive)
+                                          == 0;
             const bool hasDatasetMask = !bands.isEmpty()
                                         && !bands.first()
                                                 .toObject()
                                                 .value(QStringLiteral("mask"))
                                                 .toObject()
                                                 .isEmpty();
-            if (hasDatasetMask) {
+            if (hasAlphaBand) {
+                translateArguments.append({
+                    QStringLiteral("-b"),
+                    QStringLiteral("4"),
+                    QStringLiteral("-colorinterp"),
+                    QStringLiteral("red,green,blue,alpha"),
+                });
+            } else if (hasDatasetMask) {
                 translateArguments.append({
                     QStringLiteral("-b"),
                     QStringLiteral("mask"),
@@ -1370,6 +1448,31 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                     QStringLiteral("-colorinterp"),
                     QStringLiteral("red,green,blue"),
                 });
+            }
+            // Cap the display texture so MapQuickItem can upload it on GPUs with
+            // a 4096px max texture size. Placement still uses full WGS84 bounds.
+            constexpr int kMaxOverlayDimension = 4096;
+            const QJsonArray sizeArray = gdalDocument.value(QStringLiteral("size")).toArray();
+            if (sizeArray.size() >= 2) {
+                const int rasterWidth = sizeArray.at(0).toInt();
+                const int rasterHeight = sizeArray.at(1).toInt();
+                const int longestEdge = qMax(rasterWidth, rasterHeight);
+                if (longestEdge > kMaxOverlayDimension && longestEdge > 0) {
+                    const int outWidth = rasterWidth >= rasterHeight
+                                             ? kMaxOverlayDimension
+                                             : qMax(1,
+                                                    (rasterWidth * kMaxOverlayDimension)
+                                                        / longestEdge);
+                    const int outHeight = rasterHeight >= rasterWidth
+                                              ? kMaxOverlayDimension
+                                              : qMax(1,
+                                                     (rasterHeight * kMaxOverlayDimension)
+                                                         / longestEdge);
+                    translateArguments.append(
+                        {QStringLiteral("-outsize"),
+                         QString::number(outWidth),
+                         QString::number(outHeight)});
+                }
             }
             translateArguments.append({sourceOrthophotoPath, overlayPath});
 
@@ -1389,16 +1492,17 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                     const QByteArray translateError = translateProcess->readAllStandardError();
                     translateProcess->deleteLater();
                     if (_orthophotoPath != sourceOrthophotoPath) {
+                        // A newer load/replace superseded this GDAL job.
                         return;
                     }
                     if (translateExitStatus != QProcess::NormalExit
                         || translateExitCode != 0
                         || !QFileInfo::exists(overlayPath)) {
                         qCWarning(RouteMappingPhotoControllerLog)
-                            << "gdal_translate could not create the Fly View orthomosaic overlay:"
-                            << translateError;
+                        << "gdal_translate could not create the Fly View orthomosaic overlay:"
+                        << translateError;
                         _reportOrthophotoOverlayError(tr(
-                            "The orthomosaic was generated and saved, but its Fly View overlay could not be created. GDAL reported: %1")
+                                                          "The orthomosaic display overlay could not be created. GDAL reported: %1")
                                                           .arg(QString::fromUtf8(translateError).trimmed()));
                         return;
                     }
@@ -1406,6 +1510,8 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                     _orthophotoNorthWest = northWest;
                     _orthophotoSouthEast = southEast;
                     _orthophotoUrl = QUrl::fromLocalFile(overlayPath).toString();
+                    _orthophotoLoading = false;
+                    _orthophotoImportPending = false;
                     emit orthophotoOverlayChanged();
                     qCInfo(RouteMappingPhotoControllerLog)
                         << "Orthomosaic overlay ready" << overlayPath
@@ -1418,8 +1524,14 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
 
 void RouteMappingPhotoController::_reportOrthophotoOverlayError(const QString &errorMessage)
 {
-    _odmErrorMessage = errorMessage;
-    _setOdmState(OdmState::Complete, 100, errorMessage);
+    const bool importedOrthophoto = _orthophotoImportPending;
+    _orthophotoLoading = false;
+    _orthophotoImportPending = false;
+    emit orthophotoOverlayChanged();
+    if (!importedOrthophoto) {
+        _odmErrorMessage = errorMessage;
+        _setOdmState(OdmState::Complete, 100, errorMessage);
+    }
     qCWarning(RouteMappingPhotoControllerLog) << errorMessage;
     emit odmError(errorMessage);
 }
@@ -1474,7 +1586,7 @@ void RouteMappingPhotoController::_writeOdmStateFile() const
         stateFile.write(QJsonDocument(state).toJson(QJsonDocument::Indented));
         if (!stateFile.commit()) {
             qCWarning(RouteMappingPhotoControllerLog)
-                << "Could not commit NodeODM state file" << stateFile.fileName();
+            << "Could not commit NodeODM state file" << stateFile.fileName();
         }
     }
 }
@@ -1524,11 +1636,11 @@ void RouteMappingPhotoController::_completeCaptureAttempt(
     if (success && !imagePath.isEmpty() && _fetcher) {
         if (!remotePhotoPath.isEmpty()) {
             qCInfo(RouteMappingPhotoControllerLog)
-                << "SCP using Pi path from trigger for seq" << sequence << remotePhotoPath;
+            << "SCP using Pi path from trigger for seq" << sequence << remotePhotoPath;
         }
         if (!remoteThumbnailPath.isEmpty()) {
             qCInfo(RouteMappingPhotoControllerLog)
-                << "Thumbnail path from trigger for seq" << sequence << remoteThumbnailPath;
+            << "Thumbnail path from trigger for seq" << sequence << remoteThumbnailPath;
         }
         _fetcher->fetchPhotoBySequence(
             sequence, imagePath, sequence, remotePhotoPath, remoteThumbnailPath);
@@ -1555,9 +1667,9 @@ void RouteMappingPhotoController::_pumpCaptureQueue()
         return;
     }
 
-    // finishCaptureQueue() disables new requests while allowing already
-    // positioned survey triggers to drain. A normal disable/RTH leaves
-    // _finishRequested false and must never take a late exposure.
+            // finishCaptureQueue() disables new requests while allowing already
+            // positioned survey triggers to drain. A normal disable/RTH leaves
+            // _finishRequested false and must never take a late exposure.
     if (!_captureEnabled && !_finishRequested) {
         return;
     }
@@ -1660,7 +1772,7 @@ bool RouteMappingPhotoController::requestPhotoCapture(
 
     if (_requestedCaptureSequences.contains(sequence)) {
         qCWarning(RouteMappingPhotoControllerLog)
-            << "Ignoring duplicate Route Mapping capture sequence" << sequence;
+        << "Ignoring duplicate Route Mapping capture sequence" << sequence;
         return false;
     }
     if (_captureUdpInFlight) {

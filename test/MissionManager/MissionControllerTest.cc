@@ -2,7 +2,9 @@
 #include "MissionController.h"
 #include "PlanMasterController.h"
 #include "SimpleMissionItem.h"
+#include "TakeoffMissionItem.h"
 #include "MissionSettingsItem.h"
+#include "MissionItem.h"
 #include "SurveyComplexItem.h"
 #include "SettingsManager.h"
 #include "AppSettings.h"
@@ -301,6 +303,81 @@ void MissionControllerTest::_testLoadBaylandsMappingPlan(void)
     }
     QCOMPARE(captureStartCount, 6);
     QCOMPARE(captureStopCount, 6);
+}
+
+void MissionControllerTest::_testRouteMappingAltitudeProfile_data(void)
+{
+    QTest::addColumn<double>("altitudeMeters");
+    QTest::addColumn<double>("triggerDistanceMeters");
+
+    QTest::newRow("high-resolution") << 30.0 << 6.0;
+    QTest::newRow("low-resolution") << 60.0 << 9.0;
+}
+
+void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
+{
+    QFETCH(double, altitudeMeters);
+    QFETCH(double, triggerDistanceMeters);
+
+    _initForFirmwareType(MAV_AUTOPILOT_PX4);
+
+    const QGeoCoordinate launchCoordinate(47.63355064, -122.08982199);
+    auto* takeoffItem = qobject_cast<TakeoffMissionItem*>(
+        _missionController->insertTakeoffItem(launchCoordinate, -1, false));
+    QVERIFY(takeoffItem);
+
+    auto* surveyItem = qobject_cast<SurveyComplexItem*>(
+        _missionController->insertComplexMissionItem(
+            _missionController->surveyComplexItemName(), launchCoordinate, -1, false));
+    QVERIFY(surveyItem);
+
+    constexpr double edgeDistanceMeters = 100.0;
+    QList<QGeoCoordinate> polygonVertices;
+    polygonVertices << launchCoordinate
+                    << launchCoordinate.atDistanceAndAzimuth(edgeDistanceMeters, 90.0)
+                    << launchCoordinate.atDistanceAndAzimuth(edgeDistanceMeters, 135.0)
+                    << launchCoordinate.atDistanceAndAzimuth(edgeDistanceMeters, 180.0);
+    surveyItem->surveyAreaPolygon()->appendVertices(polygonVertices);
+
+    // This is the Route Mapping preset contract. The defect was caused by
+    // updating only DistanceToSurface while NAV_TAKEOFF retained the global
+    // 50 m default. Both Facts must be aligned before mission flattening.
+    surveyItem->cameraCalc()->setDistanceMode(QGroundControlQmlGlobal::AltitudeModeRelative);
+    surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
+    surveyItem->cameraCalc()->distanceToSurface()->setRawValue(altitudeMeters);
+    surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
+    takeoffItem->altitude()->setRawValue(altitudeMeters);
+
+    QObject missionItemParent;
+    QList<MissionItem*> missionItems;
+    for (int i = 0; i < _missionController->visualItems()->count(); ++i) {
+        auto* visualItem = _missionController->visualItems()->value<VisualMissionItem*>(i);
+        QVERIFY(visualItem);
+        visualItem->appendMissionItems(missionItems, &missionItemParent);
+    }
+
+    int takeoffCount = 0;
+    int surveyCoordinateCount = 0;
+    bool takeoffSeen = false;
+    for (const MissionItem* missionItem : std::as_const(missionItems)) {
+        if (missionItem->command() == MAV_CMD_NAV_TAKEOFF) {
+            QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
+            QCOMPARE(missionItem->param7(), altitudeMeters);
+            takeoffSeen = true;
+            ++takeoffCount;
+            continue;
+        }
+
+        if (takeoffSeen && (missionItem->command() == MAV_CMD_NAV_WAYPOINT
+                            || missionItem->command() == MAV_CMD_CONDITION_GATE)) {
+            QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
+            QCOMPARE(missionItem->param7(), altitudeMeters);
+            ++surveyCoordinateCount;
+        }
+    }
+
+    QCOMPARE(takeoffCount, 1);
+    QVERIFY(surveyCoordinateCount > 0);
 }
 
 void MissionControllerTest::_testGlobalAltMode(void)

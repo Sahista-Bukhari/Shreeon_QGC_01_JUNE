@@ -50,6 +50,16 @@ Item {
     // Native SurveyComplexItem camera trigger interval, always in raw meters.
     property real   routeMappingTriggerDistance: 25
     property var    routeMappingLivePhotoModel: _routeMappingLivePhotoModel
+    // Keep the completed ODM overlay state on FlyView so every Route Mapping
+    // map consumes the exact same raster, bounds, and user-selected opacity.
+    readonly property string routeMappingOrthophotoUrl: routeMappingPhotoController.orthophotoUrl
+    readonly property var routeMappingOrthophotoNorthWest: routeMappingPhotoController.orthophotoNorthWest
+    readonly property var routeMappingOrthophotoSouthEast: routeMappingPhotoController.orthophotoSouthEast
+    readonly property bool routeMappingOrthophotoReady: routeMappingPhotoController.orthophotoOverlayReady
+    readonly property bool routeMappingOrthophotoLoading: routeMappingPhotoController.orthophotoLoading
+    readonly property string routeMappingOrthophotoPath: routeMappingPhotoController.orthophotoPath
+    readonly property string routeMappingOrthophotoRoot: routeMappingPhotoController.routeMappingRoot
+    property real routeMappingOrthophotoOpacity: 0.82
     property bool   hideVehicleMissionForUnuploadedRoute: false
     // Once a survey overlay has been painted (transfer/import), keep its geometry
     // frozen for the whole mission. Only the drone position and progress update.
@@ -549,6 +559,47 @@ Item {
         }
     }
 
+    QGCFileDialog {
+        id: orthophotoFileDialog
+        title: qsTr("Load Previous Orthomosaic")
+        folder: _root.routeMappingOrthophotoRoot.length > 0
+                ? _root.routeMappingOrthophotoRoot
+                : (_appSettings ? _appSettings.savePath.rawValue : "")
+        nameFilters: [qsTr("Georeferenced TIFF (*.tif *.tiff)")]
+
+        onAcceptedForLoad: function(file) {
+            routeMappingPhotoController.loadOrthophoto(file)
+            close()
+        }
+    }
+
+    function openRouteMappingOrthophotoDialog() {
+        orthophotoFileDialog.openForLoad()
+    }
+
+    function clearRouteMappingOrthophoto() {
+        routeMappingPhotoController.clearOrthophotoOverlay()
+    }
+
+    function fitMapToRouteMappingOrthophoto() {
+        if (!mapControl || !routeMappingOrthophotoReady) {
+            return
+        }
+        var northWest = routeMappingOrthophotoNorthWest
+        var southEast = routeMappingOrthophotoSouthEast
+        if (!northWest || !northWest.isValid || !southEast || !southEast.isValid) {
+            return
+        }
+        // Pad the mosaic slightly so it is not clipped against the viewport edge.
+        var padMeters = Math.max(
+                    25,
+                    northWest.distanceTo(
+                        QtPositioning.coordinate(northWest.latitude, southEast.longitude)) * 0.15)
+        var paddedNorthWest = northWest.atDistanceAndAzimuth(padMeters, 315)
+        var paddedSouthEast = southEast.atDistanceAndAzimuth(padMeters, 135)
+        mapControl.setVisibleRegion(QtPositioning.rectangle(paddedNorthWest, paddedSouthEast))
+    }
+
     property bool   _mainWindowIsMap:       mapControl.pipState.state === mapControl.pipState.fullState
     property bool   _isFullWindowItemDark:  _mainWindowIsMap ? mapControl.isSatelliteMap : true
     property var    _activeVehicle:         QGroundControl.multiVehicleManager.activeVehicle
@@ -707,6 +758,15 @@ Item {
 
         onOdmError: function(errorMessage) {
             mainWindow.showMessageDialog(qsTr("Route Mapping Reconstruction"), errorMessage)
+        }
+
+        onOrthophotoOverlayChanged: {
+            if (!routeMappingPhotoController.orthophotoOverlayReady) {
+                return
+            }
+            // Field mosaics are often only tens of meters across. Zoom to them
+            // after load/replace so the layer is visibly on the map.
+            Qt.callLater(_root.fitMapToRouteMappingOrthophoto)
         }
 
         onSessionActiveChanged: {
@@ -1691,10 +1751,11 @@ Item {
             routeMappingPhotoFootprintFrontal: _root.routeMappingPhotoFootprintFrontal
             routeMappingTriggerDistance: _root.routeMappingTriggerDistance
             routeMappingLivePhotoModel: _root.routeMappingLivePhotoModel
-            routeMappingOrthophotoUrl: routeMappingPhotoController.orthophotoUrl
-            routeMappingOrthophotoNorthWest: routeMappingPhotoController.orthophotoNorthWest
-            routeMappingOrthophotoSouthEast: routeMappingPhotoController.orthophotoSouthEast
-            routeMappingOrthophotoReady: routeMappingPhotoController.orthophotoOverlayReady
+            routeMappingOrthophotoUrl: _root.routeMappingOrthophotoUrl
+            routeMappingOrthophotoNorthWest: _root.routeMappingOrthophotoNorthWest
+            routeMappingOrthophotoSouthEast: _root.routeMappingOrthophotoSouthEast
+            routeMappingOrthophotoReady: _root.routeMappingOrthophotoReady
+            routeMappingOrthophotoOpacity: _root.routeMappingOrthophotoOpacity
             hideVehicleMissionForUnuploadedRoute: _root.hideVehicleMissionForUnuploadedRoute
             onWaypointAdded: function(coordinate) {
                 _root.insertSimpleItemAfterCurrent(coordinate)
@@ -2148,7 +2209,15 @@ Item {
         reconstructionRunning: routeMappingPhotoController.odmRunning
         reconstructionComplete: routeMappingPhotoController.odmComplete
         reconstructionProgress: routeMappingPhotoController.reconstructionProgress
+        orthomosaicVisible: _root.routeMappingOrthophotoReady
+        orthomosaicLoading: _root.routeMappingOrthophotoLoading
+        orthomosaicOpacity: _root.routeMappingOrthophotoOpacity
         onReconstructionRequested: routeMappingPhotoController.startOdm()
+        onOrthomosaicLoadRequested: _root.openRouteMappingOrthophotoDialog()
+        onOrthomosaicHideRequested: _root.clearRouteMappingOrthophoto()
+        onOrthomosaicOpacityEdited: function(opacity) {
+            _root.routeMappingOrthophotoOpacity = Math.max(0, Math.min(1, opacity))
+        }
 
         visible: !_root.planEditMode
                  && !QGroundControl.videoManager.fullScreen

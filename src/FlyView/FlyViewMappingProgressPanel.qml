@@ -21,8 +21,14 @@ Rectangle {
     property bool reconstructionRunning: false
     property bool reconstructionComplete: false
     property int reconstructionProgress: 0
+    property bool orthomosaicVisible: false
+    property bool orthomosaicLoading: false
+    property real orthomosaicOpacity: 0.82
 
     signal reconstructionRequested()
+    signal orthomosaicLoadRequested()
+    signal orthomosaicHideRequested()
+    signal orthomosaicOpacityEdited(real opacity)
 
     readonly property real _thumbSize: ScreenTools.defaultFontPixelHeight * 4.2
 
@@ -223,6 +229,59 @@ Rectangle {
             from: 0
             to: 100
             value: root.reconstructionProgress
+        }
+
+        RowLayout {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.photosVisible
+            spacing: ScreenTools.defaultFontPixelWidth * 0.7
+
+            QGCButton {
+                enabled: !root.reconstructionRunning && !root.orthomosaicLoading
+                text: root.orthomosaicLoading
+                      ? qsTr("Loading Orthomosaic...")
+                      : (root.orthomosaicVisible
+                         ? qsTr("Replace Orthomosaic")
+                         : qsTr("Load Previous Orthomosaic"))
+                onClicked: root.orthomosaicLoadRequested()
+            }
+
+            QGCButton {
+                visible: root.orthomosaicVisible
+                text: qsTr("Hide")
+                onClicked: root.orthomosaicHideRequested()
+            }
+        }
+
+        RowLayout {
+            visible: root.orthomosaicVisible
+            width: metricsRow.width
+            spacing: ScreenTools.defaultFontPixelWidth * 0.7
+
+            QGCLabel {
+                text: qsTr("Orthomosaic")
+                color: Qt.rgba(1, 1, 1, 0.92)
+                font.pointSize: root._labelSize
+            }
+
+            QGCSlider {
+                id: orthomosaicOpacitySlider
+                Layout.fillWidth: true
+                from: 0
+                to: 1
+                stepSize: 0.01
+                value: root.orthomosaicOpacity
+                activeColor: "#6beb17"
+                onMoved: root.orthomosaicOpacityEdited(value)
+            }
+
+            QGCLabel {
+                Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 4.5
+                horizontalAlignment: Text.AlignRight
+                text: Math.round(root.orthomosaicOpacity * 100) + "%"
+                color: "white"
+                font.pointSize: root._labelSize
+            }
         }
 
         QGCLabel {

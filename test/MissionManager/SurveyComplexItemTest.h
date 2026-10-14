@@ -31,6 +31,7 @@ private slots:
     void _testPatternParameters(void);
     void _testRouteMappingResolutionPreset_data(void);
     void _testRouteMappingResolutionPreset(void);
+    void _testRouteMappingTerrainFrame(void);
 #else
     // Handy mechanism to to a single test
 private slots:
@@ -44,6 +45,7 @@ private:
     void _testPatternParameters(void);
     void _testRouteMappingResolutionPreset_data(void);
     void _testRouteMappingResolutionPreset(void);
+    void _testRouteMappingTerrainFrame(void);
 #endif
 
 private:

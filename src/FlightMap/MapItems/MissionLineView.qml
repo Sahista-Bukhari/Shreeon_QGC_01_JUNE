@@ -11,6 +11,13 @@ MapItemView {
     property bool showSpecialVisual: false
     property real lineWidth:         2
     property color missionLineColor: Qt.rgba(1.0, 0.94, 0.0, 0.95)
+    // Allow plan views that draw a MapQuickItem orthomosaic to keep takeoff /
+    // return connectors above that raster without changing every caller.
+    property real lineZ:             QGroundControl.zOrderWaypointLines
+
+    // Propagate stacking to MapItemView itself; some Qt Location builds only
+    // honor z on the view, not on the generated MapPolyline delegates.
+    z: lineZ
 
     delegate: MapPolyline {
         line.width: root.lineWidth
@@ -18,7 +25,7 @@ MapItemView {
         line.color: _terrainCollision ?
                         "red" :
                         (false/*showSpecialVisual*/ ? "green" : root.missionLineColor)
-        z:          QGroundControl.zOrderWaypointLines
+        z:          root.lineZ
         path:       _calcMissionLinePath()
 
         property bool _terrainCollision:    object && object.terrainCollision

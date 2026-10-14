@@ -215,6 +215,63 @@ Item {
         return null
     }
 
+    // Takeoff / launch coordinate used for the plan-view transit legs.
+    readonly property var _routeTakeoffCoordinate: {
+        var takeoffItem = _missionController.takeoffMissionItem
+                          ? _missionController.takeoffMissionItem
+                          : _findTakeoffItem()
+        // Re-evaluate when the takeoff item moves or is replaced.
+        var unusedSeq = takeoffItem ? takeoffItem.sequenceNumber : -1
+        var unusedLat = takeoffItem && takeoffItem.coordinate
+                        ? takeoffItem.coordinate.latitude : 0
+        var unusedLon = takeoffItem && takeoffItem.coordinate
+                        ? takeoffItem.coordinate.longitude : 0
+        var unusedLaunchLat = takeoffItem && takeoffItem.launchCoordinate
+                              ? takeoffItem.launchCoordinate.latitude : 0
+        var unusedLaunchLon = takeoffItem && takeoffItem.launchCoordinate
+                              ? takeoffItem.launchCoordinate.longitude : 0
+        if (!takeoffItem) {
+            return QtPositioning.coordinate()
+        }
+        if (takeoffItem.specifiesCoordinate && takeoffItem.coordinate
+                && takeoffItem.coordinate.isValid) {
+            return takeoffItem.coordinate
+        }
+        if (takeoffItem.launchCoordinate && takeoffItem.launchCoordinate.isValid) {
+            return takeoffItem.launchCoordinate
+        }
+        return QtPositioning.coordinate()
+    }
+
+    // Takeoff → survey entry. Drawn as a direct MapPolyline so it stays above
+    // the orthomosaic (MissionLineView MapItemView stacking is unreliable here).
+    readonly property var _routeTakeoffPath: {
+        var takeoffCoordinate = _routeTakeoffCoordinate
+        var entryCoordinate = _cachedSurveyItem && _cachedSurveyItem.coordinate
+                              ? _cachedSurveyItem.coordinate
+                              : QtPositioning.coordinate()
+        var unusedEntryLat = entryCoordinate.isValid ? entryCoordinate.latitude : 0
+        var unusedEntryLon = entryCoordinate.isValid ? entryCoordinate.longitude : 0
+        if (!takeoffCoordinate.isValid || !entryCoordinate.isValid) {
+            return []
+        }
+        return [takeoffCoordinate, entryCoordinate]
+    }
+
+    // Survey exit → takeoff/home return leg (RTL).
+    readonly property var _routeReturnPath: {
+        var takeoffCoordinate = _routeTakeoffCoordinate
+        var exitCoordinate = _cachedSurveyItem && _cachedSurveyItem.exitCoordinate
+                             ? _cachedSurveyItem.exitCoordinate
+                             : QtPositioning.coordinate()
+        var unusedExitLat = exitCoordinate.isValid ? exitCoordinate.latitude : 0
+        var unusedExitLon = exitCoordinate.isValid ? exitCoordinate.longitude : 0
+        if (!takeoffCoordinate.isValid || !exitCoordinate.isValid) {
+            return []
+        }
+        return [exitCoordinate, takeoffCoordinate]
+    }
+
     // Finds and caches the active survey item from the mission plan.
     function _enforceInnerPatternPhotoCapture(surveyItem) {
         if (surveyItem && surveyItem.cameraTriggerInTurnAround
@@ -1148,6 +1205,13 @@ Item {
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
         }
+        if (taskSettingsPanel.altitudeProfileReadyForUpload
+                && !taskSettingsPanel.altitudeProfileReadyForUpload()) {
+            mainWindow.showMessageDialog(
+                        qsTr("Save"),
+                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and select the resolution preset again."))
+            return
+        }
         _snapshotRouteMappingTelemetryFromPlan()
 
         if (!_surveyFinished) {
@@ -1204,6 +1268,13 @@ Item {
         // Commit any in-progress altitude/speed slider edits before MAVLink build.
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
+        }
+        if (taskSettingsPanel.altitudeProfileReadyForUpload
+                && !taskSettingsPanel.altitudeProfileReadyForUpload()) {
+            mainWindow.showMessageDialog(
+                        qsTr("Upload"),
+                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and select the resolution preset again."))
+            return
         }
         _snapshotRouteMappingTelemetryFromPlan()
 
@@ -1912,6 +1983,83 @@ Item {
             onZoomLevelChanged: QGroundControl.flightMapZoom = routeMap.zoomLevel
             onCenterChanged: QGroundControl.flightMapPosition = routeMap.center
 
+            // The ODM result is owned by FlyView's capture controller. Reuse
+            // its georeferenced bounds here so Fly and Plan always display the
+            // same orthomosaic and opacity instead of creating a second copy.
+            MapQuickItem {
+                id: routeMappingOrthophotoOverlay
+                coordinate: flyView.routeMappingOrthophotoNorthWest
+                anchorPoint.x: 0
+                anchorPoint.y: 0
+                visible: flyView.routeMappingOrthophotoReady
+                         && flyView.routeMappingOrthophotoNorthWest
+                         && flyView.routeMappingOrthophotoNorthWest.isValid
+                         && flyView.routeMappingOrthophotoSouthEast
+                         && flyView.routeMappingOrthophotoSouthEast.isValid
+                         && routeMap.mapReady
+                // Keep the raster above map tiles, but below takeoff/return
+                // connectors (MissionLineView) and survey boundary/transects.
+                z: Math.max(1, QGroundControl.zOrderWaypointLines - 10)
+
+                sourceItem: Image {
+                    readonly property real _mapZoomDependency: routeMap.zoomLevel
+                    readonly property var _mapCenterDependency: routeMap.center
+                    readonly property real _mapBearingDependency: routeMap.bearing
+                    readonly property point _northWestPoint: {
+                        var unusedZoom = _mapZoomDependency
+                        var unusedCenter = _mapCenterDependency
+                        var unusedBearing = _mapBearingDependency
+                        return routeMap.fromCoordinate(flyView.routeMappingOrthophotoNorthWest, false)
+                    }
+                    readonly property point _southEastPoint: {
+                        var unusedZoom = _mapZoomDependency
+                        var unusedCenter = _mapCenterDependency
+                        var unusedBearing = _mapBearingDependency
+                        return routeMap.fromCoordinate(flyView.routeMappingOrthophotoSouthEast, false)
+                    }
+
+                    width: Math.max(1, Math.abs(_southEastPoint.x - _northWestPoint.x))
+                    height: Math.max(1, Math.abs(_southEastPoint.y - _northWestPoint.y))
+                    source: flyView.routeMappingOrthophotoUrl
+                    fillMode: Image.Stretch
+                    asynchronous: false
+                    cache: false
+                    smooth: true
+                    mipmap: false
+                    opacity: Math.max(0, Math.min(1, flyView.routeMappingOrthophotoOpacity))
+
+                    onStatusChanged: {
+                        if (status === Image.Error) {
+                            console.warn("[RouteMapping] Orthomosaic image failed to load:", source)
+                        }
+                    }
+                }
+            }
+
+            Connections {
+                target: flyView
+                function onRouteMappingOrthophotoReadyChanged() {
+                    if (!flyView.routeMappingOrthophotoReady
+                            || !routeMap.mapReady
+                            || !_root.visible) {
+                        return
+                    }
+                    var northWest = flyView.routeMappingOrthophotoNorthWest
+                    var southEast = flyView.routeMappingOrthophotoSouthEast
+                    if (!northWest || !northWest.isValid || !southEast || !southEast.isValid) {
+                        return
+                    }
+                    var padMeters = Math.max(
+                                25,
+                                northWest.distanceTo(
+                                    QtPositioning.coordinate(northWest.latitude, southEast.longitude)) * 0.15)
+                    routeMap.setVisibleRegion(
+                                QtPositioning.rectangle(
+                                    northWest.atDistanceAndAzimuth(padMeters, 315),
+                                    southEast.atDistanceAndAzimuth(padMeters, 135)))
+                }
+            }
+
             Repeater {
                 model: _root._showMissionOnMap ? _missionController.visualItems : null
                 delegate: MissionItemMapVisual {
@@ -2104,6 +2252,25 @@ Item {
                       ? _root._cachedSurveyItem.visualTransectPoints
                       : []
                 visible: _root._hasCalculatedSurvey
+                z: QGroundControl.zOrderMapItems + 2
+            }
+
+            // Direct MapPolylines for takeoff/return so they stack above the
+            // orthomosaic the same way the survey transect does. MissionLineView
+            // alone can lose that fight against MapQuickItem on this map plugin.
+            MapPolyline {
+                line.color: Qt.rgba(1.0, 0.94, 0.38, 0.95)
+                line.width: 2
+                path: _root._routeTakeoffPath
+                visible: _root._hasCalculatedSurvey && _root._routeTakeoffPath.length >= 2
+                z: QGroundControl.zOrderMapItems + 2
+            }
+
+            MapPolyline {
+                line.color: Qt.rgba(1.0, 0.94, 0.38, 0.95)
+                line.width: 2
+                path: _root._routeReturnPath
+                visible: _root._hasCalculatedSurvey && _root._routeReturnPath.length >= 2
                 z: QGroundControl.zOrderMapItems + 2
             }
 
@@ -2346,6 +2513,9 @@ Item {
             MissionLineView {
                 showSpecialVisual: _missionController.isROIBeginCurrentItem
                 model: _root._showMissionOnMap ? _missionController.simpleFlightPathSegments : null
+                // Takeoff → pattern and pattern → RTL connectors. Match transect
+                // stacking so these legs stay above the orthomosaic MapQuickItem.
+                lineZ: QGroundControl.zOrderMapItems + 2
             }
 
             MapItemView {
@@ -2384,6 +2554,49 @@ Item {
                         height: modelData.h
                         color: "white"
                     }
+                }
+            }
+        }
+
+        Rectangle {
+            id: orthomosaicOpacityPanel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: parent.bottom
+            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight
+            width: Math.min(ScreenTools.defaultFontPixelWidth * 34, parent.width * 0.55)
+            height: ScreenTools.defaultFontPixelHeight * 3.1
+            radius: ScreenTools.defaultFontPixelWidth * 0.55
+            color: Qt.rgba(0.03, 0.03, 0.03, 0.62)
+            visible: flyView.routeMappingOrthophotoReady
+            z: QGroundControl.zOrderWidgets + 20
+
+            RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+                anchors.rightMargin: ScreenTools.defaultFontPixelWidth
+                spacing: ScreenTools.defaultFontPixelWidth * 0.7
+
+                QGCLabel {
+                    text: qsTr("Orthomosaic")
+                    color: "white"
+                }
+
+                QGCSlider {
+                    id: planOrthomosaicOpacitySlider
+                    Layout.fillWidth: true
+                    from: 0
+                    to: 1
+                    stepSize: 0.01
+                    value: flyView.routeMappingOrthophotoOpacity
+                    activeColor: "#6beb17"
+                    onMoved: flyView.routeMappingOrthophotoOpacity = value
+                }
+
+                QGCLabel {
+                    Layout.preferredWidth: ScreenTools.defaultFontPixelWidth * 4.5
+                    horizontalAlignment: Text.AlignRight
+                    text: Math.round(flyView.routeMappingOrthophotoOpacity * 100) + "%"
+                    color: "white"
                 }
             }
         }
@@ -2916,6 +3129,47 @@ Item {
                         importRipple.tap(mouse.x, mouse.y)
                         _root.openRouteMappingImportDialog()
                     }
+                }
+            }
+
+            Item {
+                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+                height: width
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: Math.round(parent.width * 0.75)
+                    height: width
+                    source: "qrc:/InstrumentValueIcons/layers.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    color: flyView.routeMappingOrthophotoReady ? "#6beb17" : "white"
+                    smooth: true
+                    mipmap: true
+                }
+
+                RippleEffect {
+                    id: orthophotoLoadRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
+                QGCMouseArea {
+                    id: orthophotoLoadMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: !flyView.routeMappingOrthophotoLoading
+                    cursorShape: Qt.PointingHandCursor
+                    onClicked: function(mouse) {
+                        orthophotoLoadRipple.tap(mouse.x, mouse.y)
+                        flyView.openRouteMappingOrthophotoDialog()
+                    }
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.text: flyView.routeMappingOrthophotoReady
+                                  ? qsTr("Replace orthomosaic")
+                                  : qsTr("Load previous orthomosaic")
                 }
             }
 
