@@ -212,6 +212,36 @@ void TransectStyleComplexItemTest::_testAltitudes(void)
     }
 }
 
+void TransectStyleComplexItemTest::_testCameraTriggerSequenceRanges(void)
+{
+    _transectStyleItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(9);
+    _transectStyleItem->setSequenceNumber(12);
+
+    QList<MissionItem*> missionItems;
+    _transectStyleItem->appendMissionItems(missionItems, this);
+
+    int expectedFirst = -1;
+    int expectedLast = -1;
+    for (const MissionItem* missionItem : missionItems) {
+        if (missionItem->command() != MAV_CMD_DO_SET_CAM_TRIGG_DIST) {
+            continue;
+        }
+        if (missionItem->param1() > 0.0 && expectedFirst < 0) {
+            expectedFirst = missionItem->sequenceNumber();
+        } else if (missionItem->param1() == 0.0) {
+            expectedLast = missionItem->sequenceNumber();
+        }
+    }
+
+    QVERIFY(expectedFirst >= 0);
+    QVERIFY(expectedLast >= expectedFirst);
+    const QVariantList ranges = _transectStyleItem->cameraTriggerSequenceRanges();
+    QCOMPARE(ranges.count(), 1);
+    const QVariantMap range = ranges.first().toMap();
+    QCOMPARE(range.value(QStringLiteral("first")).toInt(), expectedFirst);
+    QCOMPARE(range.value(QStringLiteral("last")).toInt(), expectedLast);
+}
+
 // TODO: Move To Terrain Testing
 /*void TransectStyleComplexItemTest::_testFollowTerrain(void)
 {

@@ -49,6 +49,8 @@ public:
     DEFINE_SETTINGFACT(firstRunPromptIdsShown)
     DEFINE_SETTINGFACT(loginAirLink)
     DEFINE_SETTINGFACT(passAirLink)
+    DEFINE_SETTINGFACT(nodeOdmHost)
+    DEFINE_SETTINGFACT(nodeOdmPort)
 
     Q_PROPERTY(QString missionSavePath          READ missionSavePath            NOTIFY savePathsChanged)
     Q_PROPERTY(QString parameterSavePath        READ parameterSavePath          NOTIFY savePathsChanged)

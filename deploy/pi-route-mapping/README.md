@@ -119,11 +119,12 @@ in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. Keep
 second physical exposure; `VIDEO_PAUSE` also selects QGC as the session's
 capture authority.
 
-During a Route Mapping flight, QGC sends `VIDEO_PAUSE` when the photo session
-starts. The service stops `wfb-camera.service`, starts one persistent
+During a Route Mapping flight, QGC sends a tokenized `VIDEO_PAUSE` when the photo session
+starts and refreshes a 45-second ownership lease every five seconds. The service stops `wfb-camera.service`, starts one persistent
 Full HD `rpicam-vid --codec mjpeg` process, and waits for its first
-frame before accepting captures. `VIDEO_RESUME` cancels unsaved requests,
-stops the mapping process, and restores `wfb-camera.service`:
+frame before accepting captures. `VIDEO_RESUME` gives accepted captures a
+bounded drain period, stops the mapping process, starts `wfb-camera.service`,
+and reports success only after systemd confirms it is active:
 
 ```bash
 printf 'VIDEO_PAUSE' | nc -u -w 1 10.5.0.2 14551
@@ -133,6 +134,10 @@ printf 'VIDEO_RESUME' | nc -u -w 1 10.5.0.2 14551
 Both commands are idempotent. A repeated `VIDEO_PAUSE` returns the active
 session, while `VIDEO_RESUME` is a no-op when QGC has not started a mapping
 session. Merely opening QGC therefore does not touch the Pi camera process.
+Updated QGC verifies `STATUS` before restarting its local video receiver. If
+QGC crashes, closes, or loses the network without resuming, the expired lease
+automatically restores `wfb-camera.service`. Configure the fallback with
+`SESSION_LEASE_SEC` in `/etc/default/shreeon-route-mapping`.
 
 The same test can be requested without netcat:
 

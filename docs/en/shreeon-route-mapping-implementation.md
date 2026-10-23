@@ -150,28 +150,30 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 2. **Start mission** — the already-started session is reused; if arming did not
    start it, the first mission/trigger update retries the same asynchronous
    SSH precheck + `VIDEO_PAUSE` + `STATUS` sequence.
-3. **QGC** (not MAVLink camera protocol) decides when to shoot:
+3. **QGC reconciles PX4 camera feedback with its ordered survey schedule**:
    - Immediately before a Route Mapping upload, QGC configures PX4 with **`TRIG_MODE=4`** (distance based, on command / Survey mode) and **`TRIG_INTERFACE=3`** (MAVLink). Upload is stopped with a clear message if the connected PX4 parameter set is not ready or does not expose both parameters. Non-PX4 vehicles are left unchanged.
-   - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define a fixed schedule (`_routeMappingGcsTriggerDistances`). High is **6 m** and Low is **9 m**.
+   - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define an ordered, per-leg schedule (`_routeMappingGcsTriggerSchedule`). High is **6 m** and Low is **9 m**.
    - Every transect starts with an immediate image, continues at the selected interval, and ends with an exit image. Turn connectors never schedule captures.
-   - **Active photo-trigger phase** (all must hold): mission running, not `_routeMappingPhotoTriggersComplete`, mission index within the survey item (`sequenceNumber` … `lastSequenceNumber`), vehicle within corridor of photo-capture transects, max along-path progress on those legs.
-   - As progress crosses each planned distance, GCS fires **one CAPTURE per 250 ms tick**. The JPEG geotag uses the vehicle's live coordinate at the moment QGC sends `CAPTURE`; the planned coordinate is used only when live telemetry is invalid.
-   - When all N planned triggers are scheduled, new triggers are blocked but
+   - Native `CAMERA_TRIGGER` / `CAMERA_IMAGE_CAPTURED` feedback is accepted only after the first uploaded `MAV_CMD_DO_SET_CAM_TRIGG_DIST` start and through the final stop. The overall window intentionally includes turn commands because PX4 can advance its mission index before delayed endpoint feedback reaches QGC. Exact sequence IDs and coordinates de-duplicate the two feedback forms; elapsed time is never used to discard a valid endpoint exposure.
+   - The ordered position scheduler stays active if native feedback pauses. It cannot run until PX4 has executed the first trigger-start command, so the takeoff-to-entry approach cannot consume survey positions. As the vehicle crosses each expected point it fires at most one `CAPTURE`, restricted to the next photo leg, its heading, corridor, and physical separation. This prevents both capture stoppage and catch-up bursts.
+   - The JPEG geotag uses the vehicle's live coordinate at the moment QGC sends `CAPTURE`; the planned coordinate is used only when live telemetry is invalid.
+   - Only N successfully accepted captures complete the trigger phase. Position-schedule markers reconciled or skipped to avoid a burst never count as captures and cannot prematurely stop later transects. When all N captures are accepted, new triggers are blocked but
      already-positioned requests drain to the Pi. When the mission exits the
      survey, enters RTH/RTL, stops, or disarms, unsent requests are cancelled
      instead so no photo is taken at the return/landing position.
    - **RTH / post-pattern flight** does not increase along-path progress (off-transect) and does not re-open the trigger phase.
    - For each trigger: write `image_NNNN.json`, UDP **`CAPTURE N`**, save the first subsequent persistent-video frame, queue `image_NNNN_thumb.jpg` generation separately, then **SCP thumbnail during flight** → map tile.
-   - Map tile and Photos count update when `photoFetched` succeeds. **Full-res archive SCP runs after disarm** (deferred queue); `photoFullFetched` when each archive JPEG replaces the thumb.
+   - Map tile and Photos count update when either the thumbnail or authoritative full-resolution JPEG reaches the GCS. **Full-res archive SCP runs after disarm** (deferred queue); it also resolves an earlier thumbnail-transfer failure when each archive JPEG replaces the thumb.
    - Pi **`QGC_LED=1`**: UART `CAMERA_TRIGGER` does not add captures during a QGC session.
-4. **Disarm** — trigger phase marked complete; GCS stops accepting new CAPTURE requests, drains the **in-flight thumb SCP** queue, sends **`VIDEO_RESUME`** when that live queue is empty, then continues **deferred full-res** archive SCP in the background (one at a time on the link).
+4. **Disarm** — trigger phase marked complete; GCS stops accepting new CAPTURE requests and immediately begins a verified **`VIDEO_RESUME`**. The Pi gives already-accepted exposures a bounded drain period, restores `wfb-camera.service`, and confirms `STATE LIVE ... wfb=active`. Thumbnail/full-res SCP continues independently in the background.
 
 ### 3.4 After flight
 
 - **GCS photos:** `Photo/RouteMapping/Mission_*/images`, with `geo.txt`, JSON sidecars, `session_manifest.json`, and eventually `odm.log` in the mission root.
 - **Pi photos:** `/home/shreeon/mapping_photos/mission_*`.
 - Match shots by sequence number and timestamps in JSON sidecars.
-- When Fly View shows **Reconstruction: Ready**, click **Start ODM Stitching**. QGC runs the `opendronemap/odm` Docker image and writes `odm_orthophoto/odm_orthophoto.tif` under the same mission directory.
+- Configure **Application Settings → General → Route Mapping Reconstruction** when stitching should run on a remote NodeODM server. Enter its reachable IP address/DNS hostname and TCP port; the default is the local endpoint `127.0.0.1:3000`. QGC retains the selected endpoint for the complete reconstruction request, including upload, status polling, and result download. `QGC_NODEODM_URL` remains an advanced deployment override when it is set in QGC's environment.
+- When Fly View shows **Reconstruction: Ready**, click **Start ODM Stitching**. QGC submits the mission images and `geo.txt` to NodeODM, polls the task, then downloads and extracts `odm_orthophoto/odm_orthophoto.tif` under the same mission directory.
 
 ---
 
@@ -197,10 +199,15 @@ printf 'CAPTURE 1\n' | nc -u -w 2 10.5.0.2 14551
 
 | Command | Pi action | Reply (current script) |
 |---------|-----------|-------------------------|
-| `VIDEO_PAUSE` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release; repeated command reuses the active session | `OK session=/home/shreeon/mapping_photos/mission_…` |
+| `VIDEO_PAUSE session=<uuid>` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release; repeated command reuses the owned session | `OK state=MAPPING session=/home/… token=<uuid>` |
 | `CAPTURE N` | Enqueue still (no `BUSY` drop); path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg thumb=/…/image_NNNN_thumb.jpg` |
-| `STATUS` | Report active session | `SESSION /path` or `SESSION NONE` |
-| `VIDEO_RESUME` | Restart camera and close a QGC mapping session; no-op if none is active | `OK` |
+| `KEEPALIVE session=<uuid>` | Refresh the Pi-side ownership lease | `OK state=MAPPING` |
+| `STATUS session=<uuid>` | Report authoritative camera/process state | `STATE LIVE/MAPPING/ERROR session=… token=… wfb=… mapping=…` |
+| `VIDEO_RESUME session=<uuid>` | Bounded capture drain, restore and verify WFB, then close the session | `OK state=LIVE wfb=active` or `ERROR …` |
+
+Commands without a token retain the legacy `SESSION …` / `OK session=…`
+format for mixed-version deployments. Only tokenized sessions receive watchdog
+lease recovery.
 
 Duplicate `CAPTURE N` in the same Pi session is **idempotent** (same path returned, no second file).
 
@@ -257,7 +264,10 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 
 **Session end**
 
-- `finishSession()` stops new captures; when the **thumb SCP queue** is empty, `fetchQueueDrained` → Fly View calls `resumeLiveVideo()` (`VIDEO_RESUME`); deferred full-res SCP continues afterward.
+- `finishSession()` stops new captures and starts verified `VIDEO_RESUME` immediately; camera recovery no longer waits for SCP.
+- QGC retries and polls tokenized `STATUS`; it clears ownership only after `LIVE` and `wfb=active` are confirmed.
+- Heartbeats run every 5 s. The Pi restores live video after `SESSION_LEASE_SEC` (45 s by default) if QGC disappears.
+- Deferred thumbnail/full-res SCP continues from already-written files after camera ownership returns to WFB.
 
 **Logging:** `FlyView.RouteMappingPiPhotoFetcher`
 
@@ -267,8 +277,8 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
   mission/trigger updates retry startup if the link was not ready at arm time.
 - Active-vehicle discovery at QGC startup sends no camera command. Both QGC and
   the Pi also guard `VIDEO_RESUME` with actual QGC session state.
-- **GCS trigger state machine** (`FlyView.qml`): `_rebuildRouteMappingGcsTriggerSchedule()` at plan load; `_processGcsCalculatedPhotoTriggers()` on 250 ms timer + position/mission-index updates; `_markRouteMappingPhotoTriggersComplete(reason)` latches end-of-phase; reset on arm via `resetRouteMappingLivePhotos()`.
-- Helpers: `_routeMappingSurveyLastSequence()`, `_routeMappingVehicleOnPhotoCapturePath()` (corridor vs `routeMappingPhotoCaptureInfo`), `_routeMappingPlannedTriggerCount()`.
+- **GCS trigger state machine** (`FlyView.qml`): `_rebuildRouteMappingGcsTriggerSchedule()` at plan load; `_processGcsCalculatedPhotoTriggers()` on 250 ms timer + position/mission-index updates; `_handleRouteMappingCameraTrigger()` reconciles native feedback without disabling the scheduler; `_markRouteMappingPhotoTriggersComplete(reason)` latches end-of-phase; reset on arm via `resetRouteMappingLivePhotos()`.
+- Helpers: `_routeMappingSurveyLastSequence()`, `_routeMappingCameraTriggerCommandActive()`, `routeMappingSegmentInfo()`, `_routeMappingPlannedTriggerCount()`.
 - Errors: modals via `mainWindow.showMessageDialog` (do **not** use `qgcApp()` in QML — C++ only).
 - Successful session path: **`console.info`** with `[RouteMapping]` when `sessionActive` becomes true; phase complete logs `[RouteMapping] Photo trigger phase complete: …`.
 
@@ -288,6 +298,7 @@ printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
 | QML | `ReferenceError: qgcApp is not defined` | Replaced with `mainWindow.showMessageDialog` / console.info |
 | Build | `'findRoot' is not captured` | Lambda capture in `_listRemotePhotos` |
 | Camera startup | QGC active-vehicle reset sent `VIDEO_RESUME` with no mapping session | QGC resumes only a session it started; Pi ignores idle resume and repeated pause reuses the same session |
+| Camera recovery | Lost `VIDEO_RESUME`, QGC exit, or stale async pause left `wfb-camera` stopped | Tokenized acknowledged resume, STATUS verification, cancellation rollback, shutdown best effort, and Pi lease watchdog |
 | Pi resources | Installed service still requested 4608×2592 and thumbnail decoding competed with camera buffers | Install preset aligned to 1920×1080; thumbnail work waits until the mapping stream releases the sensor |
 | Final photos | Marking all triggers complete disabled capture and could discard queued final shots | `finishCaptureQueue()` drains already-positioned triggers; RTH/disarm still cancel late work |
 
@@ -323,9 +334,13 @@ sequenceDiagram
 
     User->>Fly: Disarm
     Fly->>GCS: endSession()
-    Fetch->>Pi: VIDEO_RESUME (after SCP queue drained)
+    Fetch->>Pi: VIDEO_RESUME session=token (independent of SCP queue)
+    Pi-->>Fetch: OK state=LIVE wfb=active
+    Fetch->>Pi: STATUS session=token
+    Pi-->>Fetch: STATE LIVE ... wfb=active
     User->>GCS: Start ODM Stitching
-    GCS->>GCS: docker run opendronemap/odm
+    GCS->>NodeODM: create task (images + geo.txt)
+    NodeODM-->>GCS: task progress and result archive
 ```
 
 ---
@@ -385,7 +400,7 @@ Parser tolerance (canonical `QUEUED … thumb=`, bare path, inferred thumb) and 
 - **JSON metadata** does not yet include `state=requested/fetched/failed` (only trigger fields).
 - **GCS and Pi session folder names** differ by design; correlation is by sequence + path + timestamps.
 - **Mixed versions:** New QGC + old Pi works via STATUS + session-scoped find; full path protocol needs Pi script deploy from §3.1.
-- **Deferred source image:** When a thumbnail is available, the GCS displays it during flight and the 1920×1080 source-image SCP runs after disarm. If the thumbnail is delayed, QGC immediately falls back to the source JPEG. `VIDEO_RESUME` follows the live fetch queue, not the archive drain.
+- **Deferred source image:** When a thumbnail is available, the GCS displays it during flight and the 1920×1080 source-image SCP runs after disarm. If the thumbnail is delayed, QGC immediately falls back to the source JPEG. Camera recovery is independent of both transfer queues.
 
 ---
 

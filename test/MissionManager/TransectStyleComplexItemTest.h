@@ -25,6 +25,7 @@ private slots:
     void _testRebuildTransects  (void);
     void _testDistanceSignalling(void);
     void _testAltitudes         (void);
+    void _testCameraTriggerSequenceRanges(void);
     // void _testFollowTerrain     (void);
 
 private:

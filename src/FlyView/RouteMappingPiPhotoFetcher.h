@@ -3,7 +3,10 @@
 #include <QtCore/QObject>
 #include <QtCore/QSet>
 #include <QtCore/QString>
+#include <QtCore/QTimer>
 #include <QtQmlIntegration/QtQmlIntegration>
+
+#include <atomic>
 
 class QRegularExpression;
 
@@ -21,6 +24,7 @@ class RouteMappingPiPhotoFetcher : public QObject
     Q_PROPERTY(int pendingFetchCount READ pendingFetchCount NOTIFY pendingFetchCountChanged)
     Q_PROPERTY(QString piSessionPath READ piSessionPath NOTIFY piSessionPathChanged)
     Q_PROPERTY(bool piSessionStarting READ piSessionStarting NOTIFY piSessionStartingChanged)
+    Q_PROPERTY(bool liveVideoResumePending READ liveVideoResumePending NOTIFY liveVideoResumePendingChanged)
 
 public:
     explicit RouteMappingPiPhotoFetcher(QObject *parent = nullptr);
@@ -46,6 +50,7 @@ public:
     }
     QString piSessionPath() const { return _piSessionPath; }
     bool piSessionStarting() const { return _piSessionStarting; }
+    bool liveVideoResumePending() const { return _liveVideoResumePending; }
 
     Q_INVOKABLE void beginSessionAsync();
     Q_INVOKABLE bool beginSession();
@@ -80,7 +85,9 @@ signals:
     void pendingFetchCountChanged();
     void piSessionPathChanged();
     void piSessionStartingChanged();
+    void liveVideoResumePendingChanged();
     void piSessionBeginComplete(bool success);
+    void liveVideoResumeComplete(bool success, const QString &errorMessage);
     void fetchQueueDrained();
     void sshPrecheckFailed(const QString &errorMessage);
     void sessionStartFailed(const QString &errorMessage);
@@ -135,8 +142,12 @@ private:
         QString *errorMessage,
         int timeoutMs = 8000,
         const QRegularExpression *acceptableReply = nullptr) const;
-    bool _queryPiSessionPath(QString *sessionPath, QString *errorMessage) const;
-    bool _sendVideoPauseAndWaitForSession(QString *sessionPath, QString *errorMessage) const;
+    bool _queryPiSessionPath(
+        const QString &sessionToken, QString *sessionPath, QString *errorMessage) const;
+    bool _queryPiLiveState(const QString &sessionToken, QString *errorMessage) const;
+    bool _sendVideoPauseAndWaitForSession(
+        const QString &sessionToken, QString *sessionPath, QString *errorMessage) const;
+    bool _resumeLiveVideoVerified(const QString &sessionToken, QString *errorMessage) const;
     bool _sendRemoteUdpCommand(const QString &command) const;
     bool _parseCaptureUdpResponse(
         int sequence,
@@ -156,8 +167,11 @@ private:
     bool _enabled = true;
     bool _acceptingCaptures = true;
     bool _piSessionStarting = false;
+    bool _liveVideoResumePending = false;
     QString _piSessionPath;
-    quint64 _generation = 0;
+    QString _piSessionToken;
+    std::atomic<quint64> _generation{0};
+    QTimer _sessionHeartbeatTimer;
 
     void _completeBeginSessionOnMainThread(
         quint64 generation, bool success, bool hadSshPrecheckFailure, const QString &sessionPath, const QString &errorMessage);

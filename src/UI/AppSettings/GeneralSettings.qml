@@ -167,4 +167,30 @@ SettingsPage {
             }
         }
     }
+
+    SettingsGroupLayout {
+        Layout.fillWidth: true
+        heading: qsTr("Route Mapping Reconstruction")
+
+        LabelledFactTextField {
+            Layout.fillWidth: true
+            label: qsTr("ODM Server IP / Host")
+            fact: _appSettings.nodeOdmHost
+        }
+
+        LabelledFactTextField {
+            Layout.fillWidth: true
+            label: qsTr("ODM Server Port")
+            fact: _appSettings.nodeOdmPort
+        }
+
+        QGCLabel {
+            Layout.fillWidth: true
+            wrapMode: Text.WordWrap
+            text: qsTr("Used when Start ODM Stitching is selected. The default connects to NodeODM on this computer (127.0.0.1:3000). Enter the reachable address of a remote NodeODM server to process missions remotely.")
+            color: qgcPal.text
+            opacity: 0.75
+            font.pointSize: ScreenTools.smallFontPointSize
+        }
+    }
 }

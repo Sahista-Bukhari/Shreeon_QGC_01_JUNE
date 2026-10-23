@@ -532,9 +532,9 @@ Rectangle {
         if (!root._resolutionPresetSelected || !root._cameraCalc || !root.surveyItem) {
             return
         }
-
+        // the value of the altitide
         var high = root.resolution === 1
-        var altitudeMeters = high ? 30 : 60
+        var altitudeMeters = high ? 60 : 40
         var triggerDistanceMeters = high ? 6 : 9
         var speedMetersPerSecond = 5
 
@@ -592,7 +592,8 @@ Rectangle {
         var highMatches = Math.abs(altitudeMeters - 30) < 0.01
                 && Math.abs(triggerDistanceMeters - 6) < 0.01
                 && Math.abs(speedMetersPerSecond - 5) < 0.01
-        var lowMatches = Math.abs(altitudeMeters - 60) < 0.01
+        // Low resulation altitude paramerts
+        var lowMatches = Math.abs(altitudeMeters - 40) < 0.01
                 && Math.abs(triggerDistanceMeters - 9) < 0.01
                 && Math.abs(speedMetersPerSecond - 5) < 0.01
 
@@ -1287,7 +1288,7 @@ Rectangle {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.15
                 text:               root.resolution === 0
-                                    ? qsTr("60 m altitude, photos every 9 m, 5 m/s flight speed. Select Low again to unlock altitude.")
+                                    ? qsTr("40 m altitude, photos every 9 m, 5 m/s flight speed. Select Low again to unlock altitude.")
                                     : root.resolution === 1
                                       ? qsTr("30 m altitude, photos every 6 m, 5 m/s flight speed. Select High again to unlock altitude.")
                                       : qsTr("Select a resolution preset to set and lock the route altitude.")

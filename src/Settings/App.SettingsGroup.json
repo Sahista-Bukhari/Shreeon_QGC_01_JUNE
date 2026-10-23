@@ -270,6 +270,22 @@
     "shortDesc": "AirLink Password",
     "type": "string",
     "default": ""
+},
+{
+    "name":             "nodeOdmHost",
+    "shortDesc":        "ODM Server IP / Host",
+    "longDesc":         "IPv4 address, IPv6 address, or DNS hostname of the NodeODM server used for Route Mapping reconstruction.",
+    "type":             "string",
+    "default":          "127.0.0.1"
+},
+{
+    "name":             "nodeOdmPort",
+    "shortDesc":        "ODM Server Port",
+    "longDesc":         "TCP port exposed by the NodeODM server.",
+    "type":             "uint32",
+    "default":          3000,
+    "min":              1,
+    "max":              65535
 }
 ]
 }

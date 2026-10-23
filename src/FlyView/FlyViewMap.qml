@@ -282,20 +282,11 @@ FlightMap {
                 continue
             }
 
-            var projected = _projectPointOnSegment(coord, segmentStart, segmentEnd)
-            var distanceToSegment = coord.distanceTo(projected)
-            if (!bestInfo || distanceToSegment < bestInfo.distanceToSegment) {
-                bestInfo = {
-                    valid: true,
-                    segmentIndex: Math.floor(i / 2),
-                    distanceToSegment: distanceToSegment,
-                    alongSegment: segmentStart.distanceTo(projected),
-                    segmentLength: segmentStart.distanceTo(segmentEnd),
-                    heading: segmentStart.azimuthTo(segmentEnd),
-                    startCoordinate: segmentStart,
-                    endCoordinate: segmentEnd,
-                    projectedCoordinate: projected
-                }
+            var segmentInfo = routeMappingSegmentInfo(
+                        coord, segmentStart, segmentEnd, Math.floor(i / 2))
+            if (segmentInfo.valid
+                    && (!bestInfo || segmentInfo.distanceToSegment < bestInfo.distanceToSegment)) {
+                bestInfo = segmentInfo
             }
         }
 
@@ -306,6 +297,38 @@ FlightMap {
             alongSegment: 0,
             segmentLength: 0,
             heading: routeMappingEntryHeading
+        }
+    }
+
+    // Project onto one explicitly selected photo leg. Capture scheduling must
+    // never use the globally nearest survey segment: on a lawnmower route the
+    // approach path can pass within a few metres of a much later parallel leg
+    // and falsely jump progress almost to the end of the survey.
+    function routeMappingSegmentInfo(coord, segmentStart, segmentEnd, segmentIndex) {
+        if (!coord || !coord.isValid
+                || !segmentStart || !segmentStart.isValid
+                || !segmentEnd || !segmentEnd.isValid) {
+            return {
+                valid: false,
+                segmentIndex: -1,
+                distanceToSegment: Number.MAX_VALUE,
+                alongSegment: 0,
+                segmentLength: 0,
+                heading: routeMappingEntryHeading
+            }
+        }
+
+        var projected = _projectPointOnSegment(coord, segmentStart, segmentEnd)
+        return {
+            valid: true,
+            segmentIndex: segmentIndex,
+            distanceToSegment: coord.distanceTo(projected),
+            alongSegment: segmentStart.distanceTo(projected),
+            segmentLength: segmentStart.distanceTo(segmentEnd),
+            heading: segmentStart.azimuthTo(segmentEnd),
+            startCoordinate: segmentStart,
+            endCoordinate: segmentEnd,
+            projectedCoordinate: projected
         }
     }
 

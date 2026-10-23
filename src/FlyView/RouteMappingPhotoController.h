@@ -189,6 +189,7 @@ class RouteMappingPhotoController : public QObject
     QString _odmStateDetail;
     QString _odmDownloadPath;
     QString _odmSessionDirectory;
+    QString _nodeOdmEndpoint;
     QString _odmErrorMessage;
     QString _orthophotoPath;
     QString _orthophotoUrl;

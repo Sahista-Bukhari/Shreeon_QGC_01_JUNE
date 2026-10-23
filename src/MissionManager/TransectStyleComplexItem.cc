@@ -143,6 +143,48 @@ QVariantList TransectStyleComplexItem::photoCaptureTransectPoints(void) const
     return capturePoints;
 }
 
+QVariantList TransectStyleComplexItem::cameraTriggerSequenceRanges(void)
+{
+    QVariantList ranges;
+    QList<MissionItem*> missionItems;
+    QObject missionItemParent;
+
+    // Derive this from the same flattened items which are uploaded to the
+    // flight controller. This remains correct for loaded plans, terrain-frame
+    // surveys, turnarounds, condition gates, and optional speed commands.
+    appendMissionItems(missionItems, &missionItemParent);
+
+    int activeStartSequence = -1;
+    for (const MissionItem* missionItem : missionItems) {
+        if (missionItem->command() != MAV_CMD_DO_SET_CAM_TRIGG_DIST) {
+            continue;
+        }
+
+        if (missionItem->param1() > 0.0) {
+            if (activeStartSequence < 0) {
+                activeStartSequence = missionItem->sequenceNumber();
+            }
+        } else if (activeStartSequence >= 0) {
+            QVariantMap range;
+            range[QStringLiteral("first")] = activeStartSequence;
+            range[QStringLiteral("last")] = missionItem->sequenceNumber();
+            ranges.append(range);
+            activeStartSequence = -1;
+        }
+    }
+
+    // Defensive support for imported missions which leave distance triggering
+    // enabled through the end of the complex item.
+    if (activeStartSequence >= 0 && !missionItems.isEmpty()) {
+        QVariantMap range;
+        range[QStringLiteral("first")] = activeStartSequence;
+        range[QStringLiteral("last")] = missionItems.last()->sequenceNumber();
+        ranges.append(range);
+    }
+
+    return ranges;
+}
+
 void TransectStyleComplexItem::setDirty(bool dirty)
 {
     if (!dirty) {

@@ -101,6 +101,24 @@ refresh_gstreamer_plugins_from_system() {
     rm -rf "${APPDIR}/usr/lib/gstreamer-1.0" "${APPDIR}/usr/lib/gstreamer1.0"
     mkdir -p "${APPDIR}/usr/lib/gstreamer-1.0"
     cp -a "${sys_dir}/." "${APPDIR}/usr/lib/gstreamer-1.0/"
+
+    # Bundle gst-plugin-scanner (AppRun expects this path).
+    local scanner=""
+    for cand in \
+        /usr/lib/aarch64-linux-gnu/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner \
+        /usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner; do
+        if [[ -x "${cand}" ]]; then
+            scanner="${cand}"
+            break
+        fi
+    done
+    if [[ -n "${scanner}" ]]; then
+        mkdir -p "${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0"
+        cp -a "${scanner}" "${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+        chmod +x "${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+    else
+        echo "Warning: gst-plugin-scanner not found on system; video plugin scan may warn." >&2
+    fi
 }
 
 refresh_gstreamer_plugins_from_system
@@ -115,6 +133,8 @@ export PATH="${QT_ROOT}/bin:${PATH}"
 export LD_LIBRARY_PATH="${QT_ROOT}/lib:${LD_LIBRARY_PATH:-}"
 export APPIMAGE_EXTRACT_AND_RUN=1
 export ARCH=aarch64
+# Ensure linuxdeploy-plugin-qt pulls Quick3D (required by FlyView / Viewer3D).
+export EXTRA_QT_MODULES="${EXTRA_QT_MODULES:+${EXTRA_QT_MODULES};}quick3d;shadertools"
 
 # linuxdeploy-plugin-qt walks all Qt plugins. Optional SQL drivers pull DB client libs
 # (libmysqlclient, libpq, …). QGroundControl uses SQLite only (libqsqlite).
@@ -138,6 +158,31 @@ echo "Bundling Qt and libraries into AppDir..."
     --custom-apprun "${APPRUN}" \
     --icon-file "${ICON}" \
     --plugin qt
+
+# linuxdeploy sometimes misses Quick3D QML; copy from QT_ROOT if needed.
+if [[ ! -e "${APPDIR}/usr/qml/QtQuick3D/libqquick3dplugin.so" && -d "${QT_ROOT}/qml/QtQuick3D" ]]; then
+    echo "Copying QtQuick3D QML module into AppDir..."
+    mkdir -p "${APPDIR}/usr/qml"
+    cp -a "${QT_ROOT}/qml/QtQuick3D" "${APPDIR}/usr/qml/"
+    shopt -s nullglob
+    cp -a "${QT_ROOT}/lib"/libQt6Quick3D*.so* "${APPDIR}/usr/lib/" 2>/dev/null || true
+    cp -a "${QT_ROOT}/lib"/libQt6ShaderTools*.so* "${APPDIR}/usr/lib/" 2>/dev/null || true
+    shopt -u nullglob
+fi
+
+# Re-assert scanner / plugins after linuxdeploy may have rearranged paths.
+refresh_gstreamer_plugins_from_system
+
+# Pi FFmpeg (libav) often mismatches and can SIGILL inside AppImages. Drop after
+# the final plugin refresh so they are not re-copied from the system.
+echo "Removing bundled libav / gst-libav to avoid Pi FFmpeg ABI / SIGILL issues..."
+rm -f "${APPDIR}/usr/lib/gstreamer-1.0"/libgstlibav.so* \
+      "${APPDIR}/usr/lib"/libavcodec.so* \
+      "${APPDIR}/usr/lib"/libavformat.so* \
+      "${APPDIR}/usr/lib"/libavutil.so* \
+      "${APPDIR}/usr/lib"/libavfilter.so* \
+      "${APPDIR}/usr/lib"/libswscale.so* \
+      "${APPDIR}/usr/lib"/libswresample.so* 2>/dev/null || true
 
 echo "Creating AppImage..."
 rm -f "${APPIMAGE_OUT}"

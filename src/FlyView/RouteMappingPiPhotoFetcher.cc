@@ -3,6 +3,7 @@
 #include "QGCLoggingCategory.h"
 
 #include <QtCore/QDir>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
 #include <QtCore/QFile>
 #include <QtCore/QProcess>
@@ -11,6 +12,7 @@
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QThread>
 #include <QtCore/QTimer>
+#include <QtCore/QUuid>
 #include <QtGui/QImageReader>
 #include <QtNetwork/QHostAddress>
 #include <QtNetwork/QUdpSocket>
@@ -98,6 +100,9 @@ constexpr int kStatusReplyTimeoutMs = 4000;
 constexpr int kStatusQueryAttempts = 6;
 constexpr int kPiVideoPauseSettleMs = 2500;
 constexpr int kCaptureSshTriggerTimeoutMs = 12000;
+constexpr int kSessionHeartbeatIntervalMs = 5000;
+constexpr int kVideoResumeAttempts = 5;
+constexpr int kVideoResumeReplyTimeoutMs = 12000;
 
 const QRegularExpression kCaptureUdpAcceptableReply(
     QStringLiteral(
@@ -164,6 +169,29 @@ QString shellQuote(const QString &value)
 RouteMappingPiPhotoFetcher::RouteMappingPiPhotoFetcher(QObject *parent)
     : QObject(parent)
 {
+    _sessionHeartbeatTimer.setInterval(kSessionHeartbeatIntervalMs);
+    _sessionHeartbeatTimer.setSingleShot(false);
+    connect(&_sessionHeartbeatTimer, &QTimer::timeout, this, [this]() {
+        if (_piSessionToken.isEmpty() || _liveVideoResumePending) {
+            return;
+        }
+        (void)_sendRemoteUdpCommand(
+            QStringLiteral("KEEPALIVE session=%1").arg(_piSessionToken));
+    });
+    if (QCoreApplication *app = QCoreApplication::instance()) {
+        connect(app, &QCoreApplication::aboutToQuit, this, [this]() {
+            if (_piSessionToken.isEmpty()) {
+                return;
+            }
+            const QString command =
+                QStringLiteral("VIDEO_RESUME session=%1").arg(_piSessionToken);
+            // Best effort for orderly shutdown. The Pi lease remains the
+            // guarantee for crashes or total link loss.
+            for (int attempt = 0; attempt < 3; ++attempt) {
+                (void)_sendRemoteUdpCommand(command);
+            }
+        });
+    }
 }
 
 void RouteMappingPiPhotoFetcher::setPiHost(const QString &host)
@@ -221,12 +249,14 @@ void RouteMappingPiPhotoFetcher::beginSessionAsync()
     }
 
     resetSession();
+    _piSessionToken = QUuid::createUuid().toString(QUuid::WithoutBraces);
     _piSessionStarting = true;
     emit piSessionStartingChanged();
 
     const quint64 generation = _generation;
+    const QString sessionToken = _piSessionToken;
     RouteMappingPiPhotoFetcher *const self = this;
-    (void)QtConcurrent::run([self, generation]() {
+    (void)QtConcurrent::run([self, generation, sessionToken]() {
         QString errorMessage;
         QString sessionPath;
         bool sshPrecheckFailed = false;
@@ -244,11 +274,15 @@ void RouteMappingPiPhotoFetcher::beginSessionAsync()
             }
         }
 
+        if (generation != self->_generation) {
+            return;
+        }
+
         if (sshPrecheckFailed) {
             qCWarning(RouteMappingPiPhotoFetcherLog)
                 << "SSH precheck failed after" << kSshPrecheckAttempts
                 << "attempts; skipping VIDEO_PAUSE:" << errorMessage;
-        } else if (!self->_sendVideoPauseAndWaitForSession(&sessionPath, &errorMessage)) {
+        } else if (!self->_sendVideoPauseAndWaitForSession(sessionToken, &sessionPath, &errorMessage)) {
             success = false;
         } else {
             videoPaused = true;
@@ -263,10 +297,18 @@ void RouteMappingPiPhotoFetcher::beginSessionAsync()
             }
         }
 
-        if (!success && videoPaused) {
+        const bool startupWasCancelled = generation != self->_generation;
+        if (videoPaused && (!success || startupWasCancelled)) {
             qCInfo(RouteMappingPiPhotoFetcherLog)
-                << "Rolling back Pi VIDEO_PAUSE after failed mapping session start";
-            (void)self->_sendRemoteUdpCommand(QStringLiteral("VIDEO_RESUME"));
+                << "Rolling back Pi VIDEO_PAUSE after failed or cancelled mapping session start";
+            QString resumeError;
+            if (!self->_resumeLiveVideoVerified(sessionToken, &resumeError)) {
+                qCWarning(RouteMappingPiPhotoFetcherLog)
+                    << "Could not verify cancelled Pi session rollback:" << resumeError;
+            }
+        }
+        if (startupWasCancelled) {
+            return;
         }
 
         QMetaObject::invokeMethod(
@@ -306,6 +348,7 @@ void RouteMappingPiPhotoFetcher::_completeBeginSessionOnMainThread(
     if (success) {
         _piSessionPath = sessionPath;
         emit piSessionPathChanged();
+        _sessionHeartbeatTimer.start();
         qCInfo(RouteMappingPiPhotoFetcherLog) << "Pi mapping photo session:" << _piSessionPath;
         if (hadSshPrecheckFailure) {
             emit sshPrecheckFailed(errorMessage);
@@ -328,6 +371,9 @@ void RouteMappingPiPhotoFetcher::_completeBeginSessionOnMainThread(
 void RouteMappingPiPhotoFetcher::finishSession()
 {
     _acceptingCaptures = false;
+    // Camera ownership and file transfer are independent. Restore the live
+    // camera immediately; already-written JPEGs can continue copying later.
+    (void)resumeLiveVideo();
     _tryCompleteSessionEnd();
 }
 
@@ -338,6 +384,7 @@ void RouteMappingPiPhotoFetcher::haltNewCaptures()
 
 void RouteMappingPiPhotoFetcher::resetSession()
 {
+    _sessionHeartbeatTimer.stop();
     if (_piSessionStarting) {
         _piSessionStarting = false;
         emit piSessionStartingChanged();
@@ -353,6 +400,7 @@ void RouteMappingPiPhotoFetcher::resetSession()
     _activeFetchCount = 0;
     _liveFetchQueueDrainedEmitted = false;
     _acceptingCaptures = true;
+    _piSessionToken.clear();
     if (!_piSessionPath.isEmpty()) {
         _piSessionPath.clear();
         emit piSessionPathChanged();
@@ -361,16 +409,16 @@ void RouteMappingPiPhotoFetcher::resetSession()
 
 void RouteMappingPiPhotoFetcher::cancelSession()
 {
+    _sessionHeartbeatTimer.stop();
     if (_piSessionStarting) {
         _piSessionStarting = false;
         emit piSessionStartingChanged();
     }
     ++_generation;
     _acceptingCaptures = false;
-    if (!_piSessionPath.isEmpty()) {
-        _piSessionPath.clear();
-        emit piSessionPathChanged();
-    }
+    // Preserve the remote ownership handle until VIDEO_RESUME is verified.
+    // Clearing it here created a window where a new session could start while
+    // the Pi still had wfb-camera intentionally stopped.
     if (!_queue.isEmpty() || !_deferredFullResQueue.isEmpty() || _deferredFullResActiveCount > 0) {
         _queue.clear();
         _deferredFullResQueue.clear();
@@ -510,9 +558,11 @@ bool RouteMappingPiPhotoFetcher::_triggerCaptureViaSsh(
 #endif
 }
 
-bool RouteMappingPiPhotoFetcher::_queryPiSessionPath(QString *sessionPath, QString *errorMessage) const
+bool RouteMappingPiPhotoFetcher::_queryPiSessionPath(
+    const QString &sessionToken, QString *sessionPath, QString *errorMessage) const
 {
-    static const QRegularExpression statusReply(QStringLiteral("^SESSION\\s+(/[^\\r\\n]+)$"));
+    static const QRegularExpression statusReply(
+        QStringLiteral("^(?:SESSION\\s+(/[^\\r\\n]+)|STATE\\s+MAPPING\\s+session=(/[^\\s]+).*)$"));
     QString lastResponse;
     QString lastError;
 
@@ -523,7 +573,13 @@ bool RouteMappingPiPhotoFetcher::_queryPiSessionPath(QString *sessionPath, QStri
 
         QString response;
         if (!_requestRemoteUdpCommand(
-                QStringLiteral("STATUS"), &response, &lastError, kStatusReplyTimeoutMs, &statusReply)) {
+                sessionToken.isEmpty()
+                    ? QStringLiteral("STATUS")
+                    : QStringLiteral("STATUS session=%1").arg(sessionToken),
+                &response,
+                &lastError,
+                kStatusReplyTimeoutMs,
+                &statusReply)) {
             continue;
         }
 
@@ -534,7 +590,8 @@ bool RouteMappingPiPhotoFetcher::_queryPiSessionPath(QString *sessionPath, QStri
         }
 
         if (sessionPath) {
-            *sessionPath = QDir::cleanPath(match.captured(1));
+            const QString path = !match.captured(1).isEmpty() ? match.captured(1) : match.captured(2);
+            *sessionPath = QDir::cleanPath(path);
         }
         return true;
     }
@@ -554,10 +611,28 @@ bool RouteMappingPiPhotoFetcher::_queryPiSessionPath(QString *sessionPath, QStri
     return false;
 }
 
+bool RouteMappingPiPhotoFetcher::_queryPiLiveState(
+    const QString &sessionToken, QString *errorMessage) const
+{
+    static const QRegularExpression liveReply(
+        QStringLiteral("^(?:SESSION\\s+NONE|STATE\\s+LIVE\\s+.*wfb=active.*)$"),
+        QRegularExpression::CaseInsensitiveOption);
+    QString response;
+    return _requestRemoteUdpCommand(
+        sessionToken.isEmpty()
+            ? QStringLiteral("STATUS")
+            : QStringLiteral("STATUS session=%1").arg(sessionToken),
+        &response,
+        errorMessage,
+        kStatusReplyTimeoutMs,
+        &liveReply);
+}
+
 bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
-    QString *sessionPath, QString *errorMessage) const
+    const QString &sessionToken, QString *sessionPath, QString *errorMessage) const
 {
 #if defined(Q_OS_WIN)
+    Q_UNUSED(sessionToken);
     Q_UNUSED(sessionPath);
     if (errorMessage) {
         *errorMessage = tr("Pi UDP session control is not supported on Windows");
@@ -579,7 +654,8 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
         return false;
     }
 
-    const QByteArray payload = QByteArrayLiteral("VIDEO_PAUSE");
+    const QByteArray payload =
+        QStringLiteral("VIDEO_PAUSE session=%1").arg(sessionToken).toUtf8();
     if (socket.writeDatagram(payload, QHostAddress(_piHost), static_cast<quint16>(_piTriggerPort)) != payload.size()) {
         if (errorMessage) {
             *errorMessage = socket.errorString();
@@ -588,7 +664,8 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
     }
 
     static const QRegularExpression sessionReply(
-        QStringLiteral("^OK\\s+session=(/[^\\r\\n]+)$"));
+        QStringLiteral("^OK(?:\\s+state=MAPPING)?\\s+session=(/[^\\s]+)(?:\\s+token=[^\\s]+)?$"),
+        QRegularExpression::CaseInsensitiveOption);
 
     bool pauseAcknowledged = false;
     QElapsedTimer timer;
@@ -632,8 +709,42 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
         << "Waiting" << kPiVideoPauseSettleMs
         << "ms for Pi VIDEO_PAUSE to finish before STATUS";
     QThread::msleep(kPiVideoPauseSettleMs);
-    return _queryPiSessionPath(sessionPath, errorMessage);
+    return _queryPiSessionPath(sessionToken, sessionPath, errorMessage);
 #endif
+}
+
+bool RouteMappingPiPhotoFetcher::_resumeLiveVideoVerified(
+    const QString &sessionToken, QString *errorMessage) const
+{
+    static const QRegularExpression resumeReply(
+        QStringLiteral("^OK(?:\\s+state=LIVE(?:\\s+wfb=active)?)?$"),
+        QRegularExpression::CaseInsensitiveOption);
+    QString lastError;
+    const QString command = sessionToken.isEmpty()
+                                ? QStringLiteral("VIDEO_RESUME")
+                                : QStringLiteral("VIDEO_RESUME session=%1").arg(sessionToken);
+
+    for (int attempt = 0; attempt < kVideoResumeAttempts; ++attempt) {
+        QString response;
+        (void)_requestRemoteUdpCommand(
+            command, &response, &lastError, kVideoResumeReplyTimeoutMs, &resumeReply);
+
+        // An acknowledgement can be lost after the Pi already restored video,
+        // so STATUS is the authority rather than the command reply itself.
+        if (_queryPiLiveState(sessionToken, &lastError)) {
+            return true;
+        }
+        if (attempt + 1 < kVideoResumeAttempts) {
+            QThread::msleep(500);
+        }
+    }
+
+    if (errorMessage) {
+        *errorMessage = lastError.isEmpty()
+                            ? tr("The Pi did not confirm that live video resumed")
+                            : lastError;
+    }
+    return false;
 }
 
 bool RouteMappingPiPhotoFetcher::_sendRemoteUdpCommand(const QString &command) const
@@ -752,18 +863,52 @@ bool RouteMappingPiPhotoFetcher::pauseLiveVideo()
 
 bool RouteMappingPiPhotoFetcher::resumeLiveVideo()
 {
-    if (!_enabled) {
+    if (_liveVideoResumePending) {
+        return _liveVideoResumePending;
+    }
+    if (_piSessionToken.isEmpty() && _piSessionPath.isEmpty() && !_piSessionStarting) {
         return false;
     }
-    const bool ok = _sendRemoteUdpCommand(QStringLiteral("VIDEO_RESUME"));
-    if (ok) {
-        qCInfo(RouteMappingPiPhotoFetcherLog) << "Requested Pi live video resume after route mapping stills";
-        if (!_piSessionPath.isEmpty()) {
-            _piSessionPath.clear();
-            emit piSessionPathChanged();
-        }
-    }
-    return ok;
+
+    _sessionHeartbeatTimer.stop();
+    _liveVideoResumePending = true;
+    emit liveVideoResumePendingChanged();
+    const QString sessionToken = _piSessionToken;
+    RouteMappingPiPhotoFetcher *const self = this;
+    (void)QtConcurrent::run([self, sessionToken]() {
+        QString errorMessage;
+        const bool success = self->_resumeLiveVideoVerified(sessionToken, &errorMessage);
+        QMetaObject::invokeMethod(
+            self,
+            [self, sessionToken, success, errorMessage]() {
+                self->_liveVideoResumePending = false;
+                emit self->liveVideoResumePendingChanged();
+                if (success) {
+                    qCInfo(RouteMappingPiPhotoFetcherLog)
+                        << "Pi confirmed that live video resumed after Route Mapping";
+                    if (self->_piSessionToken == sessionToken) {
+                        self->_piSessionToken.clear();
+                    }
+                    if (self->_piSessionToken.isEmpty() && !self->_piSessionPath.isEmpty()) {
+                        self->_piSessionPath.clear();
+                        emit self->piSessionPathChanged();
+                    }
+                } else {
+                    qCWarning(RouteMappingPiPhotoFetcherLog)
+                        << "Pi live video resume was not confirmed:" << errorMessage;
+                    // Continue recovery while QGC is alive. The Pi lease is the
+                    // independent fallback if QGC disappears completely.
+                    QTimer::singleShot(3000, self, [self]() {
+                        if (!self->_piSessionToken.isEmpty() || !self->_piSessionPath.isEmpty()) {
+                            (void)self->resumeLiveVideo();
+                        }
+                    });
+                }
+                emit self->liveVideoResumeComplete(success, errorMessage);
+            },
+            Qt::QueuedConnection);
+    });
+    return true;
 }
 
 bool RouteMappingPiPhotoFetcher::_parseCaptureUdpResponse(

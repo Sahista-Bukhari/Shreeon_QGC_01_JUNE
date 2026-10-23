@@ -6,6 +6,7 @@ Wants=wifibroadcast@drone.service wfb-camera.service
 [Service]
 Type=simple
 Environment=PYTHONUNBUFFERED=1
+Environment=SESSION_LEASE_SEC=45
 EnvironmentFile=-/etc/default/shreeon-route-mapping
 ExecStart=/usr/local/libexec/shreeon-route-mapping-capture \
     --serial-device ${SERIAL_DEVICE} \
@@ -22,7 +23,8 @@ ExecStart=/usr/local/libexec/shreeon-route-mapping-capture \
     --mapping-framerate ${MAPPING_FRAMERATE} \
     --mapping-quality ${MAPPING_QUALITY} \
     --mapping-buffer-count ${MAPPING_BUFFER_COUNT} \
-    --frame-wait-sec ${FRAME_WAIT_SEC}
+    --frame-wait-sec ${FRAME_WAIT_SEC} \
+    --session-lease-sec ${SESSION_LEASE_SEC}
 Restart=on-failure
 RestartSec=3
 TimeoutStopSec=40

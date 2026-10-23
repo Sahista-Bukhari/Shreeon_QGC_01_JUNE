@@ -91,13 +91,43 @@ if [ -n "$SYSTEM_GIO" ] && nm -D "$SYSTEM_GIO" 2>/dev/null | grep -q g_task_set_
 else
     export GIO_EXTRA_MODULES="${APPDIR}/usr/lib/gio/modules"
 fi
-export GST_PLUGIN_SCANNER_1_0="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
-export GST_PLUGIN_SCANNER="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
-export GST_PTP_HELPER_1_0="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-ptp-helper"
-export GST_PTP_HELPER="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-ptp-helper"
+# Prefer bundled scanner; fall back to system (common on Raspberry Pi AppImages).
+GST_SCANNER_BUNDLED="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"
+GST_SCANNER_SYSTEM=""
+for cand in \
+    "/usr/lib/${MULTIARCH}/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner" \
+    "/usr/lib/gstreamer1.0/gstreamer-1.0/gst-plugin-scanner"; do
+    if [ -x "${cand}" ]; then
+        GST_SCANNER_SYSTEM="${cand}"
+        break
+    fi
+done
+if [ -x "${GST_SCANNER_BUNDLED}" ]; then
+    export GST_PLUGIN_SCANNER_1_0="${GST_SCANNER_BUNDLED}"
+    export GST_PLUGIN_SCANNER="${GST_SCANNER_BUNDLED}"
+elif [ -n "${GST_SCANNER_SYSTEM}" ]; then
+    export GST_PLUGIN_SCANNER_1_0="${GST_SCANNER_SYSTEM}"
+    export GST_PLUGIN_SCANNER="${GST_SCANNER_SYSTEM}"
+fi
+
+GST_PTP_BUNDLED="${APPDIR}/usr/lib/gstreamer1.0/gstreamer-1.0/gst-ptp-helper"
+if [ -x "${GST_PTP_BUNDLED}" ]; then
+    export GST_PTP_HELPER_1_0="${GST_PTP_BUNDLED}"
+    export GST_PTP_HELPER="${GST_PTP_BUNDLED}"
+fi
+
 export GST_PLUGIN_SYSTEM_PATH_1_0="${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_SYSTEM_PATH="${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_PATH_1_0="${APPDIR}/usr/lib/gstreamer-1.0"
 export GST_PLUGIN_PATH="${APPDIR}/usr/lib/gstreamer-1.0"
+
+# Default GUI platform when launched over SSH without QT_QPA_PLATFORM set.
+if [ -z "${QT_QPA_PLATFORM:-}" ] && [ -n "${DISPLAY:-}" ]; then
+    export QT_QPA_PLATFORM=xcb
+fi
+# Never keep a stale "offscreen" from the environment when a display exists.
+if [ "${QT_QPA_PLATFORM:-}" = "offscreen" ] && [ -n "${DISPLAY:-}" ]; then
+    export QT_QPA_PLATFORM=xcb
+fi
 
 exec "$QGC_BINARY" "$@"

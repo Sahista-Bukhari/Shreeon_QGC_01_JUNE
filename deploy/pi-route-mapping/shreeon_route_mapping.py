@@ -480,6 +480,22 @@ class CaptureWorker(threading.Thread):
         with self._request_lock:
             return not self._capture_active
 
+    def wait_until_drained(self, timeout_sec: float) -> bool:
+        """Wait for accepted captures to finish without waiting for thumbnails."""
+        deadline = time.monotonic() + max(0.0, timeout_sec)
+        while time.monotonic() < deadline:
+            with self._requests.mutex:
+                capture_queue_empty = not any(
+                    isinstance(request, CaptureRequest)
+                    for request in self._requests.queue
+                )
+            with self._request_lock:
+                capture_active = self._capture_active
+            if capture_queue_empty and not capture_active:
+                return True
+            time.sleep(0.05)
+        return False
+
     def _plan_gcs_capture_path(
         self, session_directory: pathlib.Path, gcs_sequence: int
     ) -> pathlib.Path:
@@ -788,6 +804,8 @@ class RouteMappingService:
         # commands from QGC. This prevents the same MAVLink CAMERA_TRIGGER from
         # also being captured independently on the Pi UART path.
         self._gcs_controls_captures = False
+        self._gcs_session_token: str | None = None
+        self._session_lease_deadline = 0.0
 
         self._wfb_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._wfb_socket.bind(("127.0.0.1", 0))
@@ -817,16 +835,115 @@ class RouteMappingService:
             arguments.video_release_delay_sec,
         )
 
-    def pause_live_video(self) -> pathlib.Path:
+    def _camera_service_active(self) -> bool:
+        return (
+            subprocess.run(
+                ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
+                check=False,
+            ).returncode
+            == 0
+        )
+
+    def _camera_service_streaming(self) -> bool:
+        """Confirm systemd plus both processes which produce the RTP stream."""
+        if not self._camera_service_active():
+            return False
+        main_pid_result = subprocess.run(
+            [
+                "systemctl",
+                "show",
+                "--property=MainPID",
+                "--value",
+                self._arguments.camera_service,
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        try:
+            main_pid = int(main_pid_result.stdout.strip())
+        except ValueError:
+            return False
+        if main_pid <= 0:
+            return False
+
+        children_result = subprocess.run(
+            ["pgrep", "-P", str(main_pid), "-a"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        child_commands = children_result.stdout
+        return "rpicam-vid" in child_commands and "gst-launch-1.0" in child_commands
+
+    def _start_live_video_verified(self, timeout_sec: float = 10.0) -> bool:
+        action = "restart" if self._camera_service_active() else "start"
+        subprocess.run(
+            ["systemctl", action, self._arguments.camera_service], check=False
+        )
+        deadline = time.monotonic() + max(1.0, timeout_sec)
+        healthy_since: float | None = None
+        while time.monotonic() < deadline:
+            if self._camera_service_streaming():
+                if healthy_since is None:
+                    healthy_since = time.monotonic()
+                elif time.monotonic() - healthy_since >= 1.0:
+                    return True
+            else:
+                healthy_since = None
+            time.sleep(0.25)
+        return self._camera_service_streaming()
+
+    def _refresh_session_lease(self, session_token: str | None) -> bool:
+        if not self._gcs_controls_captures:
+            return False
+        if (
+            self._gcs_session_token is not None
+            and session_token != self._gcs_session_token
+        ):
+            return False
+        if self._gcs_session_token is not None:
+            self._session_lease_deadline = (
+                time.monotonic() + self._arguments.session_lease_sec
+            )
+        return True
+
+    def _camera_state(self) -> str:
+        if self._gcs_controls_captures:
+            if self._capture_worker.mapping_video_running:
+                return "MAPPING"
+            return "ERROR"
+        return "LIVE" if self._camera_service_streaming() else "ERROR"
+
+    def _status_response(self) -> bytes:
+        session_directory = self._capture_worker.session_directory
+        session_text = str(session_directory) if session_directory is not None else "NONE"
+        token_text = self._gcs_session_token or "NONE"
+        wfb_state = "active" if self._camera_service_streaming() else "inactive"
+        mapping_state = (
+            "active" if self._capture_worker.mapping_video_running else "stopped"
+        )
+        return (
+            f"STATE {self._camera_state()} session={session_text} "
+            f"token={token_text} wfb={wfb_state} mapping={mapping_state}\n"
+        ).encode()
+
+    def pause_live_video(self, session_token: str | None = None) -> pathlib.Path:
         # VIDEO_PAUSE can be retried when its UDP acknowledgement is lost.
         # Reuse the active QGC session instead of creating another directory or
         # touching the camera pipeline a second time.
         if self._gcs_controls_captures:
+            if (
+                self._gcs_session_token is not None
+                and session_token != self._gcs_session_token
+            ):
+                raise RuntimeError("another QGC mapping session owns the camera")
             session_directory = self._capture_worker.session_directory
             if (
                 session_directory is not None
                 and self._capture_worker.mapping_video_running
             ):
+                self._refresh_session_lease(session_token)
                 LOGGER.info(
                     "Mapping camera already paused for QGC session: %s",
                     session_directory,
@@ -838,14 +955,10 @@ class RouteMappingService:
         # timestamp and lifetime aligned with the actual mission.
         session_directory = self._capture_worker.start_new_session()
         self._gcs_controls_captures = True
+        self._gcs_session_token = session_token
+        self._session_lease_deadline = 0.0
         try:
-            if (
-                subprocess.run(
-                    ["systemctl", "is-active", "--quiet", self._arguments.camera_service],
-                    check=False,
-                ).returncode
-                == 0
-            ):
+            if self._camera_service_active():
                 subprocess.run(
                     ["systemctl", "stop", self._arguments.camera_service], check=True
                 )
@@ -854,39 +967,84 @@ class RouteMappingService:
             self._capture_worker.set_session_video_paused(True)
         except Exception:
             self._gcs_controls_captures = False
+            self._gcs_session_token = None
+            self._session_lease_deadline = 0.0
             self._capture_worker.stop_mapping_video()
-            subprocess.run(
-                ["systemctl", "start", self._arguments.camera_service], check=False
-            )
+            self._start_live_video_verified()
             self._capture_worker.resume_thumbnail_processing()
+            self._capture_worker.close_session()
             raise
+        self._refresh_session_lease(session_token)
         LOGGER.info(
             "WFB video paused; persistent rpicam-vid mapping session ready: %s",
             session_directory,
         )
         return session_directory
 
-    def resume_live_video(self) -> None:
+    def resume_live_video(self, session_token: str | None = None) -> bool:
         # QGC discovers an active vehicle during application startup. Older
         # builds sent VIDEO_RESUME from that reset path even though no mapping
         # session existed. Treat the command as a strict no-op so startup can
         # never cancel a standalone capture or churn the camera service.
         if not self._gcs_controls_captures:
-            LOGGER.info("Ignoring VIDEO_RESUME: no QGC mapping session is active")
-            return
+            # Tokenized clients are explicitly asking for the safe LIVE state.
+            # Legacy unsolicited resumes remain no-ops for compatibility.
+            if session_token is None:
+                LOGGER.info("Ignoring VIDEO_RESUME: no QGC mapping session is active")
+                return self._camera_service_streaming()
+            if self._camera_service_streaming():
+                return True
+            return self._start_live_video_verified()
 
-        self._capture_worker.cancel_pending()
-        if not self._capture_worker.wait_until_idle(10.0):
-            LOGGER.warning("Active camera exposure did not finish before video resume")
-        self._gcs_controls_captures = False
+        if (
+            self._gcs_session_token is not None
+            and session_token != self._gcs_session_token
+        ):
+            LOGGER.warning("Rejecting VIDEO_RESUME for a non-owner session token")
+            return False
+
+        # CAPTURE acknowledgements mean the Pi accepted those exposures. Give
+        # that bounded queue time to finish before reclaiming the sensor, but
+        # never let a broken capture block live-video recovery indefinitely.
+        if not self._capture_worker.wait_until_drained(10.0):
+            cancelled = self._capture_worker.cancel_pending()
+            LOGGER.warning(
+                "Mapping capture queue did not drain before video resume; "
+                "cancelled %d pending exposure(s)",
+                cancelled,
+            )
+            if not self._capture_worker.wait_until_idle(5.0):
+                LOGGER.warning("Active camera exposure did not finish before video resume")
         self._capture_worker.stop_mapping_video()
         self._capture_worker.set_session_video_paused(False)
-        subprocess.run(
-            ["systemctl", "start", self._arguments.camera_service], check=False
-        )
         self._capture_worker.resume_thumbnail_processing()
+        if not self._start_live_video_verified():
+            LOGGER.error("Could not verify that %s restarted", self._arguments.camera_service)
+            # Retain ownership/session state so VIDEO_RESUME and the watchdog
+            # can retry instead of losing the only recovery handle.
+            return False
+        self._gcs_controls_captures = False
+        self._gcs_session_token = None
+        self._session_lease_deadline = 0.0
         self._capture_worker.close_session()
         LOGGER.info("Live video resumed after mapping still session")
+        return True
+
+    def _check_session_lease(self) -> None:
+        if (
+            not self._gcs_controls_captures
+            or self._gcs_session_token is None
+            or self._session_lease_deadline <= 0.0
+            or time.monotonic() < self._session_lease_deadline
+        ):
+            return
+        LOGGER.warning(
+            "QGC mapping-session lease expired; restoring live video automatically"
+        )
+        if not self.resume_live_video(self._gcs_session_token):
+            # Retry recovery without waiting for another command from a QGC
+            # which may have crashed or disconnected.
+            self._session_lease_deadline = time.monotonic() + 5.0
 
     def request_stop(self, _signum: int, _frame: object) -> None:
         self._stop_requested = True
@@ -895,6 +1053,14 @@ class RouteMappingService:
         self._capture_worker.request(CaptureRequest("signal"))
 
     def run(self) -> int:
+        # The daemon keeps session ownership only in memory. If it was killed
+        # during a mapping session, reconcile the real camera to the safe LIVE
+        # state before accepting any new commands.
+        if not self._camera_service_streaming() and not self._start_live_video_verified():
+            LOGGER.error(
+                "Route Mapping daemon started but %s could not be restored",
+                self._arguments.camera_service,
+            )
         self._capture_worker.start()
         self._try_open_serial()
         LOGGER.info(
@@ -913,14 +1079,17 @@ class RouteMappingService:
                 except Exception:
                     LOGGER.exception("I/O callback failed")
             self._discard_old_trigger_ids()
+            self._check_session_lease()
 
         self._capture_worker.cancel_pending()
         self._capture_worker.stop()
         self._capture_worker.join(timeout=35)
         self._capture_worker.stop_mapping_video()
-        subprocess.run(
-            ["systemctl", "start", self._arguments.camera_service], check=False
-        )
+        if not self._start_live_video_verified():
+            LOGGER.error(
+                "Could not verify %s during daemon shutdown",
+                self._arguments.camera_service,
+            )
         self._close_serial()
         self._selector.close()
         self._manual_socket.close()
@@ -994,6 +1163,13 @@ class RouteMappingService:
         data, address = self._manual_socket.recvfrom(1024)
         text = data.decode("utf-8", errors="ignore").strip()
         parts = text.split()
+        fields = {
+            key.lower(): value
+            for part in parts[1:]
+            if "=" in part
+            for key, value in [part.split("=", 1)]
+        }
+        session_token = fields.get("session")
         if not parts:
             response = b"ERROR empty command\n"
         elif parts[0].upper() == "CAPTURE":
@@ -1045,23 +1221,42 @@ class RouteMappingService:
             else:
                 response = b"BUSY\n"
         elif parts[0].upper() == "STATUS":
-            session_directory = self._capture_worker.session_directory
-            response = (
-                f"SESSION {session_directory}\n".encode()
-                if session_directory is not None
-                else b"SESSION NONE\n"
-            )
+            if session_token is None:
+                # Preserve the legacy wire format so the Pi package can be
+                # deployed before every GCS has been upgraded.
+                session_directory = self._capture_worker.session_directory
+                response = (
+                    f"SESSION {session_directory}\n".encode()
+                    if session_directory is not None
+                    else b"SESSION NONE\n"
+                )
+            else:
+                response = self._status_response()
         elif parts[0].upper() == "VIDEO_PAUSE":
-            session_directory = self.pause_live_video()
-            response = f"OK session={session_directory}\n".encode()
+            try:
+                session_directory = self.pause_live_video(session_token)
+                if session_token is None:
+                    response = f"OK session={session_directory}\n".encode()
+                else:
+                    response = (
+                        f"OK state=MAPPING session={session_directory} "
+                        f"token={self._gcs_session_token or 'NONE'}\n"
+                    ).encode()
+            except Exception as error:
+                LOGGER.exception("VIDEO_PAUSE failed")
+                response = f"ERROR {error}\n".encode()
         elif parts[0].upper() == "VIDEO_RESUME":
-            # Acknowledge before the mapping process releases buffers and WFB
-            # restarts; the camera transition must never block QGC's UI.
-            self._manual_socket.sendto(b"OK\n", address)
-            self.resume_live_video()
-            return
+            if self.resume_live_video(session_token):
+                response = b"OK state=LIVE wfb=active\n"
+            else:
+                response = b"ERROR live-video-resume-failed\n"
+        elif parts[0].upper() == "KEEPALIVE":
+            if self._refresh_session_lease(session_token):
+                response = b"OK state=MAPPING\n"
+            else:
+                response = b"ERROR no-matching-session\n"
         else:
-            response = b"ERROR use VIDEO_PAUSE, CAPTURE [seq], STATUS, VIDEO_RESUME\n"
+            response = b"ERROR use VIDEO_PAUSE, CAPTURE [seq], STATUS, KEEPALIVE, VIDEO_RESUME\n"
         self._manual_socket.sendto(response, address)
 
     def _handle_messages(
@@ -1139,6 +1334,12 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--mapping-quality", type=int, default=85)
     parser.add_argument("--mapping-buffer-count", type=int, default=2)
     parser.add_argument("--frame-wait-sec", type=float, default=3.0)
+    parser.add_argument(
+        "--session-lease-sec",
+        type=float,
+        default=45.0,
+        help="Restore live video if a tokenized QGC session stops sending heartbeats",
+    )
     parser.add_argument(
         "--video-release-delay-sec",
         type=float,

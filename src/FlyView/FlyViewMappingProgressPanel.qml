@@ -286,9 +286,9 @@ Rectangle {
 
         QGCLabel {
             visible: root.photosVisible && root.photoFailures > 0
-            text: qsTr("Missed captures: %1 of %2 triggers")
-                    .arg(root.photoFailures)
-                    .arg(root.triggersReceived)
+            // Keep camera/transfer failures separate from accepted-trigger
+            // totals. A reconciled position-schedule marker is not a failure.
+            text: qsTr("Capture/transfer issues: %1").arg(root.photoFailures)
             font.pointSize: ScreenTools.smallFontPointSize
             color: "#ffb74d"
         }

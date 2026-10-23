@@ -14,5 +14,10 @@ MAPPING_QUALITY=85
 # Keep the Full HD mapping stream bounded on the 512 MB aircraft Pi.
 MAPPING_BUFFER_COUNT=2
 FRAME_WAIT_SEC=3
+# QGC sends a heartbeat every 5 s. If it crashes or disconnects, restore the
+# normal WFB camera automatically after this lease expires.
+SESSION_LEASE_SEC=45
 # When 1, UART CAMERA_TRIGGER does not queue captures (QGC-led UDP only).
 QGC_LED=1
+
+

@@ -269,11 +269,28 @@ bool writeReferenceCameraExif(
     return true;
 }
 
-QUrl nodeOdmUrl(const QString &path)
+QUrl nodeOdmUrl(const QString &path, const QString &endpointOverride = {})
 {
-    QString endpoint = qEnvironmentVariable("QGC_NODEODM_URL").trimmed();
+    QString endpoint = endpointOverride.trimmed();
     if (endpoint.isEmpty()) {
-        endpoint = QStringLiteral("http://127.0.0.1:3000");
+        endpoint = qEnvironmentVariable("QGC_NODEODM_URL").trimmed();
+    }
+    if (endpoint.isEmpty()) {
+        AppSettings *const appSettings = SettingsManager::instance()->appSettings();
+        QString host = appSettings->nodeOdmHost()->rawValue().toString().trimmed();
+        const int port = appSettings->nodeOdmPort()->rawValue().toInt();
+        if (host.isEmpty()) {
+            host = QStringLiteral("127.0.0.1");
+        }
+
+        // The Application Settings field intentionally accepts only a host/IP
+        // and port. Keeping the scheme here prevents malformed endpoint paths
+        // and makes IPv4, IPv6, and DNS names behave consistently.
+        QUrl configuredEndpoint;
+        configuredEndpoint.setScheme(QStringLiteral("http"));
+        configuredEndpoint.setHost(host);
+        configuredEndpoint.setPort(port > 0 && port <= 65535 ? port : 3000);
+        endpoint = configuredEndpoint.toString();
     }
 
     QUrl url(endpoint);
@@ -292,9 +309,9 @@ QUrl nodeOdmUrl(const QString &path)
     return url;
 }
 
-QString nodeOdmEndpointText()
+QString nodeOdmEndpointText(const QString &endpointOverride = {})
 {
-    QUrl endpoint = nodeOdmUrl({});
+    QUrl endpoint = nodeOdmUrl({}, endpointOverride);
     endpoint.setQuery(QString{});
     return endpoint.toString();
 }
@@ -641,6 +658,7 @@ bool RouteMappingPhotoController::beginSession()
     _odmStateDetail.clear();
     _odmDownloadPath.clear();
     _odmSessionDirectory.clear();
+    _nodeOdmEndpoint.clear();
     _odmErrorMessage.clear();
     // The orthomosaic is an independent reference layer. Keep the currently
     // displayed field when a new capture session starts; a new ODM result or
@@ -1004,11 +1022,15 @@ bool RouteMappingPhotoController::startOdm()
     _orthophotoPath.clear();
     _orthophotoImportPending = false;
     _odmSessionDirectory = _sessionDirectory;
+    // Freeze the selected server for the complete task. Changing Application
+    // Settings while a reconstruction is running must not send later polling
+    // or download requests to a different NodeODM instance.
+    _nodeOdmEndpoint = nodeOdmEndpointText();
     _odmTaskUuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
     _odmPollFailures = 0;
     _setOdmState(OdmState::Connecting, 0);
 
-    QNetworkRequest request{nodeOdmUrl(QStringLiteral("/info"))};
+    QNetworkRequest request{nodeOdmUrl(QStringLiteral("/info"), _nodeOdmEndpoint)};
     request.setTransferTimeout(10000);
     QNetworkReply *reply = _nodeOdmNetworkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
@@ -1017,7 +1039,7 @@ bool RouteMappingPhotoController::startOdm()
         reply->deleteLater();
         if (!error.isEmpty()) {
             _failOdm(tr("Cannot connect to NodeODM at %1: %2")
-                         .arg(nodeOdmEndpointText(), error));
+                         .arg(_nodeOdmEndpoint, error));
             return;
         }
 
@@ -1067,9 +1089,9 @@ bool RouteMappingPhotoController::loadOrthophoto(const QString &filePath)
         return false;
     }
 
-    // Changing this path also invalidates any older asynchronous GDAL result.
-    // The mission/session state is intentionally left alone: a historical
-    // raster is a display layer, not a replacement for the active mission.
+            // Changing this path also invalidates any older asynchronous GDAL result.
+            // The mission/session state is intentionally left alone: a historical
+            // raster is a display layer, not a replacement for the active mission.
     _orthophotoPath = orthophotoInfo.canonicalFilePath();
     if (_orthophotoPath.isEmpty()) {
         _orthophotoPath = orthophotoInfo.absoluteFilePath();
@@ -1138,7 +1160,7 @@ void RouteMappingPhotoController::_beginNodeOdmUpload()
         multiPart->append(filePart);
     }
 
-    QNetworkRequest request{nodeOdmUrl(QStringLiteral("/task/new"))};
+    QNetworkRequest request{nodeOdmUrl(QStringLiteral("/task/new"), _nodeOdmEndpoint)};
     request.setRawHeader("set-uuid", _odmTaskUuid.toUtf8());
     request.setTransferTimeout(0);
     QNetworkReply *reply = _nodeOdmNetworkManager->post(request, multiPart);
@@ -1187,7 +1209,7 @@ void RouteMappingPhotoController::_pollNodeOdmTask()
     }
 
     QNetworkRequest request{nodeOdmUrl(
-        QStringLiteral("/task/%1/info").arg(_odmTaskUuid))};
+        QStringLiteral("/task/%1/info").arg(_odmTaskUuid), _nodeOdmEndpoint)};
     request.setTransferTimeout(10000);
     _odmPollReply = _nodeOdmNetworkManager->get(request);
     QNetworkReply *reply = _odmPollReply;
@@ -1256,7 +1278,7 @@ void RouteMappingPhotoController::_downloadNodeOdmOrthophoto()
 
     _setOdmState(OdmState::Downloading, 0);
     QNetworkRequest request{nodeOdmUrl(
-        QStringLiteral("/task/%1/download/all.zip").arg(_odmTaskUuid))};
+        QStringLiteral("/task/%1/download/all.zip").arg(_odmTaskUuid), _nodeOdmEndpoint)};
     request.setTransferTimeout(0);
     QNetworkReply *reply = _nodeOdmNetworkManager->get(request);
     connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
@@ -1400,9 +1422,9 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
                                             .filePath(QString::fromLatin1(kOrthophotoOverlayFileName));
             QFile::remove(overlayPath);
 
-            // Qt Quick Image does not reliably decode GeoTIFF. Convert the
-            // georeferenced master to a display PNG, retaining the TIFF as the
-            // reconstruction output and using its WGS84 extent for placement.
+                    // Qt Quick Image does not reliably decode GeoTIFF. Convert the
+                    // georeferenced master to a display PNG, retaining the TIFF as the
+                    // reconstruction output and using its WGS84 extent for placement.
             QStringList translateArguments{
                 QStringLiteral("-of"),
                 QStringLiteral("PNG"),
@@ -1418,11 +1440,11 @@ void RouteMappingPhotoController::_prepareOrthophotoOverlay()
             // mask still works for 3-band ODM outputs.
             const bool hasAlphaBand = bands.size() >= 4
                                       && bands.at(3)
-                                             .toObject()
-                                             .value(QStringLiteral("colorInterpretation"))
-                                             .toString()
-                                             .compare(QStringLiteral("Alpha"), Qt::CaseInsensitive)
-                                          == 0;
+                                                 .toObject()
+                                                 .value(QStringLiteral("colorInterpretation"))
+                                                 .toString()
+                                                 .compare(QStringLiteral("Alpha"), Qt::CaseInsensitive)
+                                             == 0;
             const bool hasDatasetMask = !bands.isEmpty()
                                         && !bands.first()
                                                 .toObject()
@@ -1569,7 +1591,9 @@ void RouteMappingPhotoController::_writeOdmStateFile() const
 
     QJsonObject state;
     state.insert(QStringLiteral("taskUuid"), _odmTaskUuid);
-    state.insert(QStringLiteral("endpoint"), nodeOdmEndpointText());
+    state.insert(
+        QStringLiteral("endpoint"),
+        _nodeOdmEndpoint.isEmpty() ? nodeOdmEndpointText() : _nodeOdmEndpoint);
     state.insert(QStringLiteral("status"), _nodeOdmStatusText());
     state.insert(QStringLiteral("progress"), _odmProgress);
     state.insert(QStringLiteral("detail"), _odmStateDetail);
