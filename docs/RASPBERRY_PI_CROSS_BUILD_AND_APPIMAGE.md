@@ -1,5 +1,8 @@
 # Raspberry Pi cross-build and AppImage (Shreeon QGC)
 
+For the concise, tested Ubuntu ARM64 release procedure and troubleshooting
+notes, see [UBUNTU_ARM64_APPIMAGE_RELEASE.md](UBUNTU_ARM64_APPIMAGE_RELEASE.md).
+
 This guide matches the **cross-compile → deploy → AppImage** workflow used internally (sysroot from the Pi, Qt **6.10.1** host + ARM kits, Shreeon source tree). It replaces older notes that built Qt **6.8.3** from source and installed to `~/qgc-rpi-install` with `LD_LIBRARY_PATH`.
 
 Paths below use the **development host** layout:

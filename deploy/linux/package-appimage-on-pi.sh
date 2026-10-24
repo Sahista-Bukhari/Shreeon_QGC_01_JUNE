@@ -175,8 +175,10 @@ refresh_gstreamer_plugins_from_system
 
 # Pi FFmpeg (libav) often mismatches and can SIGILL inside AppImages. Drop after
 # the final plugin refresh so they are not re-copied from the system.
-echo "Removing bundled libav / gst-libav to avoid Pi FFmpeg ABI / SIGILL issues..."
+# libgstgio.so has also been observed to SIGSEGV on Ubuntu/CM5 during registry load.
+echo "Removing bundled libav / gst-libav / gstgio to avoid Pi ABI / crash issues..."
 rm -f "${APPDIR}/usr/lib/gstreamer-1.0"/libgstlibav.so* \
+      "${APPDIR}/usr/lib/gstreamer-1.0"/libgstgio.so* \
       "${APPDIR}/usr/lib"/libavcodec.so* \
       "${APPDIR}/usr/lib"/libavformat.so* \
       "${APPDIR}/usr/lib"/libavutil.so* \

@@ -16,25 +16,26 @@ import QGroundControl.Toolbar
 /// All properties defined here are visible to all QML pages.
 ApplicationWindow {
     id:             mainWindow
-    width: 800
-    height: 500
+    // width: 800
+    // height: 500
 
 
-    // readonly property int _fixedDesktopWidth:  800
-    // readonly property int _fixedDesktopHeight: 500
+    readonly property int _defaultDesktopWidth:  800
+    readonly property int _defaultDesktopHeight: 500
 
-    // width:          _fixedDesktopWidth
-    // height:         _fixedDesktopHeight
-    // minimumWidth:   ScreenTools.isMobile ? 0 : _fixedDesktopWidth
-    // maximumWidth:   ScreenTools.isMobile ? 16777215 : _fixedDesktopWidth
-    // minimumHeight:  ScreenTools.isMobile ? 0 : _fixedDesktopHeight
-    // maximumHeight:  ScreenTools.isMobile ? 16777215 : _fixedDesktopHeight
+    width:          _defaultDesktopWidth
+    height:         _defaultDesktopHeight
+    minimumWidth:   ScreenTools.isMobile ? 0 : Math.min(800, Screen.width)
+    maximumWidth:   16777215
+    minimumHeight:  ScreenTools.isMobile ? 0 : Math.min(400, Screen.height)
+    maximumHeight:  16777215
     visible:        true
     // The special casing for android prevents white bars from showing up on the edges of the screen with newer android versions
     flags:          ScreenTools.isAndroid
                     ? Qt.Window | Qt.ExpandedClientAreaHint | Qt.NoTitleBarBackgroundHint
                     : Qt.Window | Qt.CustomizeWindowHint | Qt.WindowTitleHint
-                        | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint | Qt.WindowCloseButtonHint
+                        | Qt.WindowSystemMenuHint | Qt.WindowMinimizeButtonHint
+                        | Qt.WindowMaximizeButtonHint | Qt.WindowCloseButtonHint
 
     property bool   _utmspSendActTrigger
 
