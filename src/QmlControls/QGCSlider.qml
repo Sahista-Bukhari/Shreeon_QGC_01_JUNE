@@ -48,10 +48,11 @@ Slider {
                 radius: parent.radius
                 color: control.activeColor
 
+                // Horizontal: left + verticalCenter. Vertical: right + bottom.
+                // Never activate bottom and verticalCenter together.
                 anchors.left: control.horizontal ? parent.left : undefined
                 anchors.right: control.horizontal ? undefined : parent.right
-                anchors.bottom: parent.bottom
-                anchors.top: control.horizontal ? undefined : undefined
+                anchors.bottom: control.horizontal ? undefined : parent.bottom
                 anchors.verticalCenter: control.horizontal ? parent.verticalCenter : undefined
 
                 width: control.horizontal ? control.visualPosition * parent.width : parent.width

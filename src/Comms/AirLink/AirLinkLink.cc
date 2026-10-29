@@ -8,7 +8,32 @@
 #include <QtCore/QTimer>
 #include <QtNetwork/QUdpSocket>
 
+#include <cstring>
+
 QGC_LOGGING_CATEGORY(AirLinkLinkLog, "AirLink.AirLinkLink");
+
+namespace {
+bool copyAirLinkCredentialField(char *dest, size_t destCapacity, const QByteArray &utf8, const char *fieldName)
+{
+    // MAVLink fixed char[N] fields must remain within capacity. Keep one byte for
+    // an explicit trailing NUL so pack helpers that treat the buffer as a C string
+    // cannot read past the field.
+    if (!dest || destCapacity == 0) {
+        return false;
+    }
+    if (static_cast<size_t>(utf8.size()) >= destCapacity) {
+        qCWarning(AirLinkLinkLog)
+            << "AirLink" << fieldName << "UTF-8 length" << utf8.size()
+            << "exceeds MAVLink field capacity" << (destCapacity - 1);
+        return false;
+    }
+    (void) memset(dest, 0, destCapacity);
+    if (!utf8.isEmpty()) {
+        (void) memcpy(dest, utf8.constData(), static_cast<size_t>(utf8.size()));
+    }
+    return true;
+}
+} // namespace
 
 /*===========================================================================*/
 
@@ -54,7 +79,12 @@ void AirLinkConfiguration::loadSettings(QSettings &settings, const QString &root
     settings.beginGroup(root);
 
     setUsername(settings.value(_usernameSettingsKey, appSettings->loginAirLink()->rawValueString()).toString());
-    setPassword(settings.value(_passwordSettingsKey, appSettings->passAirLink()->rawValueString()).toString());
+    // Passwords are kept in memory only. Drop any legacy plaintext value that
+    // older builds may have written into QSettings.
+    if (settings.contains(_passwordSettingsKey)) {
+        settings.remove(_passwordSettingsKey);
+    }
+    setPassword(QString());
     setModemName(settings.value(_modemNameSettingsKey).toString());
 
     settings.endGroup();
@@ -65,7 +95,9 @@ void AirLinkConfiguration::saveSettings(QSettings &settings, const QString &root
     settings.beginGroup(root);
 
     settings.setValue(_usernameSettingsKey, _username);
-    settings.setValue(_passwordSettingsKey, _password);
+    // Never persist AirLink passwords in QSettings. Prefer an OS credential
+    // store when one is wired up; until then require the user to re-enter.
+    settings.remove(_passwordSettingsKey);
     settings.setValue(_modemNameSettingsKey, _modemName);
 
     settings.endGroup();
@@ -177,8 +209,28 @@ void AirLinkLink::_sendLoginMsgToAirLink()
 
     const QString login = _airLinkConfig->modemName(); ///< Connect not to account but to specific modem
     const QString pass = _airLinkConfig->password();
-    (void) strcpy(auth.login, login.toUtf8().constData());
-    (void) strcpy(auth.password, pass.toUtf8().constData());
+    const QByteArray loginUtf8 = login.toUtf8();
+    const QByteArray passUtf8 = pass.toUtf8();
+
+    if (!copyAirLinkCredentialField(
+            auth.login,
+            MAVLINK_MSG_AIRLINK_AUTH_FIELD_LOGIN_LEN,
+            loginUtf8,
+            "login")
+        || !copyAirLinkCredentialField(
+            auth.password,
+            MAVLINK_MSG_AIRLINK_AUTH_FIELD_PASSWORD_LEN,
+            passUtf8,
+            "password")) {
+        const QString error = tr(
+            "AirLink login or password is too long for the MAVLink auth fields "
+            "(max %1 UTF-8 bytes each). Shorten the credential and try again.")
+                                  .arg(MAVLINK_MSG_AIRLINK_AUTH_FIELD_LOGIN_LEN - 1);
+        qCWarning(AirLinkLinkLog) << error;
+        emit communicationError(tr("AirLink Authentication"), error);
+        _setConnectFlag(false);
+        return;
+    }
 
     mavlink_message_t mavmsg{};
     (void) mavlink_msg_airlink_auth_pack(0, 0, &mavmsg, auth.login, auth.password);

@@ -266,22 +266,16 @@
     "default": ""
 },
 {
-    "name": "passAirLink",
-    "shortDesc": "AirLink Password",
-    "type": "string",
-    "default": ""
-},
-{
     "name":             "nodeOdmHost",
     "shortDesc":        "ODM Server IP / Host",
-    "longDesc":         "IPv4 address, IPv6 address, or DNS hostname of the NodeODM server used for Route Mapping reconstruction.",
+    "longDesc":         "IPv4 address, IPv6 address, or DNS hostname of the NodeODM server used for Route Mapping reconstruction. Connections use HTTP by default. Leave empty until a server is configured. QGC_NODEODM_URL overrides host/port when set.",
     "type":             "string",
-    "default":          "127.0.0.1"
+    "default":          ""
 },
 {
     "name":             "nodeOdmPort",
     "shortDesc":        "ODM Server Port",
-    "longDesc":         "TCP port exposed by the NodeODM server.",
+    "longDesc":         "TCP port exposed by the NodeODM HTTP server.",
     "type":             "uint32",
     "default":          3000,
     "min":              1,

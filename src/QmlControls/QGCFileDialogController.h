@@ -38,8 +38,9 @@ public:
     /// Resolve the bundled/user-manual PDF path (filesystem first, then qrc).
     Q_INVOKABLE static QString resolveUserManualPdfPath();
 
-    /// Render PDF pages to PNG previews; returns file:// URLs for each page image.
-    Q_INVOKABLE static QStringList renderPdfPages(const QString &pdfPath, int dpi = 120);
+    /// Render PDF pages to PNG previews on a worker thread.
+    /// Emits pdfPagesRendered when finished (empty pageUrls + errorMessage on failure).
+    Q_INVOKABLE void renderPdfPagesAsync(const QString &pdfPath, int dpi = 120);
 
     /// Deletes the file specified by the fully qualified file name
     Q_INVOKABLE static void deleteFile(const QString &filename);
@@ -50,4 +51,10 @@ public:
     /// Returns the standard QGC location portion of a fully qualified folder path.
     /// Example: "/Users/Don/Document/QGroundControl/Missions" returns "QGroundControl/Missions"
     Q_INVOKABLE static QString fullFolderPathToShortMobilePath(const QString &fullFolderPath);
+
+signals:
+    void pdfPagesRendered(const QStringList &pageUrls, const QString &errorMessage);
+
+private:
+    int _pdfRenderGeneration = 0;
 };

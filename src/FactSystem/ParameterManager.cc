@@ -542,7 +542,10 @@ void ParameterManager::_ftpDownloadProgress(float progress)
 void ParameterManager::refreshAllParameters(uint8_t componentId)
 {
     const SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
-    if (!sharedLink) {
+    if (!sharedLink || !sharedLink->mavlinkChannelIsSet()) {
+        qCDebug(ParameterManagerLog)
+            << _logVehiclePrefix(-1)
+            << "Skipping parameter-list request because the primary link has no active MAVLink channel";
         return;
     }
 
@@ -925,7 +928,7 @@ void ParameterManager::_tryCacheHashLoad(int vehicleId, int componentId, const Q
         }
 
         const SharedLinkInterfacePtr sharedLink = _vehicle->vehicleLinkManager()->primaryLink().lock();
-        if (sharedLink) {
+        if (sharedLink && sharedLink->mavlinkChannelIsSet()) {
             mavlink_param_set_t p{};
             mavlink_param_union_t union_value{};
 

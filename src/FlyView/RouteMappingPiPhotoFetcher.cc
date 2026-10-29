@@ -1,7 +1,6 @@
 #include "RouteMappingPiPhotoFetcher.h"
 
 #include "QGCLoggingCategory.h"
-
 #include <QtCore/QDir>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QFileInfo>
@@ -183,12 +182,11 @@ RouteMappingPiPhotoFetcher::RouteMappingPiPhotoFetcher(QObject *parent)
             if (_piSessionToken.isEmpty()) {
                 return;
             }
-            const QString command =
-                QStringLiteral("VIDEO_RESUME session=%1").arg(_piSessionToken);
             // Best effort for orderly shutdown. The Pi lease remains the
             // guarantee for crashes or total link loss.
             for (int attempt = 0; attempt < 3; ++attempt) {
-                (void)_sendRemoteUdpCommand(command);
+                (void)_sendRemoteUdpCommand(
+                    QStringLiteral("VIDEO_RESUME session=%1").arg(_piSessionToken));
             }
         });
     }
@@ -540,6 +538,9 @@ bool RouteMappingPiPhotoFetcher::_triggerCaptureViaSsh(
     args << _sshTarget()
          << QStringLiteral("/home/shreeon/capture.sh")
          << QString::number(sequence);
+    if (!_piSessionToken.isEmpty()) {
+        args << _piSessionToken;
+    }
     ssh.setArguments(args);
 
     if (!runProcess(ssh, kCaptureSshTriggerTimeoutMs, errorMessage)) {
@@ -656,7 +657,14 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
 
     const QByteArray payload =
         QStringLiteral("VIDEO_PAUSE session=%1").arg(sessionToken).toUtf8();
-    if (socket.writeDatagram(payload, QHostAddress(_piHost), static_cast<quint16>(_piTriggerPort)) != payload.size()) {
+    const QHostAddress expectedSender(_piHost);
+    if (expectedSender.isNull()) {
+        if (errorMessage) {
+            *errorMessage = tr("Pi host must be a valid IP address: %1").arg(_piHost);
+        }
+        return false;
+    }
+    if (socket.writeDatagram(payload, expectedSender, static_cast<quint16>(_piTriggerPort)) != payload.size()) {
         if (errorMessage) {
             *errorMessage = socket.errorString();
         }
@@ -665,6 +673,7 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
 
     static const QRegularExpression sessionReply(
         QStringLiteral("^OK(?:\\s+state=MAPPING)?\\s+session=(/[^\\s]+)(?:\\s+token=[^\\s]+)?$"),
+        // token= is accepted for mixed-version Pi images but never required.
         QRegularExpression::CaseInsensitiveOption);
 
     bool pauseAcknowledged = false;
@@ -679,7 +688,17 @@ bool RouteMappingPiPhotoFetcher::_sendVideoPauseAndWaitForSession(
         while (socket.hasPendingDatagrams()) {
             QByteArray datagram;
             datagram.resize(static_cast<int>(socket.pendingDatagramSize()));
-            if (socket.readDatagram(datagram.data(), datagram.size()) < 0) {
+            QHostAddress senderAddress;
+            quint16 senderPort = 0;
+            if (socket.readDatagram(
+                    datagram.data(), datagram.size(), &senderAddress, &senderPort) < 0) {
+                continue;
+            }
+            if (senderAddress != expectedSender
+                || senderPort != static_cast<quint16>(_piTriggerPort)) {
+                qCWarning(RouteMappingPiPhotoFetcherLog)
+                    << "Ignoring VIDEO_PAUSE reply from unexpected sender"
+                    << senderAddress << senderPort;
                 continue;
             }
             const QString reply = QString::fromUtf8(datagram).trimmed();
@@ -804,6 +823,13 @@ bool RouteMappingPiPhotoFetcher::_requestRemoteUdpCommand(
     }
 
     const QByteArray payload = command.toUtf8();
+    const QHostAddress expectedSender(_piHost);
+    if (expectedSender.isNull()) {
+        if (errorMessage) {
+            *errorMessage = tr("Pi host must be a valid IP address: %1").arg(_piHost);
+        }
+        return false;
+    }
     if (socket.writeDatagram(payload, QHostAddress(_piHost), static_cast<quint16>(_piTriggerPort)) != payload.size()) {
         if (errorMessage) {
             *errorMessage = socket.errorString();
@@ -823,7 +849,16 @@ bool RouteMappingPiPhotoFetcher::_requestRemoteUdpCommand(
         while (socket.hasPendingDatagrams()) {
             QByteArray datagram;
             datagram.resize(static_cast<int>(socket.pendingDatagramSize()));
-            if (socket.readDatagram(datagram.data(), datagram.size()) < 0) {
+            QHostAddress senderAddress;
+            quint16 senderPort = 0;
+            if (socket.readDatagram(
+                    datagram.data(), datagram.size(), &senderAddress, &senderPort) < 0) {
+                continue;
+            }
+            if (senderAddress != expectedSender
+                || senderPort != static_cast<quint16>(_piTriggerPort)) {
+                qCWarning(RouteMappingPiPhotoFetcherLog)
+                    << "Ignoring UDP reply from unexpected sender" << senderAddress << senderPort;
                 continue;
             }
             const QString reply = QString::fromUtf8(datagram).trimmed();
@@ -1024,8 +1059,13 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(
     QString response;
     QString errorMessage;
     for (int attempt = 0; attempt < kCaptureUdpAckAttempts; ++attempt) {
+        const QString captureCommand = _piSessionToken.isEmpty()
+                                           ? QStringLiteral("CAPTURE %1").arg(sequence)
+                                           : QStringLiteral("CAPTURE %1 session=%2")
+                                                 .arg(sequence)
+                                                 .arg(_piSessionToken);
         if (_requestRemoteUdpCommand(
-                QStringLiteral("CAPTURE %1").arg(sequence),
+                captureCommand,
                 &response,
                 &errorMessage,
                 kCaptureUdpAckTimeoutMs,
@@ -1037,7 +1077,12 @@ bool RouteMappingPiPhotoFetcher::triggerCapture(
     }
 
     // WFB often drops the Pi→GCS reply while the command still reaches the Pi.
-    if (_sendRemoteUdpCommand(QStringLiteral("CAPTURE %1").arg(sequence))) {
+    const QString captureCommand = _piSessionToken.isEmpty()
+                                       ? QStringLiteral("CAPTURE %1").arg(sequence)
+                                       : QStringLiteral("CAPTURE %1 session=%2")
+                                             .arg(sequence)
+                                             .arg(_piSessionToken);
+    if (_sendRemoteUdpCommand(captureCommand)) {
         qCInfo(RouteMappingPiPhotoFetcherLog)
             << "CAPTURE" << sequence
             << "sent over UDP without ack — SCP retries will wait for the JPEG";
@@ -1715,7 +1760,12 @@ void RouteMappingPiPhotoFetcher::_scheduleRetry(FetchRequest request, int retryD
 
     // Re-send CAPTURE only when we do not know the remote path (legacy find flow).
     if (request.remotePhotoPath.isEmpty() && request.bySequence && request.attempt % 5 == 0) {
-        (void)_sendRemoteUdpCommand(QStringLiteral("CAPTURE %1").arg(request.photoSequence));
+        const QString captureCommand = _piSessionToken.isEmpty()
+                                           ? QStringLiteral("CAPTURE %1").arg(request.photoSequence)
+                                           : QStringLiteral("CAPTURE %1 session=%2")
+                                                 .arg(request.photoSequence)
+                                                 .arg(_piSessionToken);
+        (void)_sendRemoteUdpCommand(captureCommand);
     }
 
     const quint64 generation = request.generation;

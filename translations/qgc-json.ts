@@ -5033,9 +5033,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <extracomment>.QGC.MetaData.Facts[passAirLink].shortDesc, </extracomment>
+        <extracomment>.QGC.MetaData.Facts[nodeOdmHost].shortDesc, </extracomment>
         <location filename="../src/Settings/App.SettingsGroup.json"/>
-        <source>AirLink Password</source>
+        <source>ODM Server IP / Host</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <extracomment>.QGC.MetaData.Facts[nodeOdmHost].longDesc, </extracomment>
+        <location filename="../src/Settings/App.SettingsGroup.json"/>
+        <source>IPv4 address, IPv6 address, or DNS hostname of the NodeODM server used for Route Mapping reconstruction. Connections use HTTPS. Leave empty until a server is configured. QGC_NODEODM_URL overrides host/port when set.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <extracomment>.QGC.MetaData.Facts[nodeOdmPort].shortDesc, </extracomment>
+        <location filename="../src/Settings/App.SettingsGroup.json"/>
+        <source>ODM Server Port</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <extracomment>.QGC.MetaData.Facts[nodeOdmPort].longDesc, </extracomment>
+        <location filename="../src/Settings/App.SettingsGroup.json"/>
+        <source>TCP port exposed by the NodeODM HTTPS server.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

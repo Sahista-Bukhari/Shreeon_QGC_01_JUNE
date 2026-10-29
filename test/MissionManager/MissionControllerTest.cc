@@ -305,19 +305,11 @@ void MissionControllerTest::_testLoadBaylandsMappingPlan(void)
     QCOMPARE(captureStopCount, 6);
 }
 
-void MissionControllerTest::_testRouteMappingAltitudeProfile_data(void)
-{
-    QTest::addColumn<double>("altitudeMeters");
-    QTest::addColumn<double>("triggerDistanceMeters");
-
-    QTest::newRow("high-resolution") << 30.0 << 6.0;
-    QTest::newRow("low-resolution") << 60.0 << 9.0;
-}
-
 void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
 {
-    QFETCH(double, altitudeMeters);
-    QFETCH(double, triggerDistanceMeters);
+    constexpr double configuredAltitudeMeters = 43.25;
+    constexpr double highTriggerDistanceMeters = 6.0;
+    constexpr double lowTriggerDistanceMeters = 9.0;
 
     _initForFirmwareType(MAV_AUTOPILOT_PX4);
 
@@ -339,45 +331,61 @@ void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
                     << launchCoordinate.atDistanceAndAzimuth(edgeDistanceMeters, 180.0);
     surveyItem->surveyAreaPolygon()->appendVertices(polygonVertices);
 
-    // This is the Route Mapping preset contract. The defect was caused by
-    // updating only DistanceToSurface while NAV_TAKEOFF retained the global
-    // 50 m default. Both Facts must be aligned before mission flattening.
+    // Configure the vertical profile independently of image resolution.
     surveyItem->cameraCalc()->setDistanceMode(QGroundControlQmlGlobal::AltitudeModeRelative);
     surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
-    surveyItem->cameraCalc()->distanceToSurface()->setRawValue(altitudeMeters);
-    surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
-    takeoffItem->altitude()->setRawValue(altitudeMeters);
+    surveyItem->cameraCalc()->distanceToSurface()->setRawValue(configuredAltitudeMeters);
+    takeoffItem->altitude()->setRawValue(configuredAltitudeMeters);
 
-    QObject missionItemParent;
-    QList<MissionItem*> missionItems;
-    for (int i = 0; i < _missionController->visualItems()->count(); ++i) {
-        auto* visualItem = _missionController->visualItems()->value<VisualMissionItem*>(i);
-        QVERIFY(visualItem);
-        visualItem->appendMissionItems(missionItems, &missionItemParent);
-    }
+    const auto verifyResolution = [this, surveyItem, takeoffItem, configuredAltitudeMeters](double triggerDistanceMeters) {
+        // This mirrors the Route Mapping resolution selection: only the
+        // capture interval changes between High and Low.
+        surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
+        QCOMPARE(surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), configuredAltitudeMeters);
+        QCOMPARE(takeoffItem->altitude()->rawValue().toDouble(), configuredAltitudeMeters);
 
-    int takeoffCount = 0;
-    int surveyCoordinateCount = 0;
-    bool takeoffSeen = false;
-    for (const MissionItem* missionItem : std::as_const(missionItems)) {
-        if (missionItem->command() == MAV_CMD_NAV_TAKEOFF) {
-            QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
-            QCOMPARE(missionItem->param7(), altitudeMeters);
-            takeoffSeen = true;
-            ++takeoffCount;
-            continue;
+        QObject missionItemParent;
+        QList<MissionItem*> missionItems;
+        for (int i = 0; i < _missionController->visualItems()->count(); ++i) {
+            auto* visualItem = _missionController->visualItems()->value<VisualMissionItem*>(i);
+            QVERIFY(visualItem);
+            visualItem->appendMissionItems(missionItems, &missionItemParent);
         }
 
-        if (takeoffSeen && (missionItem->command() == MAV_CMD_NAV_WAYPOINT
-                            || missionItem->command() == MAV_CMD_CONDITION_GATE)) {
-            QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
-            QCOMPARE(missionItem->param7(), altitudeMeters);
-            ++surveyCoordinateCount;
-        }
-    }
+        int takeoffCount = 0;
+        int surveyCoordinateCount = 0;
+        int triggerStartCount = 0;
+        bool takeoffSeen = false;
+        for (const MissionItem* missionItem : std::as_const(missionItems)) {
+            if (missionItem->command() == MAV_CMD_NAV_TAKEOFF) {
+                QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
+                QCOMPARE(missionItem->param7(), configuredAltitudeMeters);
+                takeoffSeen = true;
+                ++takeoffCount;
+                continue;
+            }
 
-    QCOMPARE(takeoffCount, 1);
-    QVERIFY(surveyCoordinateCount > 0);
+            if (missionItem->command() == MAV_CMD_DO_SET_CAM_TRIGG_DIST
+                    && missionItem->param1() > 0) {
+                QCOMPARE(missionItem->param1(), triggerDistanceMeters);
+                ++triggerStartCount;
+            } else if (takeoffSeen && (missionItem->command() == MAV_CMD_NAV_WAYPOINT
+                                       || missionItem->command() == MAV_CMD_CONDITION_GATE)) {
+                QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
+                QCOMPARE(missionItem->param7(), configuredAltitudeMeters);
+                ++surveyCoordinateCount;
+            }
+        }
+
+        QCOMPARE(takeoffCount, 1);
+        QVERIFY(surveyCoordinateCount > 0);
+        QVERIFY(triggerStartCount > 0);
+    };
+
+    verifyResolution(highTriggerDistanceMeters);
+    // Switching to Low after completing the High-resolution mission must not
+    // alter the already configured vertical profile.
+    verifyResolution(lowTriggerDistanceMeters);
 }
 
 void MissionControllerTest::_testGlobalAltMode(void)

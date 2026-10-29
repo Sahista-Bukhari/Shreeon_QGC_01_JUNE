@@ -11,6 +11,7 @@
 class PX4FirmwareUpgradeThread;
 class PX4FirmwareUpgradeThreadController;
 class FirmwareImage;
+class QGCFileDownload;
 class Fact;
 
 /// Supported firmware types. If you modify these you will need to update the qml file as well.
@@ -175,6 +176,11 @@ private:
     QHash<FirmwareIdentifier, QString>* _firmwareHashForBoardId(int boardId);
     void _getFirmwareFile           (FirmwareIdentifier firmwareId);
     void _downloadFirmware          (void);
+    bool _verifyFirmwareIntegrity(
+        const QString &remoteFile,
+        const QString &localFile,
+        QGCFileDownload *downloader,
+        QString *errorMessage);
     void _appendStatusLog           (const QString& text, bool critical = false);
     void _errorCancel               (const QString& msg);
     void _determinePX4StableVersion (void);

@@ -84,7 +84,8 @@ if(QGC_ZEROCONF_ENABLED)
     CPMAddPackage(
         NAME qmdnsengine
         GITHUB_REPOSITORY nitroshare/qmdnsengine
-        GIT_TAG master
+        # Pin immutable commit (was floating "master") for reproducible builds.
+        GIT_TAG 9de38dfbd1cb989b977ed80c512187f0775abbbd
         OPTIONS
             "BUILD_DOC OFF"
             "BUILD_EXAMPLES OFF"

@@ -33,11 +33,13 @@ target_compile_definitions(${CMAKE_PROJECT_NAME} PRIVATE QGC_UNITTEST_BUILD)
 # ----------------------------------------------------------------------------
 # CTest Integration
 # ----------------------------------------------------------------------------
-include(CTest)
+# CTest is enabled at the project root (see top-level CMakeLists.txt) so that
+# `ctest` from the build directory discovers these tests.
 
 # Custom target for running all tests
 add_custom_target(check
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure .
+    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
+    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     USES_TERMINAL
     COMMENT "Running all QGroundControl unit tests"
 )
@@ -70,6 +72,7 @@ add_qgc_test(PX4LogParserTest)
 
 add_subdirectory(Camera)
 add_qgc_test(QGCCameraManagerTest)
+add_qgc_test(QGCCameraParamIOTest)
 
 add_subdirectory(Comms)
 add_qgc_test(QGCSerialPortInfoTest)

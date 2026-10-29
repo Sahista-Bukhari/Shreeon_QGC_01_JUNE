@@ -59,6 +59,8 @@ Item {
     readonly property bool routeMappingOrthophotoLoading: routeMappingPhotoController.orthophotoLoading
     readonly property string routeMappingOrthophotoPath: routeMappingPhotoController.orthophotoPath
     readonly property string routeMappingOrthophotoRoot: routeMappingPhotoController.routeMappingRoot
+    readonly property bool routeMappingOdmRunning: routeMappingPhotoController.odmRunning
+    readonly property string routeMappingReconstructionStatus: routeMappingPhotoController.reconstructionStatus
     property real routeMappingOrthophotoOpacity: 0.82
     property bool   hideVehicleMissionForUnuploadedRoute: false
     // Once a survey overlay has been painted (transfer/import), keep its geometry
@@ -574,8 +576,26 @@ Item {
         }
     }
 
+    QGCFileDialog {
+        id: odmPhotosDirectoryDialog
+        title: qsTr("Stitch Orthomosaic from Photos Directory")
+        folder: _root.routeMappingOrthophotoRoot.length > 0
+                ? _root.routeMappingOrthophotoRoot
+                : (_appSettings ? _appSettings.savePath.rawValue : "")
+        selectFolder: true
+
+        onAcceptedForLoad: function(directory) {
+            routeMappingPhotoController.startOdmFromDirectory(directory)
+            close()
+        }
+    }
+
     function openRouteMappingOrthophotoDialog() {
         orthophotoFileDialog.openForLoad()
+    }
+
+    function openRouteMappingOdmDirectoryDialog() {
+        odmPhotosDirectoryDialog.openForLoad()
     }
 
     function clearRouteMappingOrthophoto() {
@@ -1372,6 +1392,51 @@ Item {
                 ? relativeAltitude : 0
     }
 
+    // Live PX4 altitude vs planned Route Mapping altitudes (SITL / flight debug).
+    property real _routeMappingLastLoggedRelativeAltitude: Number.NaN
+
+    function _routeMappingPlannedAltitudeMeters() {
+        if (_planController && _planController.routeMappingConfigured) {
+            var patternM = Number(_planController.routeMappingPatternAltitudeMeters)
+            if (isFinite(patternM)) {
+                return patternM
+            }
+            var takeoffM = Number(_planController.routeMappingTakeoffAltitudeMeters)
+            if (isFinite(takeoffM)) {
+                return takeoffM
+            }
+        }
+        return Number.NaN
+    }
+
+    function _logRouteMappingLiveAltitude(reason) {
+        if (!routeMappingPhotoProgressEnabled || !_activeVehicle) {
+            return
+        }
+
+        var relativeAltitude = _activeVehicle.altitudeRelative
+                ? Number(_activeVehicle.altitudeRelative.rawValue) : Number.NaN
+        var amslAltitude = _activeVehicle.altitudeAMSL
+                ? Number(_activeVehicle.altitudeAMSL.rawValue) : Number.NaN
+        var plannedAltitude = _routeMappingPlannedAltitudeMeters()
+        var missionIndex = _activeVehicle.missionItemIndex !== undefined
+                ? Number(_activeVehicle.missionItemIndex) : -1
+        var deltaToPlan = (isFinite(relativeAltitude) && isFinite(plannedAltitude))
+                ? (relativeAltitude - plannedAltitude) : Number.NaN
+
+        console.info("[RouteMapping] Live altitude",
+                     "(" + reason + ")",
+                     "| relative:", isFinite(relativeAltitude) ? relativeAltitude.toFixed(2) : "n/a", "m",
+                     "| AMSL:", isFinite(amslAltitude) ? amslAltitude.toFixed(2) : "n/a", "m",
+                     "| planned:", isFinite(plannedAltitude) ? plannedAltitude.toFixed(2) : "n/a", "m",
+                     "| delta:", isFinite(deltaToPlan) ? deltaToPlan.toFixed(2) : "n/a", "m",
+                     "| armed:", _activeVehicle.armed,
+                     "| flying:", _activeVehicle.flying,
+                     "| missionIdx:", missionIndex)
+
+        _routeMappingLastLoggedRelativeAltitude = relativeAltitude
+    }
+
     function _routeMappingGroundFootprint(aglMeters) {
         if (!isFinite(aglMeters) || aglMeters <= 0) {
             return {
@@ -1704,6 +1769,7 @@ Item {
 
         function onArmedChanged(armed) {
             if (armed) {
+                _root._logRouteMappingLiveAltitude("armed")
                 // Some vehicle backends can notify the same armed state more
                 // than once. Never cancel an async startup that is already in
                 // progress: doing so used to leave the controller waiting for
@@ -1726,6 +1792,7 @@ Item {
                     _root._beginRouteMappingPhotoSession()
                 }
             } else {
+                _root._logRouteMappingLiveAltitude("disarmed")
                 if (_root.routeMappingPhotoProgressEnabled) {
                     _root._markRouteMappingPhotoTriggersComplete("disarmed")
                 }
@@ -1738,6 +1805,8 @@ Item {
         }
 
         function onFlyingChanged() {
+            _root._logRouteMappingLiveAltitude(_activeVehicle && _activeVehicle.flying
+                                               ? "flying started" : "flying stopped")
             _root._captureNewRouteMappingPhotos()
         }
 
@@ -1763,6 +1832,7 @@ Item {
 
     onMissionRunningChanged: {
         if (missionRunning && routeMappingPhotoProgressEnabled) {
+            _logRouteMappingLiveAltitude("mission started")
             if (!_routeMappingPhotoTriggersComplete) {
                 routeMappingPhotoController.captureEnabled = true
                 if (!routeMappingPhotoController.sessionActive
@@ -1777,6 +1847,7 @@ Item {
                 }
             }
         } else if (!missionRunning) {
+            _logRouteMappingLiveAltitude("mission ended")
             if (routeMappingPhotoProgressEnabled) {
                 _markRouteMappingPhotoTriggersComplete("mission ended")
                 _endRouteMappingPhotoSession()
@@ -1788,6 +1859,29 @@ Item {
     }
 
     Component.onCompleted: _rebuildRouteMappingGcsTriggerSchedule()
+
+    // Stream live PX4 altitude while a Route Mapping mission is armed/flying so
+    // SITL verification can compare relative altitude against the planned 30/60 m.
+    Timer {
+        id: routeMappingLiveAltitudeLogTimer
+        interval: 1000
+        repeat: true
+        running: _root.routeMappingPhotoProgressEnabled
+                 && _root._activeVehicle
+                 && (_root._activeVehicle.armed || _root._activeVehicle.flying)
+        onTriggered: {
+            var relativeAltitude = _root._activeVehicle && _root._activeVehicle.altitudeRelative
+                    ? Number(_root._activeVehicle.altitudeRelative.rawValue) : Number.NaN
+            // Avoid flooding the console when the vehicle is sitting still on the ground.
+            if (isFinite(relativeAltitude)
+                    && isFinite(_root._routeMappingLastLoggedRelativeAltitude)
+                    && Math.abs(relativeAltitude - _root._routeMappingLastLoggedRelativeAltitude) < 0.25
+                    && !(_root._activeVehicle && _root._activeVehicle.flying)) {
+                return
+            }
+            _root._logRouteMappingLiveAltitude("telemetry")
+        }
+    }
 
     Timer {
         id: routeMappingGcsTriggerTimer
@@ -2150,7 +2244,7 @@ Item {
                 id: terrainStatus
                 Layout.alignment: Qt.AlignBottom
                 Layout.fillWidth: true
-                height: ScreenTools.defaultFontPixelHeight * 7
+                Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 7
                 missionController: _root._missionController
                 visible: terrainButton.checked
                 onSetCurrentSeqNum: function(seqNum) { _root._missionController.setCurrentPlanViewSeqNum(seqNum, true) }
@@ -2421,6 +2515,7 @@ Item {
         orthomosaicLoading: _root.routeMappingOrthophotoLoading
         orthomosaicOpacity: _root.routeMappingOrthophotoOpacity
         onReconstructionRequested: routeMappingPhotoController.startOdm()
+        onStitchFromDirectoryRequested: _root.openRouteMappingOdmDirectoryDialog()
         onOrthomosaicLoadRequested: _root.openRouteMappingOrthophotoDialog()
         onOrthomosaicHideRequested: _root.clearRouteMappingOrthophoto()
         onOrthomosaicOpacityEdited: function(opacity) {

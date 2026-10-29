@@ -84,6 +84,9 @@ class RouteMappingPhotoController : public QObject
     Q_INVOKABLE QString metadataPathForSequence(int sequence) const;
     Q_INVOKABLE bool requestPhotoCapture(int sequence, quint32 nativeTriggerSequence, double latitude, double longitude, double relativeAltitude, double heading);
     Q_INVOKABLE bool startOdm();
+    /// Stitch a previously saved Route Mapping mission folder (or a flat geotagged
+    /// JPEG directory) without requiring the live photo session that captured them.
+    Q_INVOKABLE bool startOdmFromDirectory(const QString &directoryPath);
     /// Load a previously generated georeferenced TIFF without modifying the current mission.
     Q_INVOKABLE bool loadOrthophoto(const QString &filePath);
     /// Hide the current raster. The source GeoTIFF remains untouched on disk.
@@ -140,12 +143,27 @@ class RouteMappingPhotoController : public QObject
     void _pollNodeOdmTask();
     void _downloadNodeOdmOrthophoto();
     void _finishNodeOdmDownload(QNetworkReply *reply);
+    void _completeNodeOdmExtract(bool success, const QString &expectedOrthophoto, const QString &zipPath);
+    bool _writeOdmDownloadBytes(const QByteArray &bytes);
+    void _closeOdmDownloadFile();
+    void _abortOdmNetworkReplies();
     void _prepareOrthophotoOverlay();
     void _reportOrthophotoOverlayError(const QString &errorMessage);
     void _setOdmState(OdmState state, int progress, const QString &detail = {});
     void _failOdm(const QString &errorMessage);
     void _writeOdmStateFile() const;
     QString _nodeOdmStatusText() const;
+    /// Shared NodeODM connect + upload kickoff after image paths are prepared.
+    bool _startOdmWithPreparedInputs(
+        const QString &sessionDirectory,
+        const QStringList &imageFiles,
+        const QString &geoPath);
+    /// Accepts a Mission_* folder, its images/ subfolder, or a flat JPEG directory.
+    QString _resolveOdmSessionDirectory(const QString &directoryPath) const;
+    QStringList _collectOdmImagesFromDirectory(
+        const QString &sessionDirectory,
+        QString *geoPathOut,
+        QString *errorMessageOut) const;
     QString _routeMappingRoot(bool ensureExists) const;
     void _writeSessionLocatorFiles(const QString &sessionPath) const;
     void _ensureRouteMappingReadme(const QString &routeMappingRoot, const QString &photoRoot) const;
@@ -179,6 +197,8 @@ class RouteMappingPhotoController : public QObject
     bool _finishRequested = false;
     QNetworkAccessManager *_nodeOdmNetworkManager = nullptr;
     QNetworkReply *_odmPollReply = nullptr;
+    QNetworkReply *_odmUploadReply = nullptr;
+    QNetworkReply *_odmDownloadReply = nullptr;
     QFile *_odmDownloadFile = nullptr;
     QTimer _odmPollTimer;
     OdmState _odmState = OdmState::Idle;

@@ -13,16 +13,18 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=appimage-tool-pins.sh
+source "${SCRIPT_DIR}/appimage-tool-pins.sh"
+# shellcheck source=appimage-qt-plugin-filter.sh
+source "${SCRIPT_DIR}/appimage-qt-plugin-filter.sh"
+
 QGC_PACKAGE_DIR="${QGC_PACKAGE_DIR:-${HOME}/qgc-package}"
 QT_ROOT="${QT_ROOT:-${HOME}/Qt/6.10.1/gcc_arm64}"
 TOOLS_DIR="${QGC_PACKAGE_DIR}/tools"
 APPDIR="${QGC_PACKAGE_DIR}/AppDir"
 APPRUN="${QGC_PACKAGE_DIR}/AppRun"
 APPIMAGE_OUT="${QGC_PACKAGE_DIR}/QGroundControl-aarch64.AppImage"
-
-LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage"
-PLUGIN_QT_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-aarch64.AppImage"
-APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-aarch64.AppImage"
 
 die() { echo "$*" >&2; exit 1; }
 
@@ -36,18 +38,15 @@ ICON="${APPDIR}/usr/share/icons/hicolor/256x256/apps/QGroundControl.png"
 [[ -f "${ICON}" ]] || die "Missing icon: ${ICON}"
 
 mkdir -p "${TOOLS_DIR}"
-download_tool() {
-    local url="$1" dest="$2"
-    if [[ ! -x "${dest}" ]]; then
-        echo "Downloading $(basename "${dest}")..."
-        wget -q -O "${dest}" "${url}"
-        chmod +x "${dest}"
-    fi
-}
-
-download_tool "${LINUXDEPLOY_URL}" "${TOOLS_DIR}/linuxdeploy-aarch64.AppImage"
-download_tool "${PLUGIN_QT_URL}" "${TOOLS_DIR}/linuxdeploy-plugin-qt-aarch64.AppImage"
-download_tool "${APPIMAGETOOL_URL}" "${TOOLS_DIR}/appimagetool-aarch64.AppImage"
+download_verified_tool "${LINUXDEPLOY_AARCH64_URL}" \
+    "${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" "${LINUXDEPLOY_AARCH64_SHA256}" \
+    || die "Failed to fetch verified linuxdeploy"
+download_verified_tool "${LINUXDEPLOY_PLUGIN_QT_AARCH64_URL}" \
+    "${TOOLS_DIR}/linuxdeploy-plugin-qt-aarch64.AppImage" "${LINUXDEPLOY_PLUGIN_QT_AARCH64_SHA256}" \
+    || die "Failed to fetch verified linuxdeploy-plugin-qt"
+download_verified_tool "${APPIMAGETOOL_AARCH64_URL}" \
+    "${TOOLS_DIR}/appimagetool-aarch64.AppImage" "${APPIMAGETOOL_AARCH64_SHA256}" \
+    || die "Failed to fetch verified appimagetool"
 
 chmod +x "${APPRUN}"
 
@@ -138,26 +137,33 @@ export EXTRA_QT_MODULES="${EXTRA_QT_MODULES:+${EXTRA_QT_MODULES};}quick3d;shader
 
 # linuxdeploy-plugin-qt walks all Qt plugins. Optional SQL drivers pull DB client libs
 # (libmysqlclient, libpq, …). QGroundControl uses SQLite only (libqsqlite).
-SQL_DRIVER_DIR="${QT_ROOT}/plugins/sqldrivers"
-if [[ -d "${SQL_DRIVER_DIR}" ]]; then
-    echo "Removing optional Qt SQL drivers (keeping libqsqlite only)..."
-    shopt -s nullglob
-    rm -f "${SQL_DRIVER_DIR}"/libqsqlmysql.so* \
-          "${SQL_DRIVER_DIR}"/libqsqlpsql.so* \
-          "${SQL_DRIVER_DIR}"/libqsqlodbc.so* \
-          "${SQL_DRIVER_DIR}"/libqsqlmimer.so* \
-          "${SQL_DRIVER_DIR}"/libqsqlibase.so* 2>/dev/null || true
-    shopt -u nullglob
+# Stage a filtered plugins tree for packaging — do not delete drivers from QT_ROOT.
+use_sqlite_only_qt_plugins "${QT_ROOT}" || die "Failed to stage sqlite-only Qt plugins"
+
+# Bundle pdftoppm for User Manual PDF preview (poppler-utils on the Pi).
+PDFTOPPM_SRC="$(command -v pdftoppm || true)"
+PDFTOPPM_APPDIR=""
+if PDFTOPPM_APPDIR="$(bundle_pdftoppm_into_appdir "${APPDIR}" "${PDFTOPPM_SRC}")"; then
+    :
+else
+    PDFTOPPM_APPDIR=""
 fi
 
 echo "Bundling Qt and libraries into AppDir..."
-"${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" \
-    --appdir "${APPDIR}" \
-    --executable "${APPDIR}/usr/bin/QGroundControl" \
-    --desktop-file "${DESKTOP}" \
-    --custom-apprun "${APPRUN}" \
-    --icon-file "${ICON}" \
+LINUXDEPLOY_ARGS=(
+    --appdir "${APPDIR}"
+    --executable "${APPDIR}/usr/bin/QGroundControl"
+    --desktop-file "${DESKTOP}"
+    --custom-apprun "${APPRUN}"
+    --icon-file "${ICON}"
     --plugin qt
+)
+if [[ -n "${PDFTOPPM_APPDIR}" && -x "${PDFTOPPM_APPDIR}" ]]; then
+    LINUXDEPLOY_ARGS+=(--executable "${PDFTOPPM_APPDIR}")
+fi
+"${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" "${LINUXDEPLOY_ARGS[@]}"
+
+strip_optional_sql_drivers_from_appdir "${APPDIR}"
 
 # linuxdeploy sometimes misses Quick3D QML; copy from QT_ROOT if needed.
 if [[ ! -e "${APPDIR}/usr/qml/QtQuick3D/libqquick3dplugin.so" && -d "${QT_ROOT}/qml/QtQuick3D" ]]; then

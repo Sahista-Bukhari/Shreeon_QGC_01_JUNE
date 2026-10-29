@@ -10,7 +10,6 @@ ColumnLayout {
     spacing: _rowSpacing
 
     property Fact _loginFact: QGroundControl.settingsManager.appSettings.loginAirLink
-    property Fact _passFact: QGroundControl.settingsManager.appSettings.passAirLink
 
     function saveSettings() {
         // No need
@@ -37,10 +36,12 @@ ColumnLayout {
         QGCLabel { text: qsTr("Password:") }
         QGCTextField {
             id:                     passwordField
-            text:                   _passFact.rawValue
+            // Password is session-only and is not loaded from QSettings.
+            text:                   ""
             focus:                  true
             Layout.preferredWidth:  _secondColumnWidth
             echoMode:               TextInput.Password
+            placeholderText:        qsTr("Enter password (not saved)")
             onTextChanged:          subEditConfig.password = passwordField.text
         }
     }

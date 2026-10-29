@@ -3,24 +3,29 @@
 # Prints one canonical line for QGC: QUEUED seq=N path=... thumb=...
 set -euo pipefail
 
-SEQ="${1:?usage: capture.sh <sequence>}"
+SEQ="${1:?usage: capture.sh <sequence> [session_token]}"
+SESSION_TOKEN="${2:-}"
 PORT="${MANUAL_PORT:-14551}"
-
-exec python3 - "$SEQ" "$PORT" <<'PY'
+exec python3 - "$SEQ" "$PORT" "$SESSION_TOKEN" <<'PY'
 import re
 import socket
 import sys
 
 seq = int(sys.argv[1])
 port = int(sys.argv[2])
+session_token = sys.argv[3].strip()
+
+body = f"CAPTURE {seq}"
+if session_token:
+    body = f"{body} session={session_token}"
+payload = body.encode()
 
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
 sock.settimeout(8.0)
 try:
-    sock.bind(("0.0.0.0", 0))
+    sock.bind(("127.0.0.1", 0))
 except OSError:
     pass
-payload = f"CAPTURE {seq}".encode()
 sock.sendto(payload, ("127.0.0.1", port))
 data, _ = sock.recvfrom(4096)
 text = data.decode("utf-8", "ignore").strip()

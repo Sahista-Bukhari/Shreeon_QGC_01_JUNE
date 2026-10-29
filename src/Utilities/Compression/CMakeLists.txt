@@ -30,7 +30,9 @@ endif()
 CPMAddPackage(
     NAME zlib
     GITHUB_REPOSITORY madler/zlib
-    GIT_TAG develop
+    # Pin immutable commit of develop (CMake options below are develop-only;
+    # release tags like v1.3.1 use a different option set).
+    GIT_TAG 767c4c947852e143f582c85f14cf573411df1b35
     OPTIONS
         "ZLIB_BUILD_TESTING OFF"
         "ZLIB_BUILD_SHARED OFF"

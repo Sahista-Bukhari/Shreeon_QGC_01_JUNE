@@ -17,6 +17,7 @@ QList<QLocale::Language> AppSettings::_rgReleaseLanguages = {
     QLocale::English,
     QLocale::Azerbaijani,
     QLocale::Chinese,
+    QLocale::Gujarati,
     QLocale::Japanese,
     QLocale::Korean,
     QLocale::Portuguese,
@@ -39,6 +40,7 @@ AppSettings::LanguageInfo_t AppSettings::_rgLanguageInfo[] = {
     { QLocale::French,          "Français (French)" },
     { QLocale::German,          "Deutsche (German)" },
     { QLocale::Greek,           "Ελληνικά (Greek)" },
+    { QLocale::Gujarati,        "ગુજરાતી (Gujarati)" },
     { QLocale::Hebrew,          "עברית (Hebrew)" },
     { QLocale::Italian,         "Italiano (Italian)" },
     { QLocale::Japanese,        "日本語 (Japanese)" },
@@ -54,6 +56,17 @@ AppSettings::LanguageInfo_t AppSettings::_rgLanguageInfo[] = {
 
 DECLARE_SETTINGGROUP(App, "")
 {
+    // One-time migration: older builds persisted AirLink passwords in plain
+    // QSettings under "passAirLink". Passwords are session-only now — remove any
+    // leftover secret, then drop the unused setting definition entirely.
+    {
+        QSettings settings;
+        static constexpr const char *kLegacyPassAirLinkKey = "passAirLink";
+        if (settings.contains(kLegacyPassAirLinkKey)) {
+            settings.remove(kLegacyPassAirLinkKey);
+        }
+    }
+
     QGCPalette::setGlobalTheme(indoorPalette()->rawValue().toBool() ? QGCPalette::Dark : QGCPalette::Light);
 
     // Instantiate savePath so we can check for override and setup default path if needed
@@ -137,7 +150,6 @@ DECLARE_SETTINGSFACT(AppSettings, followTarget)
 DECLARE_SETTINGSFACT(AppSettings, disableAllPersistence)
 DECLARE_SETTINGSFACT(AppSettings, firstRunPromptIdsShown)
 DECLARE_SETTINGSFACT(AppSettings, loginAirLink)
-DECLARE_SETTINGSFACT(AppSettings, passAirLink)
 DECLARE_SETTINGSFACT(AppSettings, nodeOdmHost)
 DECLARE_SETTINGSFACT(AppSettings, nodeOdmPort)
 

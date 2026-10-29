@@ -730,8 +730,9 @@ Item {
             return
         }
 
-        // Route Mapping uses High Resolution as the completed-plan default.
-        // The settings helper preserves any explicit preset selected earlier.
+        // Route Mapping defaults a newly completed plan to High Resolution
+        // (30 m altitude, 6 m photo interval). An explicit Low/High choice
+        // made while drawing the route is left unchanged.
         taskSettingsPanel.selectHighResolutionByDefault()
         _snapshotRouteMappingTelemetryFromPlan()
 
@@ -1209,7 +1210,7 @@ Item {
                 && !taskSettingsPanel.altitudeProfileReadyForUpload()) {
             mainWindow.showMessageDialog(
                         qsTr("Save"),
-                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and select the resolution preset again."))
+                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and verify the altitude values."))
             return
         }
         _snapshotRouteMappingTelemetryFromPlan()
@@ -1273,7 +1274,7 @@ Item {
                 && !taskSettingsPanel.altitudeProfileReadyForUpload()) {
             mainWindow.showMessageDialog(
                         qsTr("Upload"),
-                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and select the resolution preset again."))
+                        qsTr("The takeoff and Route Mapping pattern altitudes are not synchronized. Reopen the task settings and verify the altitude values."))
             return
         }
         _snapshotRouteMappingTelemetryFromPlan()
@@ -2559,6 +2560,32 @@ Item {
         }
 
         Rectangle {
+            id: odmStitchStatusPanel
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: orthomosaicOpacityPanel.visible
+                            ? orthomosaicOpacityPanel.top
+                            : parent.bottom
+            anchors.bottomMargin: ScreenTools.defaultFontPixelHeight
+            width: Math.min(ScreenTools.defaultFontPixelWidth * 40, parent.width * 0.65)
+            height: ScreenTools.defaultFontPixelHeight * 2.6
+            radius: ScreenTools.defaultFontPixelWidth * 0.55
+            color: Qt.rgba(0.03, 0.03, 0.03, 0.62)
+            visible: flyView.routeMappingOdmRunning
+            z: QGroundControl.zOrderWidgets + 20
+
+            QGCLabel {
+                anchors.fill: parent
+                anchors.leftMargin: ScreenTools.defaultFontPixelWidth
+                anchors.rightMargin: ScreenTools.defaultFontPixelWidth
+                horizontalAlignment: Text.AlignHCenter
+                verticalAlignment: Text.AlignVCenter
+                elide: Text.ElideRight
+                text: qsTr("ODM stitching: %1").arg(flyView.routeMappingReconstructionStatus)
+                color: "white"
+            }
+        }
+
+        Rectangle {
             id: orthomosaicOpacityPanel
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.bottom: parent.bottom
@@ -2671,6 +2698,9 @@ Item {
                 patternSectionTitle: qsTr("Route Mapping Pattern")
                 showPhotoSettings: true
                 synchronizeTakeoffAltitudeWithPattern: true
+                // Log planned altitude/speed commits so Low/High presets are
+                // visible in the QGC console during PX4 SITL verification.
+                consoleLogTag: "RouteMapping"
                 surveyItem: _root._taskSettingsSurveyItem ? _root._taskSettingsSurveyItem : _root._cachedSurveyItem
                 takeoffItem: {
                     var itemCount = _missionController.visualItems.count
@@ -3160,7 +3190,8 @@ Item {
                     anchors.fill: parent
                     hoverEnabled: true
                     enabled: !flyView.routeMappingOrthophotoLoading
-                    cursorShape: Qt.PointingHandCursor
+                             && !flyView.routeMappingOdmRunning
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
                     onClicked: function(mouse) {
                         orthophotoLoadRipple.tap(mouse.x, mouse.y)
                         flyView.openRouteMappingOrthophotoDialog()
@@ -3170,6 +3201,50 @@ Item {
                     ToolTip.text: flyView.routeMappingOrthophotoReady
                                   ? qsTr("Replace orthomosaic")
                                   : qsTr("Load previous orthomosaic")
+                }
+            }
+
+            Item {
+                width: Math.round(ScreenTools.defaultFontPixelWidth * 5)
+                height: width
+                opacity: enabled ? 1.0 : 0.45
+                enabled: !flyView.routeMappingOrthophotoLoading
+                         && !flyView.routeMappingOdmRunning
+
+                QGCColoredImage {
+                    anchors.centerIn: parent
+                    width: Math.round(parent.width * 0.78)
+                    height: width
+                    source: "/res/modern-icons/MappingProgressReconstruction.svg"
+                    sourceSize.width: width * Screen.devicePixelRatio
+                    sourceSize.height: height * Screen.devicePixelRatio
+                    fillMode: Image.PreserveAspectFit
+                    color: flyView.routeMappingOdmRunning ? "#6beb17" : "white"
+                    smooth: true
+                    mipmap: true
+                }
+
+                RippleEffect {
+                    id: odmDirectoryStitchRipple
+                    rippleColor: Qt.rgba(1, 1, 1, 0.40)
+                    clipRadius: width / 2
+                }
+
+                QGCMouseArea {
+                    id: odmDirectoryStitchMouseArea
+                    anchors.fill: parent
+                    hoverEnabled: true
+                    enabled: parent.enabled
+                    cursorShape: enabled ? Qt.PointingHandCursor : Qt.ArrowCursor
+                    onClicked: function(mouse) {
+                        odmDirectoryStitchRipple.tap(mouse.x, mouse.y)
+                        flyView.openRouteMappingOdmDirectoryDialog()
+                    }
+
+                    ToolTip.visible: containsMouse
+                    ToolTip.text: flyView.routeMappingOdmRunning
+                                  ? flyView.routeMappingReconstructionStatus
+                                  : qsTr("Stitch orthomosaic from a photos directory")
                 }
             }
 

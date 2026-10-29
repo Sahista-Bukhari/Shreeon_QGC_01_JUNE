@@ -22,7 +22,6 @@ public:
         int zoomLevel;
         QPoint tileMinIndex;
         QPoint tileMaxIndex;
-        int currentTileStat;
 
         QPoint currentTileIndex;
         QByteArray currentTileData;
@@ -102,12 +101,12 @@ public:
     QSize getMapSize(){ return QSize(_mapToBeLoaded.mapWidth, _mapToBeLoaded.mapHeight);}
 
 private:
-    int _mapTilesLoadStat;
     MapTileContainer_t _mapToBeLoaded;
-    int totalTilesCount, downloadedTilesCount;
-    int _mapId;
-    int _zoomLevel;
-    QString _mapType;
+    int totalTilesCount = 0;
+    int downloadedTilesCount = 0;
+    int failedTilesCount = 0;
+    int _mapId = 0;
+    int _zoomLevel = 0;
     QGeoCoordinate _textureCoordinateMin, _textureCoordinateMax;
 
     void loadMapTiles(int zoomLevel, QPoint tileMinIndex, QPoint tileMaxIndex);
@@ -120,11 +119,17 @@ private:
     void tileDone(Viewer3DTileReply::tileInfo_t _tileData);
     void tileGiveUp(Viewer3DTileReply::tileInfo_t _tileData);
     void tileEmpty(Viewer3DTileReply::tileInfo_t _tileData);
-    void httpReadyRead();
+    void disposeTileReply(Viewer3DTileReply *reply);
+    void emitTileProgress();
+    void considerMapLoadComplete();
     QString getTileKey(int mapId, int x, int y, int zoomLevel);
 
 signals:
+    /// Emitted when every requested tile finished successfully, or enough tiles
+    /// arrived for a usable (possibly partial) texture.
     void loadingMapCompleted();
+    /// Emitted when the batch finished with zero usable tiles.
+    void loadingMapFailed(const QString &errorMessage);
     void mapTileDownloaded(float progress);
     void textureGeometryReady(TileStatistics_t tileInfo);
 };

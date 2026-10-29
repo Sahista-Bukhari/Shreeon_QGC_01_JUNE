@@ -38,7 +38,6 @@ CRC_EXTRA = {
     MAVLINK_MSG_ID_CAMERA_TRIGGER: 174,
 }
 
-
 @dataclasses.dataclass(frozen=True)
 class MavlinkMessage:
     message_id: int
@@ -806,19 +805,35 @@ class RouteMappingService:
         self._gcs_controls_captures = False
         self._gcs_session_token: str | None = None
         self._session_lease_deadline = 0.0
-
         self._wfb_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._wfb_socket.bind(("127.0.0.1", 0))
         self._wfb_socket.connect((arguments.wfb_host, arguments.wfb_port))
         self._wfb_socket.setblocking(False)
         self._selector.register(self._wfb_socket, selectors.EVENT_READ, self._read_wfb)
 
-        self._manual_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self._manual_socket.bind((arguments.manual_host, arguments.manual_port))
-        self._manual_socket.setblocking(False)
-        self._selector.register(
-            self._manual_socket, selectors.EVENT_READ, self._read_manual
-        )
+        self._manual_sockets: list[socket.socket] = []
+        bind_hosts = [arguments.manual_host]
+        if arguments.manual_host not in {"127.0.0.1", "0.0.0.0"}:
+            # Local capture.sh talks to 127.0.0.1; keep loopback reachable even
+            # when the public control socket is pinned to the WFB address.
+            bind_hosts.append("127.0.0.1")
+        for host in bind_hosts:
+            manual_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+            manual_socket.bind((host, arguments.manual_port))
+            manual_socket.setblocking(False)
+            self._selector.register(
+                manual_socket,
+                selectors.EVENT_READ,
+                lambda sock=manual_socket: self._read_manual(sock),
+            )
+            self._manual_sockets.append(manual_socket)
+            LOGGER.info(
+                "Manual trigger socket: udp://%s:%s",
+                host,
+                arguments.manual_port,
+            )
+        # Tests and older call sites may still poke _manual_socket directly.
+        self._manual_socket = self._manual_sockets[0]
 
         self._capture_worker = CaptureWorker(
             pathlib.Path(arguments.photo_root),
@@ -918,15 +933,23 @@ class RouteMappingService:
     def _status_response(self) -> bytes:
         session_directory = self._capture_worker.session_directory
         session_text = str(session_directory) if session_directory is not None else "NONE"
-        token_text = self._gcs_session_token or "NONE"
         wfb_state = "active" if self._camera_service_streaming() else "inactive"
         mapping_state = (
             "active" if self._capture_worker.mapping_video_running else "stopped"
         )
+        # Never return the session ownership token — it is not an authenticator
+        # and leaking it lets any UDP client impersonate the owner.
         return (
             f"STATE {self._camera_state()} session={session_text} "
-            f"token={token_text} wfb={wfb_state} mapping={mapping_state}\n"
+            f"wfb={wfb_state} mapping={mapping_state}\n"
         ).encode()
+
+    def _session_token_allowed(self, session_token: str | None) -> bool:
+        if not self._gcs_controls_captures:
+            return True
+        if self._gcs_session_token is None:
+            return True
+        return session_token == self._gcs_session_token
 
     def pause_live_video(self, session_token: str | None = None) -> pathlib.Path:
         # VIDEO_PAUSE can be retried when its UDP acknowledgement is lost.
@@ -1063,11 +1086,6 @@ class RouteMappingService:
             )
         self._capture_worker.start()
         self._try_open_serial()
-        LOGGER.info(
-            "Manual trigger socket: udp://%s:%d",
-            self._arguments.manual_host,
-            self._arguments.manual_port,
-        )
 
         while not self._stop_requested:
             if self._serial_descriptor is None:
@@ -1159,10 +1177,15 @@ class RouteMappingService:
                 self._close_serial()
         self._handle_messages(self._wfb_parser.feed(data), from_flight_controller=False)
 
-    def _read_manual(self) -> None:
-        data, address = self._manual_socket.recvfrom(1024)
+    def _read_manual(self, manual_socket: socket.socket | None = None) -> None:
+        sock = manual_socket if manual_socket is not None else self._manual_socket
+        data, address = sock.recvfrom(1024)
         text = data.decode("utf-8", errors="ignore").strip()
         parts = text.split()
+        if not parts:
+            sock.sendto(b"ERROR empty command\n", address)
+            return
+
         fields = {
             key.lower(): value
             for part in parts[1:]
@@ -1170,24 +1193,29 @@ class RouteMappingService:
             for key, value in [part.split("=", 1)]
         }
         session_token = fields.get("session")
-        if not parts:
-            response = b"ERROR empty command\n"
-        elif parts[0].upper() == "CAPTURE":
+        command = parts[0].upper()
+        if command == "CAPTURE":
             gcs_sequence = None
-            if len(parts) >= 2:
+            for part in parts[1:]:
+                if "=" in part:
+                    continue
                 try:
-                    # Accept the final field so one rollout remains compatible
-                    # with the previous CAPTURE <token> <sequence> client.
-                    gcs_sequence = int(parts[-1])
+                    gcs_sequence = int(part)
+                    break
                 except ValueError:
-                    self._manual_socket.sendto(b"ERROR invalid sequence\n", address)
+                    sock.sendto(b"ERROR invalid sequence\n", address)
                     return
+            if not self._session_token_allowed(session_token):
+                sock.sendto(b"ERROR session-mismatch\n", address)
+                return
             if gcs_sequence is not None:
+                if not self._refresh_session_lease(session_token):
+                    sock.sendto(b"ERROR no-matching-session\n", address)
+                    return
                 session_directory = self._capture_worker.session_directory
                 if session_directory is None:
-                    self._manual_socket.sendto(
-                        b"ERROR no active session; send VIDEO_PAUSE first\n",
-                        address,
+                    sock.sendto(
+                        b"ERROR no active session; send VIDEO_PAUSE first\n", address
                     )
                     return
                 queued, planned_path, thumbnail_path = self._capture_worker.request(
@@ -1220,44 +1248,30 @@ class RouteMappingService:
                     response = b"QUEUED\n"
             else:
                 response = b"BUSY\n"
-        elif parts[0].upper() == "STATUS":
-            if session_token is None:
-                # Preserve the legacy wire format so the Pi package can be
-                # deployed before every GCS has been upgraded.
-                session_directory = self._capture_worker.session_directory
-                response = (
-                    f"SESSION {session_directory}\n".encode()
-                    if session_directory is not None
-                    else b"SESSION NONE\n"
-                )
-            else:
-                response = self._status_response()
-        elif parts[0].upper() == "VIDEO_PAUSE":
+        elif command == "STATUS":
+            response = self._status_response()
+        elif command == "VIDEO_PAUSE":
             try:
                 session_directory = self.pause_live_video(session_token)
-                if session_token is None:
-                    response = f"OK session={session_directory}\n".encode()
-                else:
-                    response = (
-                        f"OK state=MAPPING session={session_directory} "
-                        f"token={self._gcs_session_token or 'NONE'}\n"
-                    ).encode()
+                response = (
+                    f"OK state=MAPPING session={session_directory}\n"
+                ).encode()
             except Exception as error:
                 LOGGER.exception("VIDEO_PAUSE failed")
                 response = f"ERROR {error}\n".encode()
-        elif parts[0].upper() == "VIDEO_RESUME":
+        elif command == "VIDEO_RESUME":
             if self.resume_live_video(session_token):
                 response = b"OK state=LIVE wfb=active\n"
             else:
                 response = b"ERROR live-video-resume-failed\n"
-        elif parts[0].upper() == "KEEPALIVE":
+        elif command == "KEEPALIVE":
             if self._refresh_session_lease(session_token):
                 response = b"OK state=MAPPING\n"
             else:
                 response = b"ERROR no-matching-session\n"
         else:
             response = b"ERROR use VIDEO_PAUSE, CAPTURE [seq], STATUS, KEEPALIVE, VIDEO_RESUME\n"
-        self._manual_socket.sendto(response, address)
+        sock.sendto(response, address)
 
     def _handle_messages(
         self,
@@ -1319,7 +1333,11 @@ def parse_arguments() -> argparse.Namespace:
     parser.add_argument("--serial-baud", type=int, default=57600)
     parser.add_argument("--wfb-host", default="127.0.0.1")
     parser.add_argument("--wfb-port", type=int, default=14550)
-    parser.add_argument("--manual-host", default="0.0.0.0")
+    parser.add_argument(
+        "--manual-host",
+        default="10.5.0.2",
+        help="Bind address for UDP camera control (WFB aircraft IP by default)",
+    )
     parser.add_argument("--manual-port", type=int, default=14551)
     parser.add_argument("--photo-root", default="/home/shreeon/mapping_photos")
     parser.add_argument("--capture-user", default="shreeon")

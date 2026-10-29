@@ -1452,8 +1452,8 @@ void Vehicle::_handleRCChannels(mavlink_message_t& message)
 
 bool Vehicle::sendMessageOnLinkThreadSafe(LinkInterface* link, mavlink_message_t message)
 {
-    if (!link->isConnected()) {
-        qCDebug(VehicleLog) << "sendMessageOnLinkThreadSafe" << link << "not connected!";
+    if (!link || !link->isConnected() || !link->mavlinkChannelIsSet()) {
+        qCDebug(VehicleLog) << "sendMessageOnLinkThreadSafe" << link << "not connected or MAVLink channel unavailable";
         return false;
     }
 

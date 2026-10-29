@@ -19,7 +19,6 @@ private slots:
 
     void _testLoadJsonSectionAvailable  (void);
     void _testLoadBaylandsMappingPlan   (void);
-    void _testRouteMappingAltitudeProfile_data(void);
     void _testRouteMappingAltitudeProfile(void);
     void _testEmptyVehicleAPM           (void);
     void _testEmptyVehiclePX4           (void);

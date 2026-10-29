@@ -4,13 +4,6 @@
 #define MAX_ZOOM_LEVEL      23
 #define MAX_LATITUDE       85.05112878
 
-enum RequestStat{
-    STARTED,
-    IN_PROGRESS,
-    FINISHED,
-    ERROR,
-};
-
 MapTileQuery::MapTileQuery(QObject *parent)
     : QObject{parent}
 {
@@ -18,7 +11,6 @@ MapTileQuery::MapTileQuery(QObject *parent)
 
 void MapTileQuery::loadMapTiles(int zoomLevel, QPoint tileMinIndex, QPoint tileMaxIndex)
 {
-    _mapTilesLoadStat = RequestStat::STARTED;
     _mapToBeLoaded.clear();
     _mapToBeLoaded.zoomLevel = zoomLevel;
     _mapToBeLoaded.tileMinIndex = tileMinIndex;
@@ -37,6 +29,7 @@ void MapTileQuery::loadMapTiles(int zoomLevel, QPoint tileMinIndex, QPoint tileM
     }
     totalTilesCount = _mapToBeLoaded.tileList.size();
     downloadedTilesCount = 0;
+    failedTilesCount = 0;
     qDebug() << totalTilesCount << "Tiles to be downloaded!!";
 }
 
@@ -77,8 +70,8 @@ MapTileQuery::TileStatistics_t MapTileQuery::findAndLoadMapTiles(int zoomLevel, 
 
 void MapTileQuery::adaptiveMapTilesLoader(QString mapType, int mapId, QGeoCoordinate coordinate_1, QGeoCoordinate coordinate_2)
 {
+    Q_UNUSED(mapType);
     _mapId = mapId;
-    _mapType = mapType;
     for(_zoomLevel=MAX_ZOOM_LEVEL; _zoomLevel>0; _zoomLevel--){
         if(maxTileCount(_zoomLevel, coordinate_1, coordinate_2) < MAX_TILE_COUNTS){
             break;
@@ -162,30 +155,10 @@ QGeoCoordinate MapTileQuery::pixelXYToLatLong(QPoint pixel, int zoomLevel)
     return QGeoCoordinate(latitude, longitude, 0);
 }
 
-void MapTileQuery::tileDone(Viewer3DTileReply::tileInfo_t _tileData)
+void MapTileQuery::disposeTileReply(Viewer3DTileReply *reply)
 {
-    Viewer3DTileReply* reply = qobject_cast<Viewer3DTileReply*>(QObject::sender());
-
-    QString tileKey = getTileKey(_tileData.mapId, _tileData.x, _tileData.y, _tileData.zoomLevel);
-    qsizetype itemRemoved = _mapToBeLoaded.tileList.removeAll(tileKey);
-
-    if(itemRemoved > 0){
-        _mapToBeLoaded.currentTileIndex = QPoint(_tileData.x, _tileData.y);
-        _mapToBeLoaded.currentTileData = _tileData.data;
-        _mapToBeLoaded.currentTileStat = RequestStat::FINISHED;
-        _mapToBeLoaded.setMapTile();
-        downloadedTilesCount++;
-        emit mapTileDownloaded(100.0 * ((float) downloadedTilesCount/ (float)totalTilesCount));
-
-        // qDebug() << _tileData.x << _tileData.y << _tileData.zoomLevel << "tile downloaded!!!" << _mapToBeLoaded.tileList.size();
-
-        if(_mapToBeLoaded.tileList.size() == 0){
-            _mapTilesLoadStat = RequestStat::FINISHED;
-            qDebug() << "All tiles downloaded ";
-            downloadedTilesCount = totalTilesCount;
-            emit loadingMapCompleted();
-        }
-
+    if (!reply) {
+        return;
     }
     disconnect(reply, &Viewer3DTileReply::tileDone, this, &MapTileQuery::tileDone);
     disconnect(reply, &Viewer3DTileReply::tileGiveUp, this, &MapTileQuery::tileGiveUp);
@@ -193,24 +166,85 @@ void MapTileQuery::tileDone(Viewer3DTileReply::tileInfo_t _tileData)
     reply->deleteLater();
 }
 
+void MapTileQuery::emitTileProgress()
+{
+    if (totalTilesCount <= 0) {
+        return;
+    }
+    const int resolved = downloadedTilesCount + failedTilesCount;
+    emit mapTileDownloaded(100.0f * (float(resolved) / float(totalTilesCount)));
+}
+
+void MapTileQuery::considerMapLoadComplete()
+{
+    if (_mapToBeLoaded.tileList.size() != 0) {
+        return;
+    }
+
+    if (downloadedTilesCount <= 0) {
+        qWarning() << "Viewer3D map tile load failed:" << failedTilesCount
+                   << "of" << totalTilesCount << "tiles gave up with no usable data";
+        emit loadingMapFailed(
+            QStringLiteral("Map tiles could not be downloaded (%1 of %2 failed).")
+                .arg(failedTilesCount)
+                .arg(totalTilesCount));
+        return;
+    }
+
+    if (failedTilesCount > 0) {
+        // Partial success: gray placeholders remain where tiles failed permanently.
+        qDebug() << "Viewer3D map tiles loaded with partial success:"
+                 << downloadedTilesCount << "ok," << failedTilesCount << "failed";
+        emit loadingMapCompleted();
+        return;
+    }
+
+    qDebug() << "All tiles downloaded";
+    emit loadingMapCompleted();
+}
+
+void MapTileQuery::tileDone(Viewer3DTileReply::tileInfo_t _tileData)
+{
+    Viewer3DTileReply *reply = qobject_cast<Viewer3DTileReply *>(QObject::sender());
+
+    const QString tileKey = getTileKey(_tileData.mapId, _tileData.x, _tileData.y, _tileData.zoomLevel);
+    const qsizetype itemRemoved = _mapToBeLoaded.tileList.removeAll(tileKey);
+
+    if (itemRemoved > 0) {
+        _mapToBeLoaded.currentTileIndex = QPoint(_tileData.x, _tileData.y);
+        _mapToBeLoaded.currentTileData = _tileData.data;
+        _mapToBeLoaded.setMapTile();
+        downloadedTilesCount++;
+        emitTileProgress();
+        considerMapLoadComplete();
+    }
+    disposeTileReply(reply);
+}
+
 void MapTileQuery::tileGiveUp(Viewer3DTileReply::tileInfo_t _tileData)
 {
-    Viewer3DTileReply* reply = qobject_cast<Viewer3DTileReply*>(QObject::sender());
-    disconnect(reply, &Viewer3DTileReply::tileDone, this, &MapTileQuery::tileDone);
-    disconnect(reply, &Viewer3DTileReply::tileGiveUp, this, &MapTileQuery::tileGiveUp);
-    disconnect(reply, &Viewer3DTileReply::tileEmpty, this, &MapTileQuery::tileEmpty);
-    reply->deleteLater();
+    Viewer3DTileReply *reply = qobject_cast<Viewer3DTileReply *>(QObject::sender());
+
+    const QString tileKey = getTileKey(_tileData.mapId, _tileData.x, _tileData.y, _tileData.zoomLevel);
+    const qsizetype itemRemoved = _mapToBeLoaded.tileList.removeAll(tileKey);
+    if (itemRemoved > 0) {
+        failedTilesCount++;
+        qWarning() << "Viewer3D permanent tile failure:" << tileKey
+                   << "remaining" << _mapToBeLoaded.tileList.size();
+        emitTileProgress();
+        considerMapLoadComplete();
+    }
+    disposeTileReply(reply);
 }
 
 void MapTileQuery::tileEmpty(Viewer3DTileReply::tileInfo_t _tileData)
 {
-    Viewer3DTileReply* reply = qobject_cast<Viewer3DTileReply*>(QObject::sender());
-    disconnect(reply, &Viewer3DTileReply::tileDone, this, &MapTileQuery::tileDone);
-    disconnect(reply, &Viewer3DTileReply::tileEmpty, this, &MapTileQuery::tileEmpty);
-    reply->deleteLater();
-    if(_tileData.zoomLevel > 0 && _tileData.zoomLevel == _zoomLevel){
+    Viewer3DTileReply *reply = qobject_cast<Viewer3DTileReply *>(QObject::sender());
+    disposeTileReply(reply);
+    if (_tileData.zoomLevel > 0 && _tileData.zoomLevel == _zoomLevel) {
         _zoomLevel -= 1;
-        emit textureGeometryReady(findAndLoadMapTiles(_zoomLevel, _textureCoordinateMin, _textureCoordinateMax));
+        emit textureGeometryReady(findAndLoadMapTiles(
+            _zoomLevel, _textureCoordinateMin, _textureCoordinateMax));
     }
 }
 

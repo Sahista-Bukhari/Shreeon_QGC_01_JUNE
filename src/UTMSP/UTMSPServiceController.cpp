@@ -25,9 +25,10 @@ std::string UTMSPServiceController::flightPlanAuthorization()
 {
     _currentState = UTMSPFlightPlanManager::FlightState::Idle;
 
-    //Get the Token
+    // Get the token (never log the bearer value).
     _blenderToken = _utmspAuthorizaton.getOAuth2Token();
-    UTMSP_LOG_INFO() << "BlenderToken" + _blenderToken;
+    UTMSP_LOG_INFO() << "UTMSPServiceController: OAuth2 bearer token "
+                     << (_blenderToken.empty() ? "missing" : "present");
 
     // State 1 --> Register
     _utmspFlightPlanManager.getFlightPlanState();

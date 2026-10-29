@@ -6,6 +6,7 @@
 #include "QGCLoggingCategory.h"
 #include "QGCZip.h"
 
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtCore/QDateTime>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -13,13 +14,15 @@
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QFileInfo>
+#include <QtCore/QMetaObject>
+#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QSaveFile>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QTimeZone>
-#include <QtCore/QUrlQuery>
 #include <QtCore/QUuid>
 #include <QtCore/QTimer>
+#include <QtCore/QUrlQuery>
 #include <QtNetwork/QHttpMultiPart>
 #include <QtNetwork/QNetworkAccessManager>
 #include <QtNetwork/QNetworkReply>
@@ -36,6 +39,10 @@ QGC_LOGGING_CATEGORY(RouteMappingPhotoControllerLog, "FlyView.RouteMappingPhotoC
 namespace {
 
 constexpr int kNodeOdmPollIntervalMs = 2000;
+constexpr int kNodeOdmPollRequestTimeoutMs = 10000;
+/// No bytes transferred for this long → fail the upload/download (Qt inactivity timer).
+constexpr int kNodeOdmTransferInactivityTimeoutMs = 120000;
+constexpr int kNodeOdmMaxConsecutivePollFailures = 15;
 constexpr auto kOrthophotoArchivePath = "odm_orthophoto/odm_orthophoto.tif";
 constexpr auto kOrthophotoOverlayFileName = "odm_orthophoto_overlay.png";
 constexpr int kMinimumOdmImageCount = 2;
@@ -269,7 +276,14 @@ bool writeReferenceCameraExif(
     return true;
 }
 
-QUrl nodeOdmUrl(const QString &path, const QString &endpointOverride = {})
+QString nodeOdmAuthToken()
+{
+    return qEnvironmentVariable("QGC_NODEODM_TOKEN").trimmed();
+}
+
+/// Build a NodeODM URL. Standard NodeODM authenticates with the `token` query
+/// parameter. HTTPS remains available through QGC_NODEODM_URL when required.
+QUrl nodeOdmUrl(const QString &path, const QString &endpointOverride = {}, QString *errorMessage = nullptr)
 {
     QString endpoint = endpointOverride.trimmed();
     if (endpoint.isEmpty()) {
@@ -277,15 +291,20 @@ QUrl nodeOdmUrl(const QString &path, const QString &endpointOverride = {})
     }
     if (endpoint.isEmpty()) {
         AppSettings *const appSettings = SettingsManager::instance()->appSettings();
-        QString host = appSettings->nodeOdmHost()->rawValue().toString().trimmed();
+        const QString host = appSettings->nodeOdmHost()->rawValue().toString().trimmed();
         const int port = appSettings->nodeOdmPort()->rawValue().toInt();
         if (host.isEmpty()) {
-            host = QStringLiteral("127.0.0.1");
+            if (errorMessage) {
+                *errorMessage = QObject::tr(
+                    "No NodeODM server is configured. Set Application Settings → "
+                    "Route Mapping Reconstruction host, or QGC_NODEODM_URL.");
+            }
+            return {};
         }
 
-        // The Application Settings field intentionally accepts only a host/IP
-        // and port. Keeping the scheme here prevents malformed endpoint paths
-        // and makes IPv4, IPv6, and DNS names behave consistently.
+        // The standard NodeODM service exposes its API over plain HTTP. An
+        // HTTPS reverse-proxy endpoint can still be supplied through
+        // QGC_NODEODM_URL.
         QUrl configuredEndpoint;
         configuredEndpoint.setScheme(QStringLiteral("http"));
         configuredEndpoint.setHost(host);
@@ -294,26 +313,62 @@ QUrl nodeOdmUrl(const QString &path, const QString &endpointOverride = {})
     }
 
     QUrl url(endpoint);
+    if (!url.isValid() || url.host().isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("NodeODM endpoint is invalid: %1").arg(endpoint);
+        }
+        return {};
+    }
+
+    if (url.scheme().isEmpty()) {
+        url.setScheme(QStringLiteral("http"));
+    }
+
+    const QString scheme = url.scheme().toLower();
+    if (scheme != QLatin1String("https") && scheme != QLatin1String("http")) {
+        if (errorMessage) {
+            *errorMessage = QObject::tr("Unsupported NodeODM URL scheme: %1").arg(url.scheme());
+        }
+        return {};
+    }
+
     QString basePath = url.path();
     while (basePath.endsWith(QLatin1Char('/'))) {
         basePath.chop(1);
     }
     url.setPath(basePath + path);
-
-    const QString token = qEnvironmentVariable("QGC_NODEODM_TOKEN").trimmed();
+    url.setQuery(QString{});
+    const QString token = nodeOdmAuthToken();
     if (!token.isEmpty()) {
-        QUrlQuery query(url);
+        QUrlQuery query;
         query.addQueryItem(QStringLiteral("token"), token);
         url.setQuery(query);
     }
     return url;
 }
 
+void applyNodeOdmAuth(QNetworkRequest &request)
+{
+    const QString token = nodeOdmAuthToken();
+    if (token.isEmpty()) {
+        return;
+    }
+    // Also provide Bearer authentication for deployments fronted by a reverse
+    // proxy. Standard NodeODM consumes the query token added by nodeOdmUrl().
+    request.setRawHeader(
+        QByteArrayLiteral("Authorization"),
+        QByteArrayLiteral("Bearer ") + token.toUtf8());
+}
+
 QString nodeOdmEndpointText(const QString &endpointOverride = {})
 {
-    QUrl endpoint = nodeOdmUrl({}, endpointOverride);
+    QString error;
+    QUrl endpoint = nodeOdmUrl({}, endpointOverride, &error);
+    if (!endpoint.isValid()) {
+        return {};
+    }
     endpoint.setQuery(QString{});
-    return endpoint.toString();
+    return endpoint.toString(QUrl::RemoveUserInfo);
 }
 
 QString nodeOdmReplyError(QNetworkReply *reply, const QByteArray &body)
@@ -437,6 +492,9 @@ QString RouteMappingPhotoController::_nodeOdmStatusText() const
                        ? tr("Processing %1%").arg(_odmProgress)
                        : tr("%1 — %2%").arg(_odmStateDetail).arg(_odmProgress);
         case OdmState::Downloading:
+            if (!_odmStateDetail.isEmpty()) {
+                return _odmStateDetail;
+            }
             return tr("Downloading GeoTIFF %1%").arg(_odmProgress);
         case OdmState::Complete:
             return tr("Complete");
@@ -565,6 +623,9 @@ void RouteMappingPhotoController::_ensureRouteMappingReadme(
                                "\n"
                                "Latest mission folder path is written to latest_mission_session.txt\n"
                                "when a Route Mapping photo session starts.\n"
+                               "\n"
+                               "Stitch Orthomosaic from Photos Directory can reprocess any Mission_*\n"
+                               "folder later (select the Mission folder or its images/ subfolder).\n"
                                "\n"
                                "Shell examples (quote paths that contain spaces):\n"
                                "  ls \"%1\"/Mission_*\n"
@@ -995,7 +1056,7 @@ bool RouteMappingPhotoController::startOdm()
             // Build the NodeODM input from confirmed geotagged sequences instead of
             // every JPEG in the directory. This permits reconstruction when one or
             // more transfers failed and excludes untagged/partial files.
-    _odmInputFiles.clear();
+    QStringList imageFiles;
     QList<int> geotaggedSequences = _geotaggedSequences.values();
     std::sort(geotaggedSequences.begin(), geotaggedSequences.end());
     for (const int sequence : std::as_const(geotaggedSequences)) {
@@ -1003,37 +1064,191 @@ bool RouteMappingPhotoController::startOdm()
             QStringLiteral("image_%1.jpg").arg(sequence, 4, 10, QChar('0')));
         const QFileInfo imageInfo(imagePath);
         if (imageInfo.isFile() && imageInfo.isReadable()) {
-            _odmInputFiles.append(imageInfo.absoluteFilePath());
+            imageFiles.append(imageInfo.absoluteFilePath());
         } else {
             qCWarning(RouteMappingPhotoControllerLog)
             << "Skipping missing geotagged ODM input" << sequence << imagePath;
         }
     }
-    if (_odmInputFiles.size() < kMinimumOdmImageCount) {
+    if (imageFiles.size() < kMinimumOdmImageCount) {
         _failOdm(tr("Only %1 readable geotagged images remain; ODM requires at least %2.")
-                     .arg(_odmInputFiles.size())
+                     .arg(imageFiles.size())
                      .arg(kMinimumOdmImageCount));
         return false;
     }
-    _odmInputFiles.append(geoPath);
 
+    return _startOdmWithPreparedInputs(_sessionDirectory, imageFiles, geoPath);
+}
+
+bool RouteMappingPhotoController::startOdmFromDirectory(const QString &directoryPath)
+{
+    if (_orthophotoLoading) {
+        const QString errorMessage = tr(
+            "Wait for the selected orthomosaic to finish loading before starting ODM.");
+        emit odmError(errorMessage);
+        return false;
+    }
+    if (odmRunning()) {
+        const QString errorMessage = tr(
+            "An ODM reconstruction is already running. Wait for it to finish before starting another.");
+        emit odmError(errorMessage);
+        return false;
+    }
+    if (_sessionActive || _waitingForPiSession) {
+        const QString errorMessage = tr(
+            "Finish or cancel the active Route Mapping photo session before stitching a photos directory.");
+        emit odmError(errorMessage);
+        return false;
+    }
+
+    const QUrl suppliedUrl(directoryPath);
+    const QString localPath = suppliedUrl.isLocalFile() ? suppliedUrl.toLocalFile() : directoryPath;
+    const QString sessionDirectory = _resolveOdmSessionDirectory(localPath);
+    if (sessionDirectory.isEmpty()) {
+        const QString errorMessage = tr(
+            "Select a readable Route Mapping mission folder, its images folder, or a directory of geotagged JPEG photos.");
+        emit odmError(errorMessage);
+        return false;
+    }
+
+    QString geoPath;
+    QString collectError;
+    const QStringList imageFiles = _collectOdmImagesFromDirectory(
+        sessionDirectory, &geoPath, &collectError);
+    if (imageFiles.isEmpty()) {
+        emit odmError(collectError.isEmpty()
+                          ? tr("No usable JPEG photos were found in the selected directory.")
+                          : collectError);
+        return false;
+    }
+
+    qCInfo(RouteMappingPhotoControllerLog)
+        << "Starting ODM from photos directory" << sessionDirectory
+        << "images" << imageFiles.size()
+        << "geo.txt" << (geoPath.isEmpty() ? QStringLiteral("(none)") : geoPath);
+    return _startOdmWithPreparedInputs(sessionDirectory, imageFiles, geoPath);
+}
+
+QString RouteMappingPhotoController::_resolveOdmSessionDirectory(const QString &directoryPath) const
+{
+    const QFileInfo directoryInfo(directoryPath);
+    if (!directoryInfo.exists() || !directoryInfo.isDir()) {
+        return {};
+    }
+
+    QString sessionDirectory = directoryInfo.canonicalFilePath();
+    if (sessionDirectory.isEmpty()) {
+        sessionDirectory = directoryInfo.absoluteFilePath();
+    }
+
+    // Selecting Mission_*/images should still treat Mission_* as the session root
+    // so geo.txt and the downloaded orthophoto land next to the photos.
+    if (QFileInfo(sessionDirectory).fileName().compare(
+            QStringLiteral("images"), Qt::CaseInsensitive) == 0) {
+        sessionDirectory = QFileInfo(sessionDirectory).absolutePath();
+    }
+    return QDir::cleanPath(sessionDirectory);
+}
+
+QStringList RouteMappingPhotoController::_collectOdmImagesFromDirectory(
+    const QString &sessionDirectory,
+    QString *geoPathOut,
+    QString *errorMessageOut) const
+{
+    if (geoPathOut) {
+        geoPathOut->clear();
+    }
+    if (errorMessageOut) {
+        errorMessageOut->clear();
+    }
+
+    const QStringList nameFilters{
+        QStringLiteral("*.jpg"),
+        QStringLiteral("*.jpeg"),
+        QStringLiteral("*.JPG"),
+        QStringLiteral("*.JPEG"),
+    };
+
+    QDir imageDirectory(QDir(sessionDirectory).filePath(QStringLiteral("images")));
+    if (!imageDirectory.exists()) {
+        // Allow stitching a flat folder of geotagged JPEGs that is not a Mission_* layout.
+        imageDirectory.setPath(sessionDirectory);
+    }
+
+    QStringList imageFiles;
+    const QFileInfoList entries = imageDirectory.entryInfoList(
+        nameFilters, QDir::Files | QDir::Readable, QDir::Name);
+    for (const QFileInfo &entry : entries) {
+        imageFiles.append(entry.absoluteFilePath());
+    }
+
+    if (imageFiles.size() < kMinimumOdmImageCount) {
+        if (errorMessageOut) {
+            *errorMessageOut = tr(
+                                   "The selected directory has %1 readable JPEG photo(s); ODM requires at least %2.")
+                                   .arg(imageFiles.size())
+                                   .arg(kMinimumOdmImageCount);
+        }
+        return {};
+    }
+
+    const QString geoPath = QDir(sessionDirectory).filePath(QStringLiteral("geo.txt"));
+    if (QFileInfo::exists(geoPath) && geoPathOut) {
+        *geoPathOut = geoPath;
+    }
+    // geo.txt is preferred when present (Mission_* folders). Without it, NodeODM
+    // falls back to GPS EXIF written into each JPEG during capture.
+    return imageFiles;
+}
+
+bool RouteMappingPhotoController::_startOdmWithPreparedInputs(
+    const QString &sessionDirectory,
+    const QStringList &imageFiles,
+    const QString &geoPath)
+{
+    if (imageFiles.size() < kMinimumOdmImageCount) {
+        _failOdm(tr("Only %1 readable images remain; ODM requires at least %2.")
+                     .arg(imageFiles.size())
+                     .arg(kMinimumOdmImageCount));
+        return false;
+    }
+
+    _odmInputFiles = imageFiles;
+    if (!geoPath.isEmpty() && QFileInfo::exists(geoPath)) {
+        _odmInputFiles.append(geoPath);
+    }
+
+    const int imageCount = imageFiles.size();
     _odmErrorMessage.clear();
     _odmComplete = false;
     _orthophotoPath.clear();
     _orthophotoImportPending = false;
-    _odmSessionDirectory = _sessionDirectory;
+    _odmSessionDirectory = sessionDirectory;
     // Freeze the selected server for the complete task. Changing Application
     // Settings while a reconstruction is running must not send later polling
     // or download requests to a different NodeODM instance.
     _nodeOdmEndpoint = nodeOdmEndpointText();
+    if (_nodeOdmEndpoint.isEmpty()) {
+        _failOdm(tr(
+            "No NodeODM server is configured. Set Application Settings → "
+            "Route Mapping Reconstruction host (HTTPS), or QGC_NODEODM_URL."));
+        return false;
+    }
     _odmTaskUuid = QUuid::createUuid().toString(QUuid::WithoutBraces);
     _odmPollFailures = 0;
     _setOdmState(OdmState::Connecting, 0);
 
-    QNetworkRequest request{nodeOdmUrl(QStringLiteral("/info"), _nodeOdmEndpoint)};
+    QString urlError;
+    const QUrl infoUrl = nodeOdmUrl(QStringLiteral("/info"), _nodeOdmEndpoint, &urlError);
+    if (!infoUrl.isValid()) {
+        _failOdm(urlError.isEmpty() ? tr("Invalid NodeODM endpoint.") : urlError);
+        return false;
+    }
+    QNetworkRequest request{infoUrl};
+    applyNodeOdmAuth(request);
     request.setTransferTimeout(10000);
     QNetworkReply *reply = _nodeOdmNetworkManager->get(request);
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, imageCount]() {
         const QByteArray body = reply->readAll();
         const QString error = nodeOdmReplyError(reply, body);
         reply->deleteLater();
@@ -1051,17 +1266,19 @@ bool RouteMappingPhotoController::startOdm()
         const QJsonValue maxImagesValue = info.value(QStringLiteral("maxImages"));
         if (maxImagesValue.isDouble()
             && maxImagesValue.toInt() > 0
-            && _odmInputFiles.size() - 1 > maxImagesValue.toInt()) {
+            && imageCount > maxImagesValue.toInt()) {
             _failOdm(tr("NodeODM accepts at most %1 images, but this mission contains %2.")
                          .arg(maxImagesValue.toInt())
-                         .arg(_odmInputFiles.size() - 1));
+                         .arg(imageCount));
             return;
         }
         _beginNodeOdmUpload();
     });
 
     qCInfo(RouteMappingPhotoControllerLog)
-        << "Connecting to NodeODM for mission" << _odmSessionDirectory
+        << "Connecting to NodeODM at" << _nodeOdmEndpoint
+        << "for mission" << _odmSessionDirectory
+        << "images" << imageCount
         << "task" << _odmTaskUuid;
     return true;
 }
@@ -1161,14 +1378,19 @@ void RouteMappingPhotoController::_beginNodeOdmUpload()
     }
 
     QNetworkRequest request{nodeOdmUrl(QStringLiteral("/task/new"), _nodeOdmEndpoint)};
+    applyNodeOdmAuth(request);
     request.setRawHeader("set-uuid", _odmTaskUuid.toUtf8());
-    request.setTransferTimeout(0);
+    // Inactivity timeout: large uploads may take a long time, but a stalled
+    // connection must not leave the UI in Uploading forever.
+    request.setTransferTimeout(kNodeOdmTransferInactivityTimeoutMs);
+    _abortOdmNetworkReplies();
     QNetworkReply *reply = _nodeOdmNetworkManager->post(request, multiPart);
     multiPart->setParent(reply);
+    _odmUploadReply = reply;
 
     _setOdmState(OdmState::Uploading, 0);
-    connect(reply, &QNetworkReply::uploadProgress, this, [this](qint64 sent, qint64 total) {
-        if (total <= 0) {
+    connect(reply, &QNetworkReply::uploadProgress, this, [this, reply](qint64 sent, qint64 total) {
+        if (_odmUploadReply != reply || total <= 0) {
             return;
         }
         const int progress = qBound(0, static_cast<int>((sent * 100) / total), 100);
@@ -1177,11 +1399,22 @@ void RouteMappingPhotoController::_beginNodeOdmUpload()
         }
     });
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (_odmUploadReply == reply) {
+            _odmUploadReply = nullptr;
+        }
         const QByteArray body = reply->readAll();
         const QString error = nodeOdmReplyError(reply, body);
         reply->deleteLater();
+        if (_odmState != OdmState::Uploading) {
+            return;
+        }
         if (!error.isEmpty()) {
-            _failOdm(tr("NodeODM rejected the mission upload: %1").arg(error));
+            if (reply->error() == QNetworkReply::OperationCanceledError
+                || reply->error() == QNetworkReply::TimeoutError) {
+                _failOdm(tr("NodeODM upload timed out or was canceled: %1").arg(error));
+            } else {
+                _failOdm(tr("NodeODM rejected the mission upload: %1").arg(error));
+            }
             return;
         }
 
@@ -1210,16 +1443,31 @@ void RouteMappingPhotoController::_pollNodeOdmTask()
 
     QNetworkRequest request{nodeOdmUrl(
         QStringLiteral("/task/%1/info").arg(_odmTaskUuid), _nodeOdmEndpoint)};
-    request.setTransferTimeout(10000);
+    applyNodeOdmAuth(request);
+    request.setTransferTimeout(kNodeOdmPollRequestTimeoutMs);
     _odmPollReply = _nodeOdmNetworkManager->get(request);
     QNetworkReply *reply = _odmPollReply;
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
-        _odmPollReply = nullptr;
+        if (_odmPollReply == reply) {
+            _odmPollReply = nullptr;
+        }
         const QByteArray body = reply->readAll();
         const QString error = nodeOdmReplyError(reply, body);
         reply->deleteLater();
+        if (!odmRunning()
+            || _odmState == OdmState::Uploading
+            || _odmState == OdmState::Connecting
+            || _odmState == OdmState::Downloading) {
+            return;
+        }
         if (!error.isEmpty()) {
             ++_odmPollFailures;
+            if (_odmPollFailures >= kNodeOdmMaxConsecutivePollFailures) {
+                _failOdm(tr("NodeODM stayed unreachable after %1 status checks: %2")
+                             .arg(_odmPollFailures)
+                             .arg(error));
+                return;
+            }
             const QString reconnecting = tr("NodeODM unreachable; retrying (%1)").arg(_odmPollFailures);
             _setOdmState(_odmState, _odmProgress, reconnecting);
             return;
@@ -1266,12 +1514,12 @@ void RouteMappingPhotoController::_downloadNodeOdmOrthophoto()
     _odmDownloadPath = QDir(_odmSessionDirectory).filePath(
         QStringLiteral(".nodeodm-%1.zip.part").arg(_odmTaskUuid));
     QFile::remove(_odmDownloadPath);
+    _closeOdmDownloadFile();
 
     _odmDownloadFile = new QFile(_odmDownloadPath, this);
     if (!_odmDownloadFile->open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         const QString error = _odmDownloadFile->errorString();
-        _odmDownloadFile->deleteLater();
-        _odmDownloadFile = nullptr;
+        _closeOdmDownloadFile();
         _failOdm(tr("Could not create the temporary NodeODM result file: %1").arg(error));
         return;
     }
@@ -1279,15 +1527,25 @@ void RouteMappingPhotoController::_downloadNodeOdmOrthophoto()
     _setOdmState(OdmState::Downloading, 0);
     QNetworkRequest request{nodeOdmUrl(
         QStringLiteral("/task/%1/download/all.zip").arg(_odmTaskUuid), _nodeOdmEndpoint)};
-    request.setTransferTimeout(0);
+    applyNodeOdmAuth(request);
+    // Inactivity timeout — continuous progress resets it; a hung peer does not.
+    request.setTransferTimeout(kNodeOdmTransferInactivityTimeoutMs);
     QNetworkReply *reply = _nodeOdmNetworkManager->get(request);
+    _odmDownloadReply = reply;
     connect(reply, &QNetworkReply::readyRead, this, [this, reply]() {
-        if (_odmDownloadFile) {
-            _odmDownloadFile->write(reply->readAll());
+        if (_odmDownloadReply != reply) {
+            return;
+        }
+        const QByteArray chunk = reply->readAll();
+        if (!_writeOdmDownloadBytes(chunk)) {
+            const QString writeError = _odmDownloadFile
+                                          ? _odmDownloadFile->errorString()
+                                          : tr("unknown write error");
+            _failOdm(tr("Could not save the NodeODM download (disk full?): %1").arg(writeError));
         }
     });
-    connect(reply, &QNetworkReply::downloadProgress, this, [this](qint64 received, qint64 total) {
-        if (total <= 0) {
+    connect(reply, &QNetworkReply::downloadProgress, this, [this, reply](qint64 received, qint64 total) {
+        if (_odmDownloadReply != reply || total <= 0) {
             return;
         }
         const int progress = qBound(0, static_cast<int>((received * 100) / total), 100);
@@ -1296,38 +1554,138 @@ void RouteMappingPhotoController::_downloadNodeOdmOrthophoto()
         }
     });
     connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        if (_odmDownloadReply == reply) {
+            _odmDownloadReply = nullptr;
+        }
         _finishNodeOdmDownload(reply);
         reply->deleteLater();
     });
 }
 
+bool RouteMappingPhotoController::_writeOdmDownloadBytes(const QByteArray &bytes)
+{
+    if (bytes.isEmpty()) {
+        return true;
+    }
+    if (!_odmDownloadFile || !_odmDownloadFile->isOpen()) {
+        return false;
+    }
+    const qint64 written = _odmDownloadFile->write(bytes);
+    return written == bytes.size() && _odmDownloadFile->error() == QFileDevice::NoError;
+}
+
+void RouteMappingPhotoController::_closeOdmDownloadFile()
+{
+    if (!_odmDownloadFile) {
+        return;
+    }
+    if (_odmDownloadFile->isOpen()) {
+        _odmDownloadFile->flush();
+        _odmDownloadFile->close();
+    }
+    _odmDownloadFile->deleteLater();
+    _odmDownloadFile = nullptr;
+}
+
+void RouteMappingPhotoController::_abortOdmNetworkReplies()
+{
+    auto abortReply = [](QNetworkReply *&reply) {
+        if (!reply) {
+            return;
+        }
+        QNetworkReply *const active = reply;
+        reply = nullptr;
+        active->disconnect();
+        active->abort();
+        active->deleteLater();
+    };
+    abortReply(_odmPollReply);
+    abortReply(_odmUploadReply);
+    abortReply(_odmDownloadReply);
+    _closeOdmDownloadFile();
+}
+
 void RouteMappingPhotoController::_finishNodeOdmDownload(QNetworkReply *reply)
 {
+    if (_odmState != OdmState::Downloading) {
+        _closeOdmDownloadFile();
+        return;
+    }
+
     if (_odmDownloadFile) {
-        _odmDownloadFile->write(reply->readAll());
-        _odmDownloadFile->close();
-        _odmDownloadFile->deleteLater();
-        _odmDownloadFile = nullptr;
+        if (!_writeOdmDownloadBytes(reply->readAll())
+            || !_odmDownloadFile->flush()
+            || _odmDownloadFile->error() != QFileDevice::NoError) {
+            const QString writeError = _odmDownloadFile->errorString();
+            _closeOdmDownloadFile();
+            QFile::remove(_odmDownloadPath);
+            _failOdm(tr("Could not finalize the NodeODM download (disk full?): %1").arg(writeError));
+            return;
+        }
+        _closeOdmDownloadFile();
     }
 
     const QString error = nodeOdmReplyError(reply, {});
     if (!error.isEmpty()) {
         QFile::remove(_odmDownloadPath);
-        _failOdm(tr("Could not download the NodeODM orthomosaic: %1").arg(error));
+        if (reply->error() == QNetworkReply::OperationCanceledError
+            || reply->error() == QNetworkReply::TimeoutError) {
+            _failOdm(tr("NodeODM download timed out or was canceled: %1").arg(error));
+        } else {
+            _failOdm(tr("Could not download the NodeODM orthomosaic: %1").arg(error));
+        }
         return;
     }
 
+    const QString zipPath = _odmDownloadPath;
     const QString expectedOrthophoto = QDir(_odmSessionDirectory).filePath(
         QString::fromLatin1(kOrthophotoArchivePath));
-    if (!QGCZip::extractFile(
-            _odmDownloadPath,
-            QString::fromLatin1(kOrthophotoArchivePath),
-            expectedOrthophoto)) {
-        QFile::remove(_odmDownloadPath);
+    const QString memberPath = QString::fromLatin1(kOrthophotoArchivePath);
+
+    // Stream extract off the GUI thread — large GeoTIFFs can take minutes and the
+    // unzip pipe must be drained while the process runs to avoid deadlock.
+    _setOdmState(OdmState::Downloading, 100, tr("Extracting orthomosaic…"));
+    const QPointer<RouteMappingPhotoController> self(this);
+    (void)QtConcurrent::run([self, zipPath, expectedOrthophoto, memberPath]() {
+        const bool ok = QGCZip::extractFile(zipPath, memberPath, expectedOrthophoto);
+        if (!self) {
+            QFile::remove(zipPath);
+            QFile::remove(expectedOrthophoto);
+            return;
+        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, ok, expectedOrthophoto, zipPath]() {
+                if (!self) {
+                    QFile::remove(zipPath);
+                    QFile::remove(expectedOrthophoto);
+                    return;
+                }
+                self->_completeNodeOdmExtract(ok, expectedOrthophoto, zipPath);
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void RouteMappingPhotoController::_completeNodeOdmExtract(
+    bool success, const QString &expectedOrthophoto, const QString &zipPath)
+{
+    QFile::remove(zipPath);
+
+    if (!success) {
+        QFile::remove(expectedOrthophoto);
         _failOdm(tr("NodeODM completed, but its result did not contain the orthomosaic GeoTIFF."));
         return;
     }
-    QFile::remove(_odmDownloadPath);
+
+    // Guard against a successful extract that still produced an unreadable empty
+    // file (historically caused by QZipReader rejecting NodeODM ZIP version tags).
+    const QFileInfo orthophotoInfo(expectedOrthophoto);
+    if (!orthophotoInfo.isFile() || orthophotoInfo.size() <= 0) {
+        QFile::remove(expectedOrthophoto);
+        _failOdm(tr("NodeODM completed, but the downloaded orthomosaic GeoTIFF was empty."));
+        return;
+    }
 
     _orthophotoPath = expectedOrthophoto;
     _orthophotoImportPending = false;
@@ -1577,6 +1935,10 @@ void RouteMappingPhotoController::_setOdmState(
 void RouteMappingPhotoController::_failOdm(const QString &errorMessage)
 {
     _odmPollTimer.stop();
+    _abortOdmNetworkReplies();
+    if (!_odmDownloadPath.isEmpty()) {
+        QFile::remove(_odmDownloadPath);
+    }
     _odmErrorMessage = errorMessage;
     _setOdmState(OdmState::Failed, _odmProgress, errorMessage);
     qCWarning(RouteMappingPhotoControllerLog) << errorMessage;

@@ -60,6 +60,8 @@ private:
     int _mapId;
 
     void updateTexture();
+    void handleMapLoadFailed(const QString &errorMessage);
+    void cleanupTerrainTileLoader();
     void setTextureLoaded(bool laoded){_textureLoaded = laoded; emit textureLoadedChanged();}
     void mapTypeChangedEvent(void);
 

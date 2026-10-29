@@ -61,13 +61,10 @@ SettingsPage {
         switch (selfIDComboBox.currentIndex) {
         case 0:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDFree.shortDescription
-            break
         case 1:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDEmergency.shortDescription
-            break
         case 2:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDExtended.shortDescription
-            break
         default:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDFree.shortDescription
         }
@@ -78,13 +75,10 @@ SettingsPage {
         switch (selfIDComboBox.currentIndex) {
         case 0:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDFree
-            break
         case 1:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDEmergency
-            break
         case 2:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDExtended
-            break
         default:
             return QGroundControl.settingsManager.remoteIDSettings.selfIDFree
         }

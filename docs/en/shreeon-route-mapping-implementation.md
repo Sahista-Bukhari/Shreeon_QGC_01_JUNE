@@ -112,18 +112,20 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
    sudo bash install-on-pi.sh
    ```
 
-2. In `/etc/default/shreeon-route-mapping`, set `MANUAL_HOST=0.0.0.0` so GCS can send UDP to port **14551**.
-3. Verify:
+2. `install-on-pi.sh` binds UDP **14551** to `10.5.0.2` (+ localhost). Firewall rules allow only `127.0.0.1` and the WFB GCS address `10.5.0.1`.
+3. Verify locally while disarmed:
 
    ```bash
    systemctl status route-mapping-capture.service
-   printf 'VIDEO_PAUSE' | nc -u -w 5 127.0.0.1 14551
-   sleep 3
-   printf 'STATUS\n' | nc -u -w 2 127.0.0.1 14551
+   python3 - <<'PY'
+   import socket
+   pkt = b"STATUS"
+   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.settimeout(2)
+   s.sendto(pkt, ("127.0.0.1", 14551)); print(s.recvfrom(4096)[0].decode())
+   PY
    ```
 
-   Expected (current script): `OK session=/home/shreeon/mapping_photos/mission_…`  
-   Legacy Pi may reply bare `OK`; QGC falls back to `STATUS` (see §5).
+   Expected: `STATE LIVE session=NONE wfb=active mapping=stopped` (or `MAPPING` during a flight). Session ownership tokens are never returned.
 
 4. Take one disarmed test frame and inspect the entire image. The camera must
    point at nadir, with the lens below or outside the landing-gear silhouette.
@@ -152,7 +154,7 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
    SSH precheck + `VIDEO_PAUSE` + `STATUS` sequence.
 3. **QGC reconciles PX4 camera feedback with its ordered survey schedule**:
    - Immediately before a Route Mapping upload, QGC configures PX4 with **`TRIG_MODE=4`** (distance based, on command / Survey mode) and **`TRIG_INTERFACE=3`** (MAVLink). Upload is stopped with a clear message if the connected PX4 parameter set is not ready or does not expose both parameters. Non-PX4 vehicles are left unchanged.
-   - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define an ordered, per-leg schedule (`_routeMappingGcsTriggerSchedule`). High is **6 m** and Low is **9 m**.
+   - On plan upload, survey **`cameraShots`** (N) and the selected trigger distance define an ordered, per-leg schedule (`_routeMappingGcsTriggerSchedule`). **High Resolution** sets survey/takeoff altitude to **30 m**, photos every **6 m**, and pattern speed **5 m/s**. **Low Resolution** sets altitude to **60 m**, photos every **9 m**, and the same **5 m/s** pattern speed. Switching High/Low updates altitude, capture interval, and speed together.
    - Every transect starts with an immediate image, continues at the selected interval, and ends with an exit image. Turn connectors never schedule captures.
    - Native `CAMERA_TRIGGER` / `CAMERA_IMAGE_CAPTURED` feedback is accepted only after the first uploaded `MAV_CMD_DO_SET_CAM_TRIGG_DIST` start and through the final stop. The overall window intentionally includes turn commands because PX4 can advance its mission index before delayed endpoint feedback reaches QGC. Exact sequence IDs and coordinates de-duplicate the two feedback forms; elapsed time is never used to discard a valid endpoint exposure.
    - The ordered position scheduler stays active if native feedback pauses. It cannot run until PX4 has executed the first trigger-start command, so the takeoff-to-entry approach cannot consume survey positions. As the vehicle crosses each expected point it fires at most one `CAPTURE`, restricted to the next photo leg, its heading, corridor, and physical separation. This prevents both capture stoppage and catch-up bursts.
@@ -172,14 +174,18 @@ find "$HOME" -type f -path '*/RouteMapping/*/image_*.json' 2>/dev/null
 - **GCS photos:** `Photo/RouteMapping/Mission_*/images`, with `geo.txt`, JSON sidecars, `session_manifest.json`, and eventually `odm.log` in the mission root.
 - **Pi photos:** `/home/shreeon/mapping_photos/mission_*`.
 - Match shots by sequence number and timestamps in JSON sidecars.
-- Configure **Application Settings → General → Route Mapping Reconstruction** when stitching should run on a remote NodeODM server. Enter its reachable IP address/DNS hostname and TCP port; the default is the local endpoint `127.0.0.1:3000`. QGC retains the selected endpoint for the complete reconstruction request, including upload, status polling, and result download. `QGC_NODEODM_URL` remains an advanced deployment override when it is set in QGC's environment.
+- Configure **Application Settings → General → Route Mapping Reconstruction** when stitching should run on a remote NodeODM server. Enter a reachable host and HTTP port (no server is prefilled). Optional `QGC_NODEODM_TOKEN` is sent using NodeODM's standard `token` query parameter and also as a Bearer header for reverse-proxy deployments. `QGC_NODEODM_URL` can override the full base URL, including an HTTPS reverse-proxy URL.
 - When Fly View shows **Reconstruction: Ready**, click **Start ODM Stitching**. QGC submits the mission images and `geo.txt` to NodeODM, polls the task, then downloads and extracts `odm_orthophoto/odm_orthophoto.tif` under the same mission directory.
 
 ---
 
 ## 4. Pi UDP protocol (manual port 14551)
 
-Commands are plain UTF-8 text datagrams (newline optional).
+Commands are plain UTF-8 text datagrams (newline optional) carried inside the
+authenticated WFB-ng link. The service binds only to the WFB aircraft address
+and loopback; the installer firewall restricts the WFB-facing socket to the
+known GCS address. Session UUIDs provide ownership state and are never returned
+in replies.
 
 **Frozen `CAPTURE` ack (canonical — Pi daemon and `capture.sh` must match GCS parser):**
 
@@ -189,37 +195,17 @@ QUEUED seq=N path=/home/shreeon/mapping_photos/mission_…/image_NNNN_gcs_NNNN_<
 
 GCS also accepts **`QUEUED seq=N path=…` without `thumb=`** (infers `image_NNNN_thumb.jpg`) and **legacy bare path** `…/image_NNNN_gcs_NNNN_<timestamp>.jpg` (SSH/old `capture.sh`). Prefer the canonical line.
 
-**Smoke test before changing either side:**
-
-```bash
-printf 'VIDEO_PAUSE' | nc -u -w 5 10.5.0.2 14551
-printf 'CAPTURE 1\n' | nc -u -w 2 10.5.0.2 14551
-# Expect one line: QUEUED seq=1 path=… thumb=…
-```
-
 | Command | Pi action | Reply (current script) |
 |---------|-----------|-------------------------|
-| `VIDEO_PAUSE session=<uuid>` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release; repeated command reuses the owned session | `OK state=MAPPING session=/home/… token=<uuid>` |
-| `CAPTURE N` | Enqueue still (no `BUSY` drop); path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg thumb=/…/image_NNNN_thumb.jpg` |
+| `VIDEO_PAUSE session=<uuid>` | New `mission_*` dir, stop `wfb-camera`, ~2 s sensor release; repeated command reuses the owned session | `OK state=MAPPING session=/home/…` |
+| `CAPTURE N session=<uuid>` | Enqueue still after session ownership check; path fixed at queue time | `QUEUED seq=N path=/full/path/to/image_….jpg thumb=/…/image_NNNN_thumb.jpg` |
 | `KEEPALIVE session=<uuid>` | Refresh the Pi-side ownership lease | `OK state=MAPPING` |
-| `STATUS session=<uuid>` | Report authoritative camera/process state | `STATE LIVE/MAPPING/ERROR session=… token=… wfb=… mapping=…` |
-| `VIDEO_RESUME session=<uuid>` | Bounded capture drain, restore and verify WFB, then close the session | `OK state=LIVE wfb=active` or `ERROR …` |
-
-Commands without a token retain the legacy `SESSION …` / `OK session=…`
-format for mixed-version deployments. Only tokenized sessions receive watchdog
-lease recovery.
+| `STATUS session=<uuid> …auth…` | Report authoritative camera/process state (no token field) | `STATE LIVE/MAPPING/ERROR session=… wfb=… mapping=…` |
+| `VIDEO_RESUME session=<uuid> …auth…` | Bounded capture drain, restore and verify WFB, then close the session | `OK state=LIVE wfb=active` or `ERROR …` |
 
 Duplicate `CAPTURE N` in the same Pi session is **idempotent** (same path returned, no second file).
 
 The `<timestamp>` in `image_NNNN_gcs_NNNN_<timestamp>.jpg` is stamped when **`CAPTURE N` is accepted**. The Pi sidecar records `trigger_to_frame_seconds`, and journal logs report the same value for timing validation.
-
-GCS tests from the field laptop:
-
-```bash
-printf 'VIDEO_PAUSE' | nc -u -w 5 10.5.0.2 14551
-printf 'STATUS\n'    | nc -u -w 2 10.5.0.2 14551
-printf 'CAPTURE 1'   | nc -u -w 2 10.5.0.2 14551
-```
 
 ---
 

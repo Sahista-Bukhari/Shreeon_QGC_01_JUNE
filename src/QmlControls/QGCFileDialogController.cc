@@ -3,6 +3,7 @@
 #include "SettingsManager.h"
 #include "AppSettings.h"
 
+#include <QtConcurrent/QtConcurrentRun>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -10,6 +11,8 @@
 #include <QtCore/QJsonArray>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
+#include <QtCore/QMetaObject>
+#include <QtCore/QPointer>
 #include <QtCore/QProcess>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QUrl>
@@ -309,12 +312,14 @@ bool QGCFileDialogController::copyFile(const QString &sourcePath, const QString 
 QString QGCFileDialogController::resolveUserManualPdfPath()
 {
     const QString fileName = QStringLiteral("Agriculture drone.pdf");
+    const QString appDir = QCoreApplication::applicationDirPath();
     const QStringList candidates = {
-        QCoreApplication::applicationDirPath() + QStringLiteral("/UserManual/") + fileName,
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../UserManual/") + fileName,
-        QCoreApplication::applicationDirPath() + QStringLiteral("/../../UserManual/") + fileName,
+        appDir + QStringLiteral("/UserManual/") + fileName,
+        appDir + QStringLiteral("/../UserManual/") + fileName,
+        appDir + QStringLiteral("/../../UserManual/") + fileName,
+        // Source-tree relative path when running from a build directory.
+        appDir + QStringLiteral("/../../../UserManual/") + fileName,
         QDir::currentPath() + QStringLiteral("/UserManual/") + fileName,
-        QStringLiteral("/home/shreeon-technologies/shreeon_Tech_V1/Shreeon_QGC_01_JUNE/Shreeon_QGC_01_JUNE/UserManual/") + fileName,
     };
 
     for (const QString &candidate : candidates) {
@@ -332,66 +337,154 @@ QString QGCFileDialogController::resolveUserManualPdfPath()
     return QString();
 }
 
-QStringList QGCFileDialogController::renderPdfPages(const QString &pdfPath, int dpi)
+namespace {
+
+QString findPdftoppmExecutable()
+{
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QStringList bundledCandidates = {
+        appDir + QStringLiteral("/pdftoppm"),
+        appDir + QStringLiteral("/../libexec/pdftoppm"),
+    };
+    for (const QString &candidate : bundledCandidates) {
+        const QFileInfo info(candidate);
+        if (info.exists() && info.isFile() && info.isExecutable()) {
+            return info.absoluteFilePath();
+        }
+    }
+    return QStandardPaths::findExecutable(QStringLiteral("pdftoppm"));
+}
+
+/// Worker-thread PDF → PNG conversion. Safe to call off the GUI thread.
+QStringList renderPdfPagesWorker(const QString &pdfPath, int dpi, QString *errorMessageOut)
 {
     QStringList pageUrls;
+    if (errorMessageOut) {
+        errorMessageOut->clear();
+    }
     if (pdfPath.isEmpty()) {
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr("PDF path is empty.");
+        }
         return pageUrls;
     }
 
-    const QString cacheRoot = QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/UserManualPreview");
+    const QString cacheRoot =
+        QStandardPaths::writableLocation(QStandardPaths::CacheLocation)
+        + QStringLiteral("/UserManualPreview");
     QDir cacheDir(cacheRoot);
     if (cacheDir.exists()) {
         const QStringList oldFiles = cacheDir.entryList(QDir::Files);
         for (const QString &oldFile : oldFiles) {
             cacheDir.remove(oldFile);
         }
-    } else {
-        QDir().mkpath(cacheRoot);
+    } else if (!QDir().mkpath(cacheRoot)) {
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr("Could not create PDF preview cache.");
+        }
+        return pageUrls;
     }
 
     QString localPdfPath = normalizeResourcePath(pdfPath);
-    QString tempPdfPath;
-
     if (localPdfPath.startsWith(QStringLiteral(":/"))) {
-        tempPdfPath = cacheRoot + QStringLiteral("/manual.pdf");
+        const QString tempPdfPath = cacheRoot + QStringLiteral("/manual.pdf");
         QFile::remove(tempPdfPath);
         if (!QFile::copy(localPdfPath, tempPdfPath)) {
             qCWarning(QGCFileDialogControllerLog) << "Failed to extract PDF from resources" << localPdfPath;
+            if (errorMessageOut) {
+                *errorMessageOut = QObject::tr("Failed to extract the bundled user manual PDF.");
+            }
             return pageUrls;
         }
-        QFile::setPermissions(tempPdfPath, QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadUser | QFileDevice::WriteUser);
+        QFile::setPermissions(
+            tempPdfPath,
+            QFileDevice::ReadOwner | QFileDevice::WriteOwner | QFileDevice::ReadUser | QFileDevice::WriteUser);
         localPdfPath = tempPdfPath;
     }
 
     if (!QFile::exists(localPdfPath)) {
         qCWarning(QGCFileDialogControllerLog) << "PDF not found" << localPdfPath;
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr("User manual PDF not found.");
+        }
+        return pageUrls;
+    }
+
+    const QString pdftoppm = findPdftoppmExecutable();
+    if (pdftoppm.isEmpty()) {
+        qCWarning(QGCFileDialogControllerLog) << "pdftoppm not found";
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr(
+                "Unable to render PDF. Install poppler-utils (pdftoppm) or use an AppImage that bundles it.");
+        }
         return pageUrls;
     }
 
     const QString outputPrefix = cacheRoot + QStringLiteral("/page");
     QProcess process;
-    process.start(QStringLiteral("pdftoppm"), {
+    process.setProgram(pdftoppm);
+    process.setArguments({
         QStringLiteral("-png"),
         QStringLiteral("-r"),
         QString::number(qMax(72, dpi)),
         localPdfPath,
-        outputPrefix
+        outputPrefix,
     });
-
-    if (!process.waitForFinished(120000) || process.exitStatus() != QProcess::NormalExit || process.exitCode() != 0) {
-        qCWarning(QGCFileDialogControllerLog) << "pdftoppm failed"
-                                              << process.errorString()
-                                              << process.readAllStandardError();
+    process.start();
+    if (!process.waitForStarted(15000)) {
+        qCWarning(QGCFileDialogControllerLog) << "pdftoppm failed to start" << process.errorString();
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr("Failed to start pdftoppm: %1").arg(process.errorString());
+        }
         return pageUrls;
     }
 
-    const QStringList pages = cacheDir.entryList({ QStringLiteral("page*.png") }, QDir::Files, QDir::Name);
+    // Conversion can take a while for large manuals; this runs off the GUI thread.
+    if (!process.waitForFinished(180000)
+        || process.exitStatus() != QProcess::NormalExit
+        || process.exitCode() != 0) {
+        const QString stderrText = QString::fromLocal8Bit(process.readAllStandardError());
+        qCWarning(QGCFileDialogControllerLog) << "pdftoppm failed"
+                                              << process.errorString()
+                                              << stderrText;
+        if (errorMessageOut) {
+            *errorMessageOut = QObject::tr("PDF rendering failed.");
+        }
+        return pageUrls;
+    }
+
+    const QStringList pages = cacheDir.entryList({QStringLiteral("page*.png")}, QDir::Files, QDir::Name);
     for (const QString &page : pages) {
         pageUrls << QUrl::fromLocalFile(cacheDir.absoluteFilePath(page)).toString();
     }
-
+    if (pageUrls.isEmpty() && errorMessageOut) {
+        *errorMessageOut = QObject::tr("PDF rendering produced no pages.");
+    }
     return pageUrls;
+}
+
+} // namespace
+
+void QGCFileDialogController::renderPdfPagesAsync(const QString &pdfPath, int dpi)
+{
+    const int generation = ++_pdfRenderGeneration;
+    const QPointer<QGCFileDialogController> self(this);
+    (void)QtConcurrent::run([self, generation, pdfPath, dpi]() {
+        QString errorMessage;
+        const QStringList pages = renderPdfPagesWorker(pdfPath, dpi, &errorMessage);
+        if (!self) {
+            return;
+        }
+        QMetaObject::invokeMethod(
+            self.data(),
+            [self, generation, pages, errorMessage]() {
+                if (!self || generation != self->_pdfRenderGeneration) {
+                    return;
+                }
+                emit self->pdfPagesRendered(pages, errorMessage);
+            },
+            Qt::QueuedConnection);
+    });
 }
 
 QString QGCFileDialogController::fullyQualifiedFilename(const QString& directoryPath, const QString& filename, const QStringList& nameFilters)

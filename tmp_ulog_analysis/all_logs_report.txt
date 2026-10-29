@@ -1,0 +1,468 @@
+================================================================================
+LOG 387  log_387_2026-10-26-17-31-16.ulg
+  log: 387
+  t0: 114.662723
+  t1: 217.81372
+  dur: 103.150997
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 153.48899841308594
+  ground_local: 0.2484893798828125
+  alt_min: 0.2374420166015625
+  alt_max: 61.69673156738281
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 16
+  nav: [(114.7, 'AUTO_MISSION'), (157.0, 'AUTO_RTL'), (203.2, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(114.71178, 2)]
+  bat: (89.9217426776886, 77.92208790779114, 0, 16.429140090942383)
+  gcs_cmds: {401: 1, 176: 2, 400: 1}
+  fp: ['TRIG_DIST_9']
+  flags: []
+  outcome: OK_FLIGHT
+  msgs: ['114.7:[navigator] Executing Mission', '114.7:[navigator] Climb to 60.0 meters above home', '116.4:[commander] Takeoff detected', '157.0:[navigator] RTL: start return at 213 m (60 m above destination)', '169.9:[navigator] RTL: land at destination', '203.2:[commander] Pilot took over using sticks', '214.8:[commander] Landing detected']
+  mission_alts: [(2, 22, 0, 213.48899841308594), (2, 16, 1, 60.0), (3, 16, 1, 60.0), (0, 31, 0, 212.76318359375), (1, 16, 0, 212.76318359375), (7, 21, 0, 153.48899841308594)]
+================================================================================
+LOG 388  log_388_2026-10-26-17-33-36.ulg
+  log: 388
+  t0: 246.553329
+  t1: 357.036525
+  dur: 110.483196
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 155.45401000976562
+  ground_local: 1.0450592041015625
+  alt_min: 0.93695068359375
+  alt_max: 63.481170654296875
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 16
+  nav: [(246.6, 'AUTO_MISSION'), (290.9, 'AUTO_RTL'), (318.7, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(246.594157, 2)]
+  bat: (81.39813542366028, 75.19791722297668, 0, 16.11479949951172)
+  gcs_cmds: {176: 2, 400: 1}
+  fp: ['TRIG_DIST_9']
+  flags: []
+  outcome: OK_FLIGHT
+  msgs: ['246.6:[navigator] Executing Mission', '246.6:[navigator] Climb to 60.0 meters above home', '248.4:[commander] Takeoff detected', '290.9:[navigator] RTL: start return at 214 m (60 m above destination)', '303.2:[navigator] RTL: land at destination', '318.7:[commander] Pilot took over using sticks', '354.0:[commander] Landing detected']
+  mission_alts: [(3, 22, 0, 215.45401000976562), (3, 16, 1, 60.0), (1, 16, 0, 213.560546875), (7, 21, 0, 154.37083435058594)]
+================================================================================
+LOG 389  log_389_2026-10-26-17-36-26.ulg
+  log: 389
+  t0: 420.608499
+  t1: 527.668647
+  dur: 107.060148
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 154.37083435058594
+  ground_local: 0.46954345703125
+  alt_min: 0.4597930908203125
+  alt_max: 62.40348815917969
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 16
+  nav: [(420.6, 'AUTO_MISSION'), (461.7, 'AUTO_RTL'), (503.9, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(420.641256, 2)]
+  bat: (78.86689305305481, 70.04421353340149, 0, 16.02042007446289)
+  gcs_cmds: {176: 2, 400: 2}
+  fp: ['TRIG_DIST_9']
+  flags: []
+  outcome: OK_FLIGHT
+  msgs: ['420.6:[navigator] Executing Mission', '420.7:[navigator] Climb to 60.0 meters above home', '422.3:[commander] Takeoff detected', '461.7:[navigator] RTL: start return at 214 m (60 m above destination)', '474.4:[navigator] RTL: land at destination', '503.9:[commander] Pilot took over using sticks', '526.2:[commander] Landing detected']
+  mission_alts: [(3, 22, 0, 214.37083435058594), (3, 16, 1, 60.0), (0, 31, 0, 213.90899658203125), (1, 16, 0, 213.90899658203125), (7, 21, 0, 154.37083435058594)]
+================================================================================
+LOG 390  log_390_2026-10-26-17-39-00.ulg
+  log: 390
+  t0: 580.488965
+  t1: 681.403462
+  dur: 100.914497
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 148.9571075439453
+  ground_local: -4.092041015625
+  alt_min: -4.094390869140625
+  alt_max: 40.483001708984375
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 16
+  nav: [(580.5, 'AUTO_MISSION'), (622.7, 'AUTO_RTL'), (657.2, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(580.527287, 3)]
+  bat: (73.37344288825989, 62.0378315448761, 0, 15.823274612426758)
+  gcs_cmds: {176: 2, 400: 1, 521: 4}
+  fp: ['GCS_REQ_CAM_INFO', 'TRIG_DIST_9']
+  flags: ['GROUND_ALT_SKEW(-4.1m)']
+  outcome: ISSUE
+  msgs: ['580.5:[navigator] Executing Mission', '580.5:[navigator] Climb to 40.0 meters above home', '582.2:[commander] Takeoff detected', '622.8:[navigator] RTL: start return at 194 m (40 m above destination)', '637.2:[navigator] RTL: land at destination', '657.2:[commander] Pilot took over using sticks', '678.4:[commander] Landing detected']
+  mission_alts: [(0, 530, 0, None), (1, 178, 0, 0.0), (2, 22, 0, 188.9571075439453), (2, 16, 1, 40.0), (3, 16, 1, 40.0), (4, 16, 1, 40.0)]
+================================================================================
+LOG 391  log_391_2026-10-26-17-41-40.ulg
+  log: 391
+  t0: 763.395004
+  t1: 840.473553
+  dur: 77.078549
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 149.16586303710938
+  ground_local: -3.825408935546875
+  alt_min: -3.825408935546875
+  alt_max: 50.11669921875
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 17
+  nav: [(763.4, 'AUTO_MISSION'), (791.6, 'POSCTL')]
+  reset_gps: [787.694663]
+  bad_acc: [786.341077]
+  disc: [(np.float64(787.7), np.float32(9.6))]
+  z_resets: [(763.431926, 3), (787.734338, 4)]
+  bat: (66.26489758491516, 57.45781064033508, 0, 15.565094947814941)
+  gcs_cmds: {521: 1, 176: 1, 400: 1}
+  fp: ['GCS_REQ_CAM_INFO', 'TRIG_DIST_9']
+  flags: ['ALT_RESET/JUMP', 'BAD_ACC_VERT', 'GROUND_ALT_SKEW(-3.8m)']
+  outcome: ISSUE
+  msgs: ['763.4:[navigator] Executing Mission', '763.4:[navigator] Climb to 40.0 meters above home', '765.2:[commander] Takeoff detected', '791.6:[commander] Pilot took over using sticks', '837.5:[commander] Landing detected']
+  mission_alts: [(0, 530, 0, None), (1, 22, 0, 189.16586303710938), (1, 16, 1, 40.0), (3, 16, 1, 40.0)]
+================================================================================
+LOG 392  log_392_2026-10-26-17-42-58.ulg
+  log: 392
+  t0: 850.304265
+  t1: 918.888706
+  dur: 68.584441
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 149.16586303710938
+  ground_local: -3.6678619384765625
+  alt_min: -3.889251708984375
+  alt_max: 51.70240783691406
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 17
+  nav: [(850.3, 'AUTO_MISSION'), (881.2, 'POSCTL')]
+  reset_gps: [873.698317]
+  bad_acc: [873.111037]
+  disc: [(np.float64(873.7), np.float32(9.5)), (np.float64(875.3), np.float32(3.6)), (np.float64(884.9), np.float32(-19.8)), (np.float64(893.7), np.float32(-13.0))]
+  z_resets: [(850.341218, 4), (873.747858, 5), (875.340121, 6), (884.94361, 7), (893.741039, 8)]
+  bat: (59.452563524246216, 53.617554903030396, 0, 15.325830459594727)
+  gcs_cmds: {176: 1, 400: 1}
+  fp: ['TRIG_DIST_9']
+  flags: ['ALT_RESET/JUMP', 'BAD_ACC_VERT', 'GROUND_ALT_SKEW(-3.7m)']
+  outcome: ISSUE
+  msgs: ['850.3:[navigator] Executing Mission', '850.3:[navigator] Climb to 40.0 meters above home', '852.1:[commander] Takeoff detected', '881.2:[commander] Pilot took over using sticks', '915.9:[commander] Landing detected']
+  mission_alts: [(3, 22, 0, 189.16586303710938), (3, 16, 1, 40.0)]
+================================================================================
+LOG 393  log_393_2026-10-26-17-45-12.ulg
+  log: 393
+  t0: 987.328829
+  t1: 1052.050343
+  dur: 64.721514
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 149.16586303710938
+  ground_local: -4.0687255859375
+  alt_min: -4.0691986083984375
+  alt_max: 85.54037475585938
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 17
+  nav: [(987.3, 'AUTO_MISSION'), (1020.8, 'POSCTL')]
+  reset_gps: [1013.909479]
+  bad_acc: [1013.222609, 1020.507573, 1024.716907]
+  disc: [(np.float64(1014.0), np.float32(9.9)), (np.float64(1015.4), np.float32(5.1)), (np.float64(1017.0), np.float32(4.0)), (np.float64(1025.4), np.float32(4.7)), (np.float64(1027.2), np.float32(3.6))]
+  z_resets: [(987.367485, 8), (1013.968799, 9), (1015.372002, 10), (1016.974266, 11), (1025.373646, 12), (1027.174962, 13), (1038.967928, 14), (1044.769826, 15)]
+  bat: (57.91991353034973, 44.455841183662415, 0, 15.263235092163086)
+  gcs_cmds: {176: 1, 400: 1}
+  fp: ['TRIG_DIST_9']
+  flags: ['ALT_RESET/JUMP', 'BAD_ACC_VERT', 'GROUND_ALT_SKEW(-4.1m)']
+  outcome: ISSUE
+  msgs: ['987.3:[navigator] Executing Mission', '987.4:[navigator] Climb to 60.0 meters above home', '989.1:[commander] Takeoff detected', '1020.8:[commander] Pilot took over using sticks', '1043.9:[health_and_arming_checks] Battery 1 disconnected', '1043.9:[health_and_arming_checks] Critical battery', '1046.0:[health_and_arming_checks] Critical battery', '1049.1:[commander] Landing detected']
+  mission_alts: [(0, 530, 0, None), (1, 22, 0, 209.16586303710938), (1, 16, 1, 60.0), (3, 16, 1, 60.0)]
+================================================================================
+LOG 394  log_394_2026-10-26-17-50-42.ulg
+  log: 394
+  t0: 1193.314317
+  t1: 1382.290895
+  dur: 188.976578
+  ref_ts: 27.683506
+  ref_alt: 153.06597900390625
+  home: 148.8460235595703
+  ground_local: -3.9603118896484375
+  alt_min: -3.9603118896484375
+  alt_max: 98.17021179199219
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 16
+  nav: [(1193.3, 'AUTO_MISSION'), (1227.2, 'POSCTL'), (1310.6, 'AUTO_MISSION'), (1330.3, 'AUTO_RTL'), (1373.2, 'POSCTL')]
+  reset_gps: [1219.913524]
+  bad_acc: []
+  disc: [(np.float64(1220.0), np.float32(32.4)), (np.float64(1226.4), np.float32(24.6)), (np.float64(1233.8), np.float32(14.6))]
+  z_resets: [(1193.351652, 15), (1219.953046, 16), (1226.352348, 17), (1233.756471, 18)]
+  bat: (55.138903856277466, 35.917118191719055, 0, 15.164759635925293)
+  gcs_cmds: {401: 1, 176: 4, 400: 1}
+  fp: ['TRIG_DIST_9']
+  flags: ['ALT_RESET/JUMP', 'GROUND_ALT_SKEW(-4.0m)']
+  outcome: ISSUE
+  msgs: ['1193.3:[navigator] Executing Mission', '1193.4:[navigator] Climb to 40.0 meters above home', '1195.1:[commander] Takeoff detected', '1227.2:[commander] Pilot took over using sticks', '1310.6:[navigator] Executing Mission', '1310.6:[navigator] Climb to 40.0 meters above home', '1330.3:[navigator] RTL: start return at 189 m (40 m above destination)', '1342.4:[navigator] RTL: land at destination', '1373.2:[commander] Pilot took over using sticks', '1379.3:[commander] Landing detected']
+  mission_alts: [(0, 530, 0, None), (2, 22, 0, 188.8460235595703), (2, 16, 1, 40.0), (2, 31, 0, 188.8460235595703), (2, 16, 1, 40.0), (3, 16, 1, 40.0)]
+================================================================================
+LOG 395  log_395_2026-10-26-17-52-56.ulg
+  log: 395
+  t0: 39.391874
+  t1: 121.272227
+  dur: 81.880353
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 153.46871948242188
+  ground_local: -0.005157470703125
+  alt_min: -0.0066070556640625
+  alt_max: 41.1507568359375
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 16
+  nav: [(39.4, 'AUTO_MISSION'), (77.1, 'AUTO_RTL'), (120.3, 'AUTO_MISSION')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(39.44509, 2)]
+  bat: (41.30776226520538, 29.678252339363098, 0, 14.680769920349121)
+  gcs_cmds: {176: 2, 400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: []
+  outcome: OK_FLIGHT
+  msgs: ['39.4:[navigator] Executing Mission', '39.4:[navigator] Climb to 40.0 meters above home', '41.2:[commander] Takeoff detected', '77.1:[navigator] RTL: start return at 193 m (40 m above destination)', '94.7:[navigator] RTL: land at destination', '118.3:[commander] Landing detected']
+  mission_alts: [(6, 22, 0, 193.46871948242188), (6, 16, 1, 40.0), (1, 16, 0, 192.71026611328125), (7, 21, 0, 153.46871948242188), (8, 0, 0, 153.46871948242188)]
+================================================================================
+LOG 396  log_396_2026-10-26-17-56-12.ulg
+  log: 396
+  t0: 214.153892
+  t1: 317.59928
+  dur: 103.445388
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 153.46871948242188
+  ground_local: -0.4790802001953125
+  alt_min: -6.2516021728515625
+  alt_max: 54.04869079589844
+  climb: [navigator] Climb to 40.0 meters above home
+  seq_total: 17
+  nav: [(214.1, 'AUTO_MISSION'), (256.1, '12'), (257.3, 'AUTO_MISSION'), (266.6, 'AUTO_RTL'), (316.6, 'AUTO_MISSION')]
+  reset_gps: []
+  bad_acc: [235.403641]
+  disc: [(np.float64(236.1), np.float32(13.0)), (np.float64(250.1), np.float32(-29.6))]
+  z_resets: [(214.196359, 2), (236.090189, 3), (250.092498, 4)]
+  bat: (36.69946491718292, 23.594526946544647, 0, 14.5029296875)
+  gcs_cmds: {521: 5, 400: 1, 176: 1}
+  fp: ['GCS_REQ_CAM_INFO', 'TRIG_DIST_6']
+  flags: ['ALT_RESET/JUMP', 'BAD_ACC_VERT', 'FAILSAFE/CRASH']
+  outcome: ISSUE
+  msgs: ['214.2:[navigator] Executing Mission', '214.2:[navigator] Climb to 40.0 meters above home', '215.8:[commander] Takeoff detected', '256.0:[mc_pos_control] invalid setpoints', '256.0:[mc_pos_control] Failsafe: blind land', '256.1:[failsafe] Failsafe activated', '257.3:[navigator] Executing Mission', '257.3:[navigator] Climb to 40.0 meters above home', '266.6:[navigator] RTL: start return at 190 m (36 m above destination)', '273.5:[navigator] RTL: land at destination', '314.6:[commander] Landing detected']
+  mission_alts: [(0, 530, 0, None), (1, 22, 0, 193.46871948242188), (1, 16, 1, 40.0), (3, 16, 1, 40.0), (3, 31, 0, 193.46871948242188), (1, 16, 0, 189.24546813964844)]
+================================================================================
+LOG 397  log_397_2026-10-26-17-57-04.ulg
+  log: 397
+  t0: 357.129254
+  t1: 369.143289
+  dur: 12.014035
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 148.9658966064453
+  ground_local: -4.509368896484375
+  alt_min: -4.519012451171875
+  alt_max: -4.4980316162109375
+  climb: None
+  seq_total: None
+  nav: [(357.1, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(357.171928, 4)]
+  bat: (28.440001606941223, 28.440001606941223, 0, 14.203800201416016)
+  gcs_cmds: {176: 1, 400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: ['GROUND_ALT_SKEW(-4.5m)']
+  outcome: ISSUE
+  msgs: []
+  mission_alts: []
+================================================================================
+LOG 398  log_398_2026-10-26-17-57-30.ulg
+  log: 398
+  t0: 383.253258
+  t1: 395.266404
+  dur: 12.013146
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 149.19683837890625
+  ground_local: -4.27862548828125
+  alt_min: -4.3090972900390625
+  alt_max: -4.27862548828125
+  climb: None
+  seq_total: None
+  nav: [(383.2, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(383.314862, 4)]
+  bat: (29.389098286628723, 29.389098286628723, 0, 14.238120079040527)
+  gcs_cmds: {400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: ['GROUND_ALT_SKEW(-4.3m)']
+  outcome: ISSUE
+  msgs: []
+  mission_alts: []
+================================================================================
+LOG 399  log_399_2026-10-26-17-59-08.ulg
+  log: 399
+  t0: 484.343591
+  t1: 494.452347
+  dur: 10.108756
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 148.93875122070312
+  ground_local: -4.53704833984375
+  alt_min: -4.564910888671875
+  alt_max: -4.53704833984375
+  climb: None
+  seq_total: None
+  nav: [(484.3, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(484.384913, 4)]
+  bat: (30.701187252998352, 30.701187252998352, 0, 14.281604766845703)
+  gcs_cmds: {241: 2, 401: 1, 400: 2}
+  fp: ['TRIG_DIST_6']
+  flags: ['GROUND_ALT_SKEW(-4.5m)']
+  outcome: ISSUE
+  msgs: []
+  mission_alts: []
+================================================================================
+LOG 400  log_400_2026-10-26-18-00-00.ulg
+  log: 400
+  t0: 536.823311
+  t1: 545.02879
+  dur: 8.205479
+  ref_ts: 31.413724
+  ref_alt: 153.47523498535156
+  home: 149.05287170410156
+  ground_local: -4.421966552734375
+  alt_min: -4.430206298828125
+  alt_max: -4.396881103515625
+  climb: None
+  seq_total: None
+  nav: [(536.8, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(536.860752, 4)]
+  bat: (30.92816174030304, 30.909135937690735, 0, 14.29662036895752)
+  gcs_cmds: {400: 2}
+  fp: ['TRIG_DIST_6']
+  flags: ['GROUND_ALT_SKEW(-4.4m)']
+  outcome: ISSUE
+  msgs: []
+  mission_alts: []
+================================================================================
+LOG 401  log_401_2026-10-26-18-05-30.ulg
+  log: 401
+  t0: 43.982513
+  t1: 83.357826
+  dur: 39.375313
+  ref_ts: 31.33851
+  ref_alt: 154.19992065429688
+  home: 153.88052368164062
+  ground_local: -0.32147216796875
+  alt_min: -0.3883209228515625
+  alt_max: 2.39862060546875
+  climb: None
+  seq_total: 0
+  nav: [(44.0, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(44.027798, 2)]
+  bat: (30.801966786384583, 22.713594138622284, 0, 14.295060157775879)
+  gcs_cmds: {401: 1, 176: 1, 400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: []
+  outcome: GROUND/SHORT
+  msgs: ['46.8:[commander] Takeoff detected', '80.4:[commander] Landing detected']
+  mission_alts: []
+================================================================================
+LOG 402  log_402_2026-10-26-18-16-28.ulg
+  log: 402
+  t0: 73.357018
+  t1: 175.862874
+  dur: 102.505856
+  ref_ts: 27.663392
+  ref_alt: 154.4918975830078
+  home: 154.7058868408203
+  ground_local: 0.032928466796875
+  alt_min: 0.032928466796875
+  alt_max: 61.07952880859375
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 23
+  nav: [(73.3, 'AUTO_MISSION'), (108.0, 'AUTO_RTL'), (124.3, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(73.403616, 2)]
+  bat: (27.37880051136017, 13.448457419872284, 1, 14.175914764404297)
+  gcs_cmds: {521: 5, 176: 2, 400: 1}
+  fp: ['GCS_REQ_CAM_INFO', 'TRIG_DIST_6']
+  flags: ['BAT_LOW']
+  outcome: OK_FLIGHT
+  msgs: ['73.4:[navigator] Executing Mission', '73.4:[navigator] Climb to 60.0 meters above home', '75.2:[commander] Takeoff detected', '108.0:[navigator] RTL: start return at 216 m (61 m above destination)', '115.2:[navigator] RTL: land at destination', '124.3:[commander] Pilot took over using sticks', '144.0:[health_and_arming_checks] Low battery', '172.9:[commander] Landing detected']
+  mission_alts: [(1, 22, 0, 214.7058868408203), (1, 16, 1, 60.0), (3, 16, 1, 60.0), (0, 31, 0, 215.56727600097656), (1, 16, 0, 215.56727600097656), (7, 21, 0, 154.7058868408203)]
+================================================================================
+LOG 403  log_403_2026-10-26-18-19-42.ulg
+  log: 403
+  t0: 290.314573
+  t1: 369.702414
+  dur: 79.387841
+  ref_ts: 27.663392
+  ref_alt: 154.4918975830078
+  home: 149.57257080078125
+  ground_local: -4.5011444091796875
+  alt_min: -4.5011444091796875
+  alt_max: 24.025863647460938
+  climb: [navigator] Climb to 15.0 meters above home
+  seq_total: 11
+  nav: [(290.3, 'AUTO_MISSION'), (323.5, 'AUTO_RTL'), (349.2, 'POSCTL')]
+  reset_gps: []
+  bad_acc: []
+  disc: []
+  z_resets: [(290.352542, 2)]
+  bat: (19.423536956310272, 7.880048453807831, 1, 13.878734588623047)
+  gcs_cmds: {176: 2, 400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: ['BAT_LOW', 'GROUND_ALT_SKEW(-4.5m)']
+  outcome: ISSUE
+  msgs: ['290.4:[navigator] Executing Mission', '290.4:[navigator] Climb to 15.0 meters above home', '291.9:[commander] Takeoff detected', '312.5:[health_and_arming_checks] Low battery', '323.5:[navigator] RTL: start return at 179 m (30 m above destination)', '339.8:[navigator] RTL: land at destination', '349.2:[commander] Pilot took over using sticks', '366.7:[commander] Landing detected', '368.7:[health_and_arming_checks] Low battery']
+  mission_alts: [(1, 22, 0, 164.57257080078125), (1, 16, 1, 15.0), (3, 16, 1, 15.0), (4, 16, 1, 15.0), (6, 16, 1, 15.0), (0, 31, 0, 178.54380798339844)]
+================================================================================
+LOG 404  log_404_2026-10-26-18-22-12.ulg
+  log: 404
+  t0: 431.507774
+  t1: 519.798172
+  dur: 88.290398
+  ref_ts: 27.663392
+  ref_alt: 154.4918975830078
+  home: 150.11997985839844
+  ground_local: -4.201019287109375
+  alt_min: -27.06488037109375
+  alt_max: 63.303070068359375
+  climb: [navigator] Climb to 60.0 meters above home
+  seq_total: 11
+  nav: [(431.5, 'AUTO_MISSION'), (472.7, 'AUTO_RTL'), (490.4, 'POSCTL'), (508.2, 'ALTCTL'), (509.5, 'POSCTL')]
+  reset_gps: [462.461656, 500.46659]
+  bad_acc: [461.436303, 487.937396, 492.266549]
+  disc: [(np.float64(462.6), np.float32(7.7)), (np.float64(473.5), np.float32(-20.1)), (np.float64(500.5), np.float32(-59.5)), (np.float64(508.7), np.float32(-24.8))]
+  z_resets: [(431.54153, 2), (462.550867, 3), (473.547348, 4), (500.546035, 5), (508.745987, 6)]
+  bat: (13.314966857433319, 0.0, 3, 13.662870407104492)
+  gcs_cmds: {176: 2, 400: 1}
+  fp: ['TRIG_DIST_6']
+  flags: ['ALT_RESET/JUMP', 'BAD_ACC_VERT', 'BAT_CRIT+', 'FAILSAFE/CRASH', 'GROUND_ALT_SKEW(-4.2m)']
+  outcome: ISSUE
+  msgs: ['431.5:[navigator] Climb to 60.0 meters above home', '431.6:[health_and_arming_checks] Low battery', '433.4:[commander] Takeoff detected', '453.7:[health_and_arming_checks] Critical battery', '462.3:[health_and_arming_checks] Emergency battery level', '472.7:[navigator] RTL: start return at 210 m (60 m above destination)', '490.4:[commander] Pilot took over using sticks', '501.1:[health_and_arming_checks] Battery 1 disconnected', '501.1:[health_and_arming_checks] Emergency battery level', '504.8:[health_and_arming_checks] Emergency battery level', '506.9:[health_and_arming_checks] Battery 1 disconnected', '506.9:[health_and_arming_checks] Emergency battery level']
+  mission_alts: [(1, 22, 0, 210.11997985839844), (1, 16, 1, 60.0), (0, 31, 0, 209.9541015625), (1, 16, 0, 209.9541015625)]

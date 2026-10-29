@@ -15,11 +15,15 @@
 #include "Fact.h"
 #include "QGCLoggingCategory.h"
 
+#include <QtCore/QCryptographicHash>
 #include <QtCore/QDir>
+#include <QtCore/QFile>
+#include <QtCore/QFileInfo>
 #include <QtCore/QStandardPaths>
 #include <QtCore/QJsonDocument>
 #include <QtCore/QJsonObject>
 #include <QtCore/QJsonArray>
+#include <QtCore/QUrl>
 
 struct FirmwareToUrlElement_t {
     FirmwareUpgradeController::AutoPilotStackType_t     stackType;
@@ -303,7 +307,7 @@ QHash<FirmwareUpgradeController::FirmwareIdentifier, QString>* FirmwareUpgradeCo
     switch (boardId) {
     case Bootloader::boardIDSiKRadio1000:
     {
-        FirmwareToUrlElement_t element = { SiKRadio, StableFirmware, DefaultVehicleFirmware, "http://px4-travis.s3.amazonaws.com/SiK/stable/radio~hm_trp.ihx" };
+        FirmwareToUrlElement_t element = { SiKRadio, StableFirmware, DefaultVehicleFirmware, "https://px4-travis.s3.amazonaws.com/SiK/stable/radio~hm_trp.ihx" };
         _rgFirmwareDynamic.insert(FirmwareIdentifier(element.stackType, element.firmwareType, element.vehicleType), element.url);
     }
         break;
@@ -315,7 +319,7 @@ QHash<FirmwareUpgradeController::FirmwareIdentifier, QString>* FirmwareUpgradeCo
         break;
     default:
         if (px4_board_name_map.contains(boardId)) {
-            const QString px4Url{"http://px4-travis.s3.amazonaws.com/Firmware/%1/%2.px4"};
+            const QString px4Url{"https://px4-travis.s3.amazonaws.com/Firmware/%1/%2.px4"};
 
             _rgFirmwareDynamic.insert(FirmwareIdentifier(AutoPilotStackPX4, StableFirmware,    DefaultVehicleFirmware), px4Url.arg("stable").arg(px4_board_name_map.value(boardId)));
             _rgFirmwareDynamic.insert(FirmwareIdentifier(AutoPilotStackPX4, BetaFirmware,      DefaultVehicleFirmware), px4Url.arg("beta").arg(px4_board_name_map.value(boardId)));
@@ -354,13 +358,27 @@ void FirmwareUpgradeController::_downloadFirmware(void)
 {
     Q_ASSERT(!_firmwareFilename.isEmpty());
 
+    // Local files are allowed for custom firmware. Remote firmware must be HTTPS.
+    const QUrl firmwareUrl(_firmwareFilename);
+    if (!firmwareUrl.isLocalFile()
+        && !_firmwareFilename.startsWith(QStringLiteral("file:"), Qt::CaseInsensitive)
+        && !QFileInfo::exists(_firmwareFilename)) {
+        if (!firmwareUrl.isValid() || firmwareUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) != 0) {
+            _errorCancel(tr("Refusing firmware download over insecure URL (HTTPS required): %1").arg(_firmwareFilename));
+            return;
+        }
+    }
+
     _appendStatusLog(tr("Downloading firmware..."));
     _appendStatusLog(tr(" From: %1").arg(_firmwareFilename));
 
     QGCFileDownload* downloader = new QGCFileDownload(this);
     connect(downloader, &QGCFileDownload::downloadComplete, this, &FirmwareUpgradeController::_firmwareDownloadComplete);
     connect(downloader, &QGCFileDownload::downloadProgress, this, &FirmwareUpgradeController::_firmwareDownloadProgress);
-    downloader->download(_firmwareFilename);
+    if (!downloader->download(_firmwareFilename)) {
+        downloader->deleteLater();
+        _errorCancel(tr("Unable to start firmware download: %1").arg(_firmwareFilename));
+    }
 }
 
 /// @brief Updates the progress indicator while downloading
@@ -372,34 +390,135 @@ void FirmwareUpgradeController::_firmwareDownloadProgress(qint64 curr, qint64 to
     }
 }
 
-/// @brief Called when the firmware download completes.
-void FirmwareUpgradeController::_firmwareDownloadComplete(QString /*remoteFile*/, QString localFile, QString errorMsg)
+bool FirmwareUpgradeController::_verifyFirmwareIntegrity(
+    const QString &remoteFile, const QString &localFile, QGCFileDownload *downloader, QString *errorMessage)
 {
+    // Pinned publisher digests for rarely changing SiK radio images (MD5 / S3 ETag).
+    static const QHash<QString, QString> pinnedMd5ByUrl{
+        {QStringLiteral("https://px4-travis.s3.amazonaws.com/SiK/stable/radio~hm_trp.ihx"),
+         QStringLiteral("d1a58c57bf18e163bcdb90bf7dbd1de7")},
+    };
+
+    QFile file(localFile);
+    if (!file.open(QIODevice::ReadOnly)) {
+        if (errorMessage) {
+            *errorMessage = tr("Could not open firmware for integrity check: %1").arg(file.errorString());
+        }
+        return false;
+    }
+
+    QCryptographicHash md5(QCryptographicHash::Md5);
+    QCryptographicHash sha256(QCryptographicHash::Sha256);
+    while (!file.atEnd()) {
+        const QByteArray chunk = file.read(64 * 1024);
+        if (chunk.isEmpty() && file.error() != QFile::NoError) {
+            if (errorMessage) {
+                *errorMessage = tr("Could not read firmware for integrity check: %1")
+                                    .arg(file.errorString());
+            }
+            return false;
+        }
+        md5.addData(chunk);
+        sha256.addData(chunk);
+    }
+    file.close();
+
+    const QString actualMd5 = QString::fromLatin1(md5.result().toHex());
+    const QString actualSha256 = QString::fromLatin1(sha256.result().toHex());
+    _appendStatusLog(tr("Firmware SHA-256: %1").arg(actualSha256));
+
+    const QUrl sourceUrl(remoteFile);
+    const bool localFirmware = sourceUrl.isLocalFile()
+                               || sourceUrl.scheme().isEmpty()
+                               || QFileInfo::exists(remoteFile);
+    if (localFirmware) {
+        // A local custom image is an explicit operator selection. There is no
+        // remote publisher metadata to compare, so retain the SHA-256 in the
+        // status log for traceability and allow FirmwareImage to validate its
+        // board metadata before flashing.
+        _appendStatusLog(tr("Local firmware selected by operator; recorded SHA-256"));
+        return true;
+    }
+
+    const QString pinnedMd5 = pinnedMd5ByUrl.value(remoteFile);
+    if (!pinnedMd5.isEmpty()) {
+        if (actualMd5.compare(pinnedMd5, Qt::CaseInsensitive) != 0) {
+            if (errorMessage) {
+                *errorMessage = tr("Firmware failed pinned hash verification");
+            }
+            return false;
+        }
+        _appendStatusLog(tr("Pinned firmware hash verified"));
+        return true;
+    }
+
+    const QString serverMd5 = downloader ? downloader->serverContentMd5() : QString();
+    if (!serverMd5.isEmpty()) {
+        if (actualMd5.compare(serverMd5, Qt::CaseInsensitive) != 0) {
+            if (errorMessage) {
+                *errorMessage = tr("Firmware failed HTTPS origin hash verification");
+            }
+            return false;
+        }
+        _appendStatusLog(tr("Origin content hash verified"));
+        return true;
+    }
+
+    // The official ArduPilot manifest currently supplies HTTPS URLs but no
+    // digest, and its server uses non-MD5 ETags. Preserve compatibility while
+    // still requiring authenticated HTTPS transport and recording the exact
+    // downloaded SHA-256 above. Pinned hashes remain mandatory when configured.
+    if (sourceUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0) {
+        _appendStatusLog(tr(
+            "WARNING: Publisher hash unavailable; firmware authenticated by HTTPS transport only"));
+        return true;
+    }
+
+    if (errorMessage) {
+        *errorMessage = tr("Firmware source is neither a local file nor an authenticated HTTPS URL");
+    }
+    return false;
+}
+
+/// @brief Called when the firmware download completes.
+void FirmwareUpgradeController::_firmwareDownloadComplete(QString remoteFile, QString localFile, QString errorMsg)
+{
+    auto *downloader = qobject_cast<QGCFileDownload*>(sender());
+    if (downloader) {
+        downloader->deleteLater();
+    }
+
     if (errorMsg.isEmpty()) {
-    _appendStatusLog(tr("Download complete"));
+        _appendStatusLog(tr("Download complete"));
 
-    FirmwareImage* image = new FirmwareImage(this);
+        QString integrityError;
+        if (!_verifyFirmwareIntegrity(remoteFile, localFile, downloader, &integrityError)) {
+            _errorCancel(integrityError);
+            return;
+        }
 
-    connect(image, &FirmwareImage::statusMessage, this, &FirmwareUpgradeController::_status);
-    connect(image, &FirmwareImage::errorMessage, this, &FirmwareUpgradeController::_error);
+        FirmwareImage* image = new FirmwareImage(this);
 
-    if (!image->load(localFile, _bootloaderBoardID)) {
-        _errorCancel(tr("Image load failed"));
-        return;
-    }
+        connect(image, &FirmwareImage::statusMessage, this, &FirmwareUpgradeController::_status);
+        connect(image, &FirmwareImage::errorMessage, this, &FirmwareUpgradeController::_error);
 
-    // We can't proceed unless we have the bootloader
-    if (!_bootloaderFound) {
-        _errorCancel(tr("Bootloader not found"));
-        return;
-    }
+        if (!image->load(localFile, _bootloaderBoardID)) {
+            _errorCancel(tr("Image load failed"));
+            return;
+        }
 
-    if (_bootloaderBoardFlashSize != 0 && image->imageSize() > _bootloaderBoardFlashSize) {
-        _errorCancel(tr("Image size of %1 is too large for board flash size %2").arg(image->imageSize()).arg(_bootloaderBoardFlashSize));
-        return;
-    }
+        // We can't proceed unless we have the bootloader
+        if (!_bootloaderFound) {
+            _errorCancel(tr("Bootloader not found"));
+            return;
+        }
 
-    _threadController->flash(image);
+        if (_bootloaderBoardFlashSize != 0 && image->imageSize() > _bootloaderBoardFlashSize) {
+            _errorCancel(tr("Image size of %1 is too large for board flash size %2").arg(image->imageSize()).arg(_bootloaderBoardFlashSize));
+            return;
+        }
+
+        _threadController->flash(image);
     } else {
         _errorCancel(errorMsg);
     }
@@ -690,8 +809,13 @@ void FirmwareUpgradeController::_ardupilotManifestDownloadComplete(QString remot
                 firmwareInfo.firmwareBuildType =    firmwareBuildType;
                 firmwareInfo.vehicleType =          firmwareVehicleType;
                 firmwareInfo.url =                  firmwareJson[_manifestUrlJsonKey].toString();
+                // Manifest historically lists http:// URLs; require HTTPS at flash time.
+                if (firmwareInfo.url.startsWith(QStringLiteral("http://"), Qt::CaseInsensitive)) {
+                    firmwareInfo.url.replace(0, 4, QStringLiteral("https"));
+                }
                 firmwareInfo.version =              firmwareJson[_manifestMavFirmwareVersionJsonKey].toString();
-                firmwareInfo.chibios =              format == QStringLiteral("apj");                firmwareInfo.fmuv2 =                platform.contains(QStringLiteral("fmuv2"));
+                firmwareInfo.chibios =              format == QStringLiteral("apj");
+                firmwareInfo.fmuv2 =                platform.contains(QStringLiteral("fmuv2"));
 
                 QJsonArray bootloaderArray = firmwareJson[_manifestBootloaderStrJsonKey].toArray();
                 for (int j=0; j<bootloaderArray.count(); j++) {

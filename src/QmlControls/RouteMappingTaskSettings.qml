@@ -23,6 +23,13 @@ Rectangle {
     property int routeMode:   0   // 0 = Area Route, 1 = Boundary Route
     property int resolution: -1   // -1 = Custom/unselected, 0 = Low, 1 = High
     readonly property bool _resolutionPresetSelected: resolution === 0 || resolution === 1
+    // High Resolution flies lower for denser GSD; Low Resolution flies higher.
+    // Both presets share the same pattern flight speed.
+    readonly property real _highResolutionAltitudeMeters: 30
+    readonly property real _lowResolutionAltitudeMeters: 60
+    readonly property real _highResolutionTriggerDistanceMeters: 6
+    readonly property real _lowResolutionTriggerDistanceMeters: 9
+    readonly property real _resolutionPresetSpeedMetersPerSecond: 5
     property var surveyItem:  null
     property var takeoffItem: null
     property bool sprayPatternExpanded: false
@@ -183,7 +190,8 @@ Rectangle {
     }
 
     function _commitPatternSpeed(speedValue) {
-        if (!root._patternSpeedFact || !root.surveyItem) {
+        // A selected resolution preset owns the pattern speed (5 m/s).
+        if (root._resolutionPresetSelected || !root._patternSpeedFact || !root.surveyItem) {
             return
         }
         var speed = Number(speedValue)
@@ -525,18 +533,19 @@ Rectangle {
         pumpRateWriteTimer.restart()
     }
 
-    // Apply Route Mapping presets directly to the native SurveyComplexItem.
-    // AdjustedFootprintFrontal is QGC's camera trigger distance and is emitted
-    // as MAV_CMD_DO_SET_CAM_TRIGG_DIST when the mission is built.
+    // Low/High own survey altitude, camera trigger distance, and pattern speed.
+    // AdjustedFootprintFrontal is emitted as MAV_CMD_DO_SET_CAM_TRIGG_DIST when
+    // the mission is built.
     function applyResolutionPreset() {
         if (!root._resolutionPresetSelected || !root._cameraCalc || !root.surveyItem) {
             return
         }
-        // the value of the altitide
         var high = root.resolution === 1
-        var altitudeMeters = high ? 60 : 40
-        var triggerDistanceMeters = high ? 6 : 9
-        var speedMetersPerSecond = 5
+        var altitudeMeters = high ? root._highResolutionAltitudeMeters
+                                  : root._lowResolutionAltitudeMeters
+        var triggerDistanceMeters = high ? root._highResolutionTriggerDistanceMeters
+                                         : root._lowResolutionTriggerDistanceMeters
+        var speedMetersPerSecond = root._resolutionPresetSpeedMetersPerSecond
 
         // A pending slider write must not restore the value that preceded the
         // preset. rawValue is intentional: these presets are defined in SI
@@ -565,6 +574,14 @@ Rectangle {
 
         root._syncPatternAltitudeSlider()
         root._syncPatternSpeedSlider()
+        console.info("[RouteMapping] Resolution preset applied:",
+                     high ? "High" : "Low",
+                     "| planned altitude:", altitudeMeters, "m",
+                     "| trigger distance:", triggerDistanceMeters, "m",
+                     "| speed:", speedMetersPerSecond, "m/s",
+                     "| takeoff altitude:",
+                     root._missionAltitudeFact
+                     ? Number(root._missionAltitudeFact.rawValue) : NaN, "m")
     }
 
     // A newly completed Route Mapping plan defaults to High Resolution. Keep
@@ -589,13 +606,13 @@ Rectangle {
                 ? Number(root._cameraCalc.adjustedFootprintFrontal.rawValue) : 0
         var speedMetersPerSecond = root._patternSpeedFact
                 ? Number(root._patternSpeedFact.rawValue) : 0
-        var highMatches = Math.abs(altitudeMeters - 30) < 0.01
-                && Math.abs(triggerDistanceMeters - 6) < 0.01
-                && Math.abs(speedMetersPerSecond - 5) < 0.01
-        // Low resulation altitude paramerts
-        var lowMatches = Math.abs(altitudeMeters - 40) < 0.01
-                && Math.abs(triggerDistanceMeters - 9) < 0.01
-                && Math.abs(speedMetersPerSecond - 5) < 0.01
+        var speedMatches = Math.abs(speedMetersPerSecond - root._resolutionPresetSpeedMetersPerSecond) < 0.01
+        var highMatches = Math.abs(altitudeMeters - root._highResolutionAltitudeMeters) < 0.01
+                && Math.abs(triggerDistanceMeters - root._highResolutionTriggerDistanceMeters) < 0.01
+                && speedMatches
+        var lowMatches = Math.abs(altitudeMeters - root._lowResolutionAltitudeMeters) < 0.01
+                && Math.abs(triggerDistanceMeters - root._lowResolutionTriggerDistanceMeters) < 0.01
+                && speedMatches
 
         if (highMatches) {
             root.resolution = 1
@@ -616,19 +633,45 @@ Rectangle {
     // Only commits when a write is pending or the slider differs from the Fact,
     // so an uninitialized slider cannot clobber the real altitude.
     function flushPendingWrites() {
+        var patternAltitudePending = patternAltitudeWriteTimer.running
+        var patternSpeedPending = patternSpeedWriteTimer.running
+        var missionAltitudePending = missionAltitudeWriteTimer.running
+        var patternAltitudeDiffers = root._patternAltitudeAvailable
+                && isFinite(Number(patternAltitudeSlider.value))
+                && isFinite(Number(root._patternAltitudeFact.value))
+                && Math.abs(Number(patternAltitudeSlider.value)
+                            - Number(root._patternAltitudeFact.value)) > 0.01
+        var patternSpeedDiffers = root._patternSpeedAvailable
+                && isFinite(Number(patternSpeedSlider.value))
+                && isFinite(Number(root._patternSpeedFact.value))
+                && Math.abs(Number(patternSpeedSlider.value)
+                            - Number(root._patternSpeedFact.value)) > 0.01
+        var missionAltitudeDiffers = root._missionAltitudeAvailable
+                && isFinite(Number(missionAltitudeSlider.value))
+                && isFinite(Number(root._missionAltitudeFact.value))
+                && Math.abs(Number(missionAltitudeSlider.value)
+                            - Number(root._missionAltitudeFact.value)) > 0.01
+
         patternAltitudeWriteTimer.stop()
         patternSpeedWriteTimer.stop()
         missionAltitudeWriteTimer.stop()
         nozzleRateWriteTimer.stop()
         pumpRateWriteTimer.stop()
 
-        if (root._patternAltitudeAvailable)
+        if (root._patternAltitudeAvailable
+                && (patternAltitudePending || patternAltitudeDiffers))
             root._commitPatternAltitude(patternAltitudeSlider.value)
-        if (root._patternSpeedAvailable)
+        if (root._patternSpeedAvailable
+                && (patternSpeedPending || patternSpeedDiffers))
             root._commitPatternSpeed(patternSpeedSlider.value)
-        if (root._missionAltitudeAvailable && !root._takeoffFollowsPattern)
+        if (root._missionAltitudeAvailable && !root._takeoffFollowsPattern
+                && (missionAltitudePending || missionAltitudeDiffers))
             root._commitMissionAltitude(missionAltitudeSlider.value)
         root._syncTakeoffAltitudeToPattern()
+        // Altitude edits can make CameraCalc recalculate its footprint. Re-apply
+        // the selected Low/High altitude and capture interval so the preset wins.
+        if (root._resolutionPresetSelected)
+            root.applyResolutionPreset()
         if (root.showSpraySettings) {
             if (root._sprayNozRateFact !== null) {
                 root._commitRateFactFromSlider(root._sprayNozRateFact, nozzleRateSlider.value)
@@ -1271,9 +1314,10 @@ Rectangle {
                                 resolutionRipple.tap(mouse.x, mouse.y)
                                 if (root.resolution === index) {
                                     // Clicking the active preset clears it and
-                                    // returns altitude control to the user.
+                                    // returns altitude/speed control to the user.
                                     root.resolution = -1
                                     patternAltitudeWriteTimer.stop()
+                                    patternSpeedWriteTimer.stop()
                                 } else {
                                     root.resolution = index
                                     root.applyResolutionPreset()
@@ -1288,10 +1332,16 @@ Rectangle {
                 Layout.fillWidth:   true
                 Layout.topMargin:   ScreenTools.defaultFontPixelHeight * 0.15
                 text:               root.resolution === 0
-                                    ? qsTr("40 m altitude, photos every 9 m, 5 m/s flight speed. Select Low again to unlock altitude.")
+                                    ? qsTr("%1 m altitude, photos every %2 m, %3 m/s flight speed. Select Low again to unlock altitude and speed.")
+                                      .arg(root._lowResolutionAltitudeMeters)
+                                      .arg(root._lowResolutionTriggerDistanceMeters)
+                                      .arg(root._resolutionPresetSpeedMetersPerSecond)
                                     : root.resolution === 1
-                                      ? qsTr("30 m altitude, photos every 6 m, 5 m/s flight speed. Select High again to unlock altitude.")
-                                      : qsTr("Select a resolution preset to set and lock the route altitude.")
+                                      ? qsTr("%1 m altitude, photos every %2 m, %3 m/s flight speed. Select High again to unlock altitude and speed.")
+                                        .arg(root._highResolutionAltitudeMeters)
+                                        .arg(root._highResolutionTriggerDistanceMeters)
+                                        .arg(root._resolutionPresetSpeedMetersPerSecond)
+                                      : qsTr("Select a resolution preset to set and lock the route altitude and speed.")
                 color:              root._hintColor
                 font.pointSize:     ScreenTools.defaultFontPointSize
                 visible:            root.showPhotoSettings
@@ -1445,7 +1495,9 @@ Rectangle {
                           ? root._cameraCalc.adjustedFootprintFrontal
                           : null
                     Layout.fillWidth: true
-                    enabled: root._showGridAngle && root.missionSettingsEnabled
+                    enabled: root._showGridAngle
+                             && root.missionSettingsEnabled
+                             && !root._resolutionPresetSelected
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       false
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1538,7 +1590,9 @@ Rectangle {
                 FactTextField {
                     fact:               root._patternSpeedFact
                     Layout.fillWidth:   true
-                    enabled:            root._patternSpeedAvailable && root.missionSettingsEnabled
+                    enabled:            root._patternSpeedAvailable
+                                        && root.missionSettingsEnabled
+                                        && !root._resolutionPresetSelected
                     activeFocusBorderColor: root._accentGreen
                     persistentBorder:       true
                     fieldBorderWidth:       root.thinFieldBorders ? 1 : 2
@@ -1560,7 +1614,9 @@ Rectangle {
                     Layout.fillWidth:       true
                     Layout.columnSpan:      2
                     Layout.preferredHeight: ScreenTools.defaultFontPixelHeight * 1.5
-                    enabled:                root._patternSpeedAvailable && root.missionSettingsEnabled
+                    enabled:                root._patternSpeedAvailable
+                                            && root.missionSettingsEnabled
+                                            && !root._resolutionPresetSelected
                     activeColor:            root._accentGreen
                     barHeight:              Math.max(1, ScreenTools.defaultFontPixelHeight * 0.12)
                     live:                   true
@@ -1865,6 +1921,20 @@ Rectangle {
         ignoreUnknownSignals: true
         function onValueChanged() {
             root._syncPatternSpeedSlider()
+        }
+    }
+
+    Connections {
+        target: root._cameraCalc ? root._cameraCalc.adjustedFootprintFrontal : null
+        ignoreUnknownSignals: true
+        function onValueChanged() {
+            // Known-camera altitude edits recalculate the footprint. Restore
+            // the selected Low/High altitude and photo interval afterward.
+            if (root._resolutionPresetSelected) {
+                Qt.callLater(root.applyResolutionPreset)
+            } else {
+                root.syncResolutionFromSurvey()
+            }
         }
     }
 

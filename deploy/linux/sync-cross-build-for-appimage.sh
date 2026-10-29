@@ -46,8 +46,12 @@ if [[ -d "${QGC_CROSS_BUILD}/qml" ]]; then
     rsync -av "${QGC_CROSS_BUILD}/qml/" "${PI_HOST}:${PI_PACKAGE_DIR}/qml/"
 fi
 
-echo "Syncing AppImage packaging script..."
-rsync -av "${SCRIPT_DIR}/package-appimage-on-pi.sh" "${PI_HOST}:${PI_PACKAGE_DIR}/"
+echo "Syncing AppImage packaging scripts and pinned tool checksums..."
+rsync -av \
+  "${SCRIPT_DIR}/package-appimage-on-pi.sh" \
+  "${SCRIPT_DIR}/appimage-tool-pins.sh" \
+  "${SCRIPT_DIR}/appimage-qt-plugin-filter.sh" \
+  "${PI_HOST}:${PI_PACKAGE_DIR}/"
 ssh "${PI_HOST}" "chmod +x ${PI_PACKAGE_DIR}/package-appimage-on-pi.sh"
 
 echo "Done. On the Pi, run:"

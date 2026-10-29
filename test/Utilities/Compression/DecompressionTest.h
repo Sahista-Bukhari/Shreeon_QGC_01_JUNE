@@ -10,4 +10,5 @@ private slots:
     void _testDecompressGzip();
     void _testDecompressLZMA();
     void _testUnzip();
+    void _testUnzipRejectsPathTraversal();
 };

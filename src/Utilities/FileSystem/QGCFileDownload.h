@@ -32,7 +32,12 @@ public:
 
     void setCache(QAbstractNetworkCache *cache);
 
+    /// Historical OpenSSL mismatch workaround. Kept as a no-op so callers compile,
+    /// but certificate errors are never ignored.
     static void setIgnoreSSLErrorsIfNeeded(QNetworkReply &networkReply);
+
+    /// MD5 digest advertised by the origin (Content-MD5 or simple S3 ETag), if any.
+    QString serverContentMd5() const;
 
 signals:
     void downloadProgress(qint64 curr, qint64 total);
@@ -45,7 +50,11 @@ private slots:
     void _downloadError(QNetworkReply::NetworkError code);
 
 private:
+    void _captureServerContentMd5(const QNetworkReply &reply);
+    bool _verifyLocalFileMd5(const QString &localFile, const QString &expectedMd5, QString *errorMessage) const;
+
     QNetworkAccessManager *_networkManager = nullptr;
     QString _originalRemoteFile;
+    QString _serverContentMd5;
     QList<QPair<QNetworkRequest::Attribute, QVariant>> _requestAttributes;
 };

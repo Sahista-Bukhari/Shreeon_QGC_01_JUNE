@@ -167,6 +167,15 @@ void QGCApplication::setLanguage()
             qCWarning(QGCApplicationLog) << "Could not load /fonts/NanumGothic-Bold font";
         }
     }
+    if (_locale == QLocale::Gujarati) {
+        qCDebug(QGCApplicationLog) << "Loading Gujarati fonts" << _locale.name();
+        if (QFontDatabase::addApplicationFont(":/fonts/NotoSansGujarati-Regular") < 0) {
+            qCWarning(QGCApplicationLog) << "Could not load /fonts/NotoSansGujarati-Regular font";
+        }
+        if (QFontDatabase::addApplicationFont(":/fonts/NotoSansGujarati-Bold") < 0) {
+            qCWarning(QGCApplicationLog) << "Could not load /fonts/NotoSansGujarati-Bold font";
+        }
+    }
     qCDebug(QGCApplicationLog) << "Loading localizations for" << _locale.name();
     removeTranslator(JsonHelper::translator());
     removeTranslator(&_qgcTranslatorSourceCode);

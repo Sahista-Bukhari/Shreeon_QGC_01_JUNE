@@ -1,7 +1,10 @@
 #pragma once
 
+#include <QtCore/QByteArray>
 #include <QtCore/QLoggingCategory>
 #include <QtCore/QTimer>
+
+#include <cstddef>
 
 #include "MAVLinkLib.h"
 
@@ -25,6 +28,12 @@ public:
     bool paramDone() const { return _done; }
     void paramRequest(bool reset = true);
     void sendParameter(bool updateUI = false);
+
+    /// Safely copy custom/string parameter bytes into a fixed MAVLink param_value buffer.
+    /// Copies min(source.size(), destCapacity) bytes. Overlong values are truncated.
+    /// Caller must zero-initialize dest so unused trailing bytes remain zero.
+    /// @return Number of bytes copied from source.
+    static size_t copyCustomParamValue(uint8_t *dest, size_t destCapacity, const QByteArray &source);
 
 private slots:
     void _paramWriteTimeout();

@@ -18,6 +18,7 @@
 
 // Camera
 #include "QGCCameraManagerTest.h"
+#include "QGCCameraParamIOTest.h"
 
 // Comms
 #include "QGCSerialPortInfoTest.h"
@@ -121,6 +122,7 @@ int QGCUnitTest::runTests(bool stress, const QStringList& unitTests)
 
     // Camera
     UT_REGISTER_TEST(QGCCameraManagerTest)
+    UT_REGISTER_TEST(QGCCameraParamIOTest)
 
     // Comms
     UT_REGISTER_TEST(QGCSerialPortInfoTest)

@@ -5,6 +5,9 @@
 #include "QGCLoggingCategory.h"
 #include "Vehicle.h"
 
+#include <algorithm>
+#include <cstring>
+
 QGC_LOGGING_CATEGORY(QGCCameraParamIOLog, "Camera.QGCCameraParamIO")
 QGC_LOGGING_CATEGORY(QGCCameraParamIOVerbose, "Camera.QGCCameraParamIO:verbose")
 
@@ -81,6 +84,23 @@ QGCCameraParamIO::QGCCameraParamIO(MavlinkCameraControl *control, Fact *fact, Ve
 QGCCameraParamIO::~QGCCameraParamIO()
 {
     qCDebug(QGCCameraParamIOLog) << this;
+}
+
+size_t QGCCameraParamIO::copyCustomParamValue(uint8_t *dest, size_t destCapacity, const QByteArray &source)
+{
+    if (!dest || destCapacity == 0) {
+        return 0;
+    }
+
+    const size_t sourceSize = static_cast<size_t>(source.size());
+    const size_t copyLen = std::min(sourceSize, destCapacity);
+    if (sourceSize > destCapacity) {
+        qCWarning(QGCCameraParamIOLog) << "Custom param value truncated from" << sourceSize << "to" << destCapacity << "bytes";
+    }
+    if (copyLen > 0) {
+        (void) memcpy(dest, source.constData(), copyLen);
+    }
+    return copyLen;
 }
 
 void QGCCameraParamIO::_paramRequestTimeout()
@@ -176,7 +196,10 @@ void QGCCameraParamIO::_sendParameter()
         case FactMetaData::valueTypeString:
         case FactMetaData::valueTypeCustom: {
             const QByteArray custom = _fact->rawValue().toByteArray();
-            (void) memcpy(union_value.bytes, custom.constData(), static_cast<size_t>(std::max(custom.size(), static_cast<qsizetype>(MAVLINK_MSG_PARAM_EXT_SET_FIELD_PARAM_VALUE_LEN))));
+            // Use min(source, capacity): max() previously caused OOB reads for short
+            // values and stack overflow for values longer than the 128-byte buffer.
+            // union_value is zero-initialized so unused trailing bytes stay zero.
+            (void) copyCustomParamValue(union_value.bytes, MAVLINK_MSG_PARAM_EXT_SET_FIELD_PARAM_VALUE_LEN, custom);
             break;
         }
         default:

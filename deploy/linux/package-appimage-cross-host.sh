@@ -13,12 +13,25 @@
 
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=appimage-tool-pins.sh
+source "${SCRIPT_DIR}/appimage-tool-pins.sh"
+# shellcheck source=appimage-qt-plugin-filter.sh
+source "${SCRIPT_DIR}/appimage-qt-plugin-filter.sh"
+
+# Expand a leading ~/ even when the override was quoted (e.g. QGC_CROSS_BUILD='~/…'),
+# so the shell did not perform tilde expansion before invoking this script.
+# Prefer [[ ]] over case: case patterns undergo tilde expansion, which turns a
+# "~/"* pattern into "$HOME/"* and then fails to match a literal "~/…" override.
 expand_tilde() {
-  case "$1" in
-    "~") echo "${HOME}" ;;
-    "~/"*) echo "${HOME}/${1#~/}" ;;
-    *) echo "$1" ;;
-  esac
+  local path="$1"
+  if [[ "${path}" == "~" ]]; then
+    printf '%s\n' "${HOME}"
+  elif [[ "${path}" == "~/"* ]]; then
+    printf '%s\n' "${HOME}/${path#"~/"}"
+  else
+    printf '%s\n' "${path}"
+  fi
 }
 
 QGC_CROSS_BUILD="$(expand_tilde "${QGC_CROSS_BUILD:-${HOME}/qgc-cross-build}")"
@@ -28,10 +41,6 @@ TOOLS_DIR="${QGC_CROSS_BUILD}/tools"
 APPDIR="${QGC_CROSS_BUILD}/AppDir"
 APPRUN="${QGC_CROSS_BUILD}/AppRun"
 APPIMAGE_OUT="${QGC_CROSS_BUILD}/QGroundControl-aarch64.AppImage"
-
-LINUXDEPLOY_URL="https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-aarch64.AppImage"
-PLUGIN_QT_URL="https://github.com/linuxdeploy/linuxdeploy-plugin-qt/releases/download/continuous/linuxdeploy-plugin-qt-aarch64.AppImage"
-APPIMAGETOOL_URL="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
 
 die() { echo "$*" >&2; exit 1; }
 
@@ -60,17 +69,6 @@ if [[ -z "${QEMU_AARCH64}" ]]; then
 fi
 export PATH="$(dirname "${QEMU_AARCH64}"):${PATH}"
 
-# Quick binfmt check: aarch64 AppImage runtime must be executable on this host.
-_test_appimage="/tmp/qgc-binfmt-test-$$.AppImage"
-if wget -q -O "${_test_appimage}" "${LINUXDEPLOY_URL}"; then
-  chmod +x "${_test_appimage}"
-  if ! APPIMAGE_EXTRACT_AND_RUN=1 "${_test_appimage}" --version >/dev/null 2>&1; then
-    rm -f "${_test_appimage}"
-    die "aarch64 AppImage tools cannot run on this host. Install/register binfmt: sudo apt install qemu-user-static"
-  fi
-  rm -f "${_test_appimage}"
-fi
-
 [[ -x "${APPDIR}/usr/bin/QGroundControl" ]] || die "Missing ${APPDIR}/usr/bin/QGroundControl — run: cmake --install ${QGC_CROSS_BUILD} --config Release"
 [[ -f "${APPRUN}" ]] || die "Missing ${APPRUN}"
 [[ -d "${QT_ROOT}/lib" ]] || die "Qt not found at QT_ROOT=${QT_ROOT}"
@@ -81,18 +79,20 @@ ICON="${APPDIR}/usr/share/icons/hicolor/256x256/apps/QGroundControl.png"
 [[ -f "${ICON}" ]] || die "Missing icon: ${ICON}"
 
 mkdir -p "${TOOLS_DIR}"
-download_tool() {
-  local url="$1" dest="$2"
-  if [[ ! -x "${dest}" ]]; then
-    echo "Downloading $(basename "${dest}")..."
-    wget -q -O "${dest}" "${url}"
-    chmod +x "${dest}"
-  fi
-}
+download_verified_tool "${LINUXDEPLOY_AARCH64_URL}" \
+  "${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" "${LINUXDEPLOY_AARCH64_SHA256}" \
+  || die "Failed to fetch verified linuxdeploy"
+download_verified_tool "${LINUXDEPLOY_PLUGIN_QT_AARCH64_URL}" \
+  "${TOOLS_DIR}/linuxdeploy-plugin-qt-aarch64.AppImage" "${LINUXDEPLOY_PLUGIN_QT_AARCH64_SHA256}" \
+  || die "Failed to fetch verified linuxdeploy-plugin-qt"
+download_verified_tool "${APPIMAGETOOL_X86_64_URL}" \
+  "${TOOLS_DIR}/appimagetool-x86_64.AppImage" "${APPIMAGETOOL_X86_64_SHA256}" \
+  || die "Failed to fetch verified appimagetool"
 
-download_tool "${LINUXDEPLOY_URL}" "${TOOLS_DIR}/linuxdeploy-aarch64.AppImage"
-download_tool "${PLUGIN_QT_URL}" "${TOOLS_DIR}/linuxdeploy-plugin-qt-aarch64.AppImage"
-download_tool "${APPIMAGETOOL_URL}" "${TOOLS_DIR}/appimagetool-x86_64.AppImage"
+# Quick binfmt check using the already-verified aarch64 linuxdeploy binary.
+if ! APPIMAGE_EXTRACT_AND_RUN=1 "${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" --version >/dev/null 2>&1; then
+  die "aarch64 AppImage tools cannot run on this host. Install/register binfmt: sudo apt install qemu-user-static"
+fi
 
 chmod +x "${APPRUN}"
 
@@ -112,24 +112,39 @@ export LD_LIBRARY_PATH="${QT_ROOT}/lib:${LD_LIBRARY_PATH:-}"
 export APPIMAGE_EXTRACT_AND_RUN=1
 export ARCH=aarch64
 
-SQL_DRIVER_DIR="${QT_ROOT}/plugins/sqldrivers"
-if [[ -d "${SQL_DRIVER_DIR}" ]]; then
-  echo "Removing optional Qt SQL drivers (keeping libqsqlite only)..."
-  rm -f "${SQL_DRIVER_DIR}"/libqsqlmysql.so* \
-        "${SQL_DRIVER_DIR}"/libqsqlpsql.so* \
-        "${SQL_DRIVER_DIR}"/libqsqlodbc.so* \
-        "${SQL_DRIVER_DIR}"/libqsqlmimer.so* \
-        "${SQL_DRIVER_DIR}"/libqsqlibase.so* 2>/dev/null || true
+# Point linuxdeploy-plugin-qt at a sqlite-only plugins tree; never modify QT_ROOT.
+use_sqlite_only_qt_plugins "${QT_ROOT}" || die "Failed to stage sqlite-only Qt plugins"
+
+# Bundle aarch64 pdftoppm from the Pi sysroot for User Manual PDF preview.
+PDFTOPPM_SRC=""
+for _cand in "${RPI_SYSROOT}/usr/bin/pdftoppm" "${RPI_SYSROOT}/bin/pdftoppm"; do
+  if [[ -x "${_cand}" ]]; then
+    PDFTOPPM_SRC="${_cand}"
+    break
+  fi
+done
+PDFTOPPM_APPDIR=""
+if PDFTOPPM_APPDIR="$(bundle_pdftoppm_into_appdir "${APPDIR}" "${PDFTOPPM_SRC}")"; then
+  :
+else
+  PDFTOPPM_APPDIR=""
 fi
 
 echo "Bundling Qt and libraries into AppDir..."
-"${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" \
-  --appdir "${APPDIR}" \
-  --executable "${APPDIR}/usr/bin/QGroundControl" \
-  --desktop-file "${DESKTOP}" \
-  --custom-apprun "${APPRUN}" \
-  --icon-file "${ICON}" \
+LINUXDEPLOY_ARGS=(
+  --appdir "${APPDIR}"
+  --executable "${APPDIR}/usr/bin/QGroundControl"
+  --desktop-file "${DESKTOP}"
+  --custom-apprun "${APPRUN}"
+  --icon-file "${ICON}"
   --plugin qt
+)
+if [[ -n "${PDFTOPPM_APPDIR}" && -x "${PDFTOPPM_APPDIR}" ]]; then
+  LINUXDEPLOY_ARGS+=(--executable "${PDFTOPPM_APPDIR}")
+fi
+"${TOOLS_DIR}/linuxdeploy-aarch64.AppImage" "${LINUXDEPLOY_ARGS[@]}"
+
+strip_optional_sql_drivers_from_appdir "${APPDIR}"
 
 echo "Creating AppImage..."
 rm -f "${APPIMAGE_OUT}"

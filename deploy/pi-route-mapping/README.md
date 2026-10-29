@@ -85,13 +85,10 @@ Flight-controller GND      -> Pi GND
 Do not connect a 5 V serial signal to the Pi UART. Both sides must use 3.3 V
 UART logic.
 
-For a safe manual test while disarmed:
-
-```bash
-printf 'VIDEO_PAUSE' | nc -u -w 5 127.0.0.1 14551
-printf 'CAPTURE' | nc -u -w 1 127.0.0.1 14551
-printf 'VIDEO_RESUME' | nc -u -w 1 127.0.0.1 14551
-```
+UDP camera control is carried inside the authenticated WFB-ng link. The Pi
+service binds to the aircraft WFB address, and the installer firewall permits
+only loopback and the configured WFB GCS address. For a local test while
+disarmed, use `capture.sh`.
 
 Inspect the test JPEG before flight. The camera optical axis must point at
 nadir (straight down), and the lens must sit below or outside the landing-gear
@@ -113,8 +110,8 @@ idempotent triggers over the WFB LAN:
 
 Files are named `image_0001_gcs_0001_<timestamp>.jpg` under the returned
 `mission_YYYYMMDD_HHMMSS` directory. Repeating the same sequence within that
-session is safe and does not take a duplicate photo. Set `MANUAL_HOST=0.0.0.0`
-in `/etc/default/shreeon-route-mapping` so GCS can reach UDP port 14551. Keep
+session is safe and does not take a duplicate photo. Default `MANUAL_HOST=10.5.0.2`
+binds only to the WFB aircraft address (plus localhost for `capture.sh`). Keep
 `QGC_LED=1` for the QGC-led workflow so UART camera feedback cannot create a
 second physical exposure; `VIDEO_PAUSE` also selects QGC as the session's
 capture authority.
@@ -125,11 +122,6 @@ Full HD `rpicam-vid --codec mjpeg` process, and waits for its first
 frame before accepting captures. `VIDEO_RESUME` gives accepted captures a
 bounded drain period, stops the mapping process, starts `wfb-camera.service`,
 and reports success only after systemd confirms it is active:
-
-```bash
-printf 'VIDEO_PAUSE' | nc -u -w 1 10.5.0.2 14551
-printf 'VIDEO_RESUME' | nc -u -w 1 10.5.0.2 14551
-```
 
 Both commands are idempotent. A repeated `VIDEO_PAUSE` returns the active
 session, while `VIDEO_RESUME` is a no-op when QGC has not started a mapping

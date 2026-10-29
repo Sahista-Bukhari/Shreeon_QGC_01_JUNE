@@ -5,12 +5,11 @@
 Q_DECLARE_LOGGING_CATEGORY(QGCZipLog)
 
 namespace QGCZip {
-    /// Method to zip files in a given directory
-    bool zipDirectory(const QString &directoryPath, const QString &zipFilePath);
-
-    /// Method to unzip files to a given directory
+    /// Unzip an archive into outputDirectoryPath with ZIP-slip containment.
+    /// Used by unit tests; production large-member extracts use extractFile().
     bool unzipFile(const QString &zipFilePath, const QString &outputDirectoryPath);
 
-    /// Extracts one exact archive member to a file.
+    /// Extracts one archive member by streaming to disk (safe for large GeoTIFFs /
+    /// worker threads). Fallbacks drain unzip stdout while the process runs.
     bool extractFile(const QString &zipFilePath, const QString &memberPath, const QString &outputFilePath);
 } // namespace QGCZip

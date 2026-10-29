@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Unit tests for reliable Route Mapping camera ownership recovery."""
+"""Unit tests for Route Mapping camera ownership and UDP control."""
 
 from __future__ import annotations
 
@@ -19,7 +19,6 @@ ROUTE_MAPPING = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = ROUTE_MAPPING
 SPEC.loader.exec_module(ROUTE_MAPPING)
 
-
 class FakeCaptureWorker:
     def __init__(self, *, mapping_running: bool = False) -> None:
         self.mapping_video_running = mapping_running
@@ -29,6 +28,7 @@ class FakeCaptureWorker:
         self.video_paused = True
         self.thumbnails_resumed = False
         self.session_closed = False
+        self.requests: list[ROUTE_MAPPING.CaptureRequest] = []
 
     def cancel_pending(self) -> int:
         self.cancelled = True
@@ -54,6 +54,12 @@ class FakeCaptureWorker:
         self.session_closed = True
         self.session_directory = None
 
+    def request(self, capture_request: ROUTE_MAPPING.CaptureRequest):
+        self.requests.append(capture_request)
+        planned = self.session_directory / "image_0001_gcs_0001_test.jpg"
+        thumb = self.session_directory / "image_0001_thumb.jpg"
+        return True, planned, thumb
+
 
 class FakeManualSocket:
     def __init__(self, command: bytes) -> None:
@@ -61,7 +67,7 @@ class FakeManualSocket:
         self.replies: list[bytes] = []
 
     def recvfrom(self, _size: int):
-        return self.command, ("127.0.0.1", 12345)
+        return self.command, ("10.5.0.1", 12345)
 
     def sendto(self, response: bytes, _address) -> None:
         self.replies.append(response)
@@ -153,28 +159,40 @@ class CameraSessionRecoveryTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "another QGC mapping session"):
             service.pause_live_video("different-token")
 
-    def test_tokenized_status_reports_authoritative_process_state(self) -> None:
+    def test_status_omits_token(self) -> None:
         service = make_service(mapping_running=True)
         service._camera_service_active = mock.Mock(return_value=False)
+        service._camera_service_streaming = mock.Mock(return_value=False)
         service._manual_socket = FakeManualSocket(b"STATUS session=owner-token")
 
         service._read_manual()
 
         self.assertEqual(len(service._manual_socket.replies), 1)
-        self.assertIn(b"STATE MAPPING", service._manual_socket.replies[0])
-        self.assertIn(b"token=owner-token", service._manual_socket.replies[0])
-        self.assertIn(b"wfb=inactive", service._manual_socket.replies[0])
+        reply = service._manual_socket.replies[0]
+        self.assertIn(b"STATE MAPPING", reply)
+        self.assertNotIn(b"token=", reply)
+        self.assertIn(b"wfb=inactive", reply)
 
-    def test_legacy_status_format_remains_compatible(self) -> None:
+    def test_capture_requires_matching_session_token(self) -> None:
         service = make_service(mapping_running=True)
-        service._manual_socket = FakeManualSocket(b"STATUS")
+        service._manual_socket = FakeManualSocket(b"CAPTURE 1 session=other-token")
 
         service._read_manual()
 
-        self.assertEqual(
-            service._manual_socket.replies,
-            [b"SESSION /home/shreeon/mapping_photos/mission_test\n"],
+        self.assertEqual(service._manual_socket.replies, [b"ERROR session-mismatch\n"])
+        self.assertEqual(service._capture_worker.requests, [])
+
+    def test_owner_capture_is_accepted(self) -> None:
+        service = make_service(mapping_running=True)
+        service._manual_socket = FakeManualSocket(b"CAPTURE 1 session=owner-token")
+
+        service._read_manual()
+
+        self.assertEqual(len(service._manual_socket.replies), 1)
+        self.assertTrue(
+            service._manual_socket.replies[0].startswith(b"QUEUED seq=1 path=")
         )
+        self.assertEqual(len(service._capture_worker.requests), 1)
 
     def test_stream_health_requires_camera_and_gstreamer_processes(self) -> None:
         service = make_service()
@@ -189,7 +207,6 @@ class CameraSessionRecoveryTest(unittest.TestCase):
             ROUTE_MAPPING.subprocess, "run", side_effect=process_results
         ):
             self.assertTrue(service._camera_service_streaming())
-
 
 if __name__ == "__main__":
     unittest.main()

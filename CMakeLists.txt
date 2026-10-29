@@ -101,6 +101,14 @@ include(GNUInstallDirs)
 include(FetchContent)
 include(CMakePrintHelpers)
 
+# Enable CTest at the project root so `ctest` from the build directory discovers
+# tests registered under test/ (include(CTest) in a subdirectory alone leaves the
+# root CTestTestfile.cmake empty).
+if(QGC_BUILD_TESTING)
+    set(BUILD_TESTING ON CACHE BOOL "Build the testing tree" FORCE)
+    include(CTest)
+endif()
+
 # ----------------------------------------------------------------------------
 # CPM (CMake Package Manager) Configuration
 # ----------------------------------------------------------------------------

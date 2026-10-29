@@ -48,7 +48,6 @@ public:
     DEFINE_SETTINGFACT(disableAllPersistence)
     DEFINE_SETTINGFACT(firstRunPromptIdsShown)
     DEFINE_SETTINGFACT(loginAirLink)
-    DEFINE_SETTINGFACT(passAirLink)
     DEFINE_SETTINGFACT(nodeOdmHost)
     DEFINE_SETTINGFACT(nodeOdmPort)
 

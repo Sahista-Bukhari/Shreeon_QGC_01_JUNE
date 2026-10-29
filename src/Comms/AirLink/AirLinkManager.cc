@@ -37,8 +37,12 @@ bool AirLinkManager::isOnline(const QString &drone)
 
 void AirLinkManager::updateCredentials(const QString &login, const QString &pass)
 {
-    SettingsManager::instance()->appSettings()->loginAirLink()->setRawValue(login);
-    SettingsManager::instance()->appSettings()->passAirLink()->setRawValue(pass);
+    Q_UNUSED(pass);
+
+    AppSettings *const appSettings = SettingsManager::instance()->appSettings();
+    appSettings->loginAirLink()->setRawValue(login);
+    // Passwords are session-only. Legacy "passAirLink" is removed on AppSettings
+    // startup migration and is no longer a SettingsFact.
 }
 
 void AirLinkManager::_connectToAirLinkServer(const QString &login, const QString &pass)

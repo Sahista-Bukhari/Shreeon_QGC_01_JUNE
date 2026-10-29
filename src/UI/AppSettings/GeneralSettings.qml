@@ -187,10 +187,11 @@ SettingsPage {
         QGCLabel {
             Layout.fillWidth: true
             wrapMode: Text.WordWrap
-            text: qsTr("Used when Start ODM Stitching is selected. The default connects to NodeODM on this computer (127.0.0.1:3000). Enter the reachable address of a remote NodeODM server to process missions remotely.")
+            text: qsTr("Used when Start ODM Stitching or Stitch from Photos Directory is selected. Enter a reachable NodeODM host and HTTP port (no company default is prefilled). Set QGC_NODEODM_TOKEN when the server requires authentication. QGC_NODEODM_URL can override the full base URL, including an HTTPS reverse-proxy URL.")
             color: qgcPal.text
             opacity: 0.75
             font.pointSize: ScreenTools.smallFontPointSize
         }
     }
+
 }

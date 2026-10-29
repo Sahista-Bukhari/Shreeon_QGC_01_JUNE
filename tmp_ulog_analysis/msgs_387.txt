@@ -1,0 +1,12 @@
+114.660	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926faff0>>	[logger] [logger] /fs/microsd/log/2026-10-26/11_59_34.ulg	
+114.663	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48b0f1f3b0>>	[logger] Opened full log file: /fs/microsd/log/2026-10-26/11_59_34.ulg
+114.683	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926faed0>>	[navigator] Executing Mission	
+114.691	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb020>>	[navigator] Climb to 60.0 meters above home	
+116.386	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb530>>	[commander] Takeoff detected	
+157.043	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb2c0>>	[navigator] RTL: start return at 213 m (60 m above destination)	
+169.856	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fa8d0>>	[navigator] RTL: land at destination	
+203.244	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb3b0>>	[commander] Pilot took over using sticks	
+214.816	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb2f0>>	[commander] Landing detected	
+216.818	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926faea0>>	[commander] Disarmed by landing	
+216.819	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fb560>>	[health_and_arming_checks] Preflight Fail: heading estimate not stable
+216.842	<bound method ULog.MessageLogging.log_level_str of <pyulog.core.ULog.MessageLogging object at 0x7f48926fae70>>	[vehicle_magnetometer] 0 (4395033) EST:0 offset: [-0.114, -0.084, 0.017]->[-0.110, -0.081, 0.017] (full [-0.102, -0.073, 0.108

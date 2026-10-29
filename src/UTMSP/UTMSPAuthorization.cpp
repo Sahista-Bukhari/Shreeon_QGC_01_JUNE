@@ -10,6 +10,32 @@
 
 using json = nlohmann::ordered_json;
 
+namespace {
+std::string redactOAuthResponseForLog(const std::string &response)
+{
+    try {
+        json body = json::parse(response);
+        static constexpr const char *kSensitiveKeys[] = {
+            "access_token",
+            "refresh_token",
+            "id_token",
+            "token",
+            "client_secret",
+            "password",
+        };
+        for (const char *key : kSensitiveKeys) {
+            if (body.contains(key) && body[key].is_string()) {
+                body[key] = "[REDACTED]";
+            }
+        }
+        return body.dump();
+    } catch (...) {
+        // Never fall back to the raw body — it may contain a bearer token.
+        return "[response omitted; unparseable or non-JSON body]";
+    }
+}
+} // namespace
+
 UTMSPAuthorization::UTMSPAuthorization(QObject *parent):
     QObject(parent)
 {
@@ -28,7 +54,8 @@ bool UTMSPAuthorization::requestOAuth2Client(const QString &clientID, const QStr
     QString body = "grant_type=client_credentials&scope=blender.write blender.read&audience=testflight.flightblender.com&client_id=" + clientID + "&client_secret=" + clientSecret + "\r\n\r\n";
     _utmspRestInterface.modifyRequest(target, QNetworkAccessManager::PostOperation, body);
     auto [status, response] = _utmspRestInterface.executeRequest();
-    UTMSP_LOG_INFO() << "UTMSPAuthorization: Authorization Response: " << response;
+    UTMSP_LOG_INFO() << "UTMSPAuthorization: Authorization Response status=" << status
+                      << " body=" << redactOAuthResponseForLog(response);
 
     if(status == 200)
     {
@@ -36,6 +63,7 @@ bool UTMSPAuthorization::requestOAuth2Client(const QString &clientID, const QStr
             json responseJson = json::parse(response);
             clientToken = responseJson["access_token"];
             _isValidToken = true;
+            UTMSP_LOG_INFO() << "UTMSPAuthorization: OAuth2 client token acquired";
         }
         catch (const json::parse_error& e) {
             UTMSP_LOG_ERROR() << "UTMSPAuthorization: Invalid Token: " << e.what();

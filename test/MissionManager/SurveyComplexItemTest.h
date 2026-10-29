@@ -29,7 +29,6 @@ private slots:
     void _testItemCount(void);
     void _testHoverCaptureItemGeneration(void);
     void _testPatternParameters(void);
-    void _testRouteMappingResolutionPreset_data(void);
     void _testRouteMappingResolutionPreset(void);
     void _testRouteMappingTerrainFrame(void);
 #else
@@ -43,7 +42,6 @@ private:
     void _testItemGeneration(void);
     void _testHoverCaptureItemGeneration(void);
     void _testPatternParameters(void);
-    void _testRouteMappingResolutionPreset_data(void);
     void _testRouteMappingResolutionPreset(void);
     void _testRouteMappingTerrainFrame(void);
 #endif

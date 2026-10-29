@@ -2,12 +2,14 @@ SERIAL_DEVICE=/dev/ttyAMA0
 SERIAL_BAUD=57600
 WFB_HOST=127.0.0.1
 WFB_PORT=14550
-MANUAL_HOST=0.0.0.0
+# Bind only to the WFB aircraft address (not 0.0.0.0). Override only if the
+# Pi uses a different control-plane IP.
+MANUAL_HOST=10.5.0.2
 MANUAL_PORT=14551
 PHOTO_ROOT=/home/shreeon/mapping_photos
 CAMERA_COMMAND=/usr/local/bin/rpicam-vid
 THUMBNAIL_COMMAND=/home/shreeon/extract_jpeg_thumbnail.py
-MAPPING_WIDTH=1280
+MAPPING_WIDTH=1260
 MAPPING_HEIGHT=720
 MAPPING_FRAMERATE=5
 MAPPING_QUALITY=85
@@ -19,5 +21,3 @@ FRAME_WAIT_SEC=3
 SESSION_LEASE_SEC=45
 # When 1, UART CAMERA_TRIGGER does not queue captures (QGC-led UDP only).
 QGC_LED=1
-
-

@@ -39,6 +39,10 @@ ApplicationWindow {
 
     property bool   _utmspSendActTrigger
 
+    MainWindowSavedState {
+        window: mainWindow
+    }
+
     // Set true only while previewing CustomHomePage without the normal QGC views.
     readonly property bool homePageOnly: false
 

@@ -261,7 +261,6 @@ SetupPage {
 
                             FactTextField {
                                 width:                  failsafeSettings._editWidth
-                                anchors.verticalCenter: pilotEnableCombo.verticalCenter
                                 visible:                pilotEnableCombo.currentIndex != 0
                                 anchors.baseline:       pilotEnableCombo.baseline
                                 fact:                   _failsafePilotTimeout

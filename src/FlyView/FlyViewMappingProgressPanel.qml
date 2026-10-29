@@ -26,6 +26,7 @@ Rectangle {
     property real orthomosaicOpacity: 0.82
 
     signal reconstructionRequested()
+    signal stitchFromDirectoryRequested()
     signal orthomosaicLoadRequested()
     signal orthomosaicHideRequested()
     signal orthomosaicOpacityEdited(real opacity)
@@ -229,6 +230,18 @@ Rectangle {
             from: 0
             to: 100
             value: root.reconstructionProgress
+        }
+
+        RowLayout {
+            anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.photosVisible
+            spacing: ScreenTools.defaultFontPixelWidth * 0.7
+
+            QGCButton {
+                enabled: !root.reconstructionRunning && !root.orthomosaicLoading
+                text: qsTr("Stitch from Photos Directory")
+                onClicked: root.stitchFromDirectoryRequested()
+            }
         }
 
         RowLayout {

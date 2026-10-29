@@ -41,11 +41,13 @@ Item {
     }
 
     function close() {
+        root.loading = false
         root.visible = false
         root.closed()
     }
 
     function goHome() {
+        root.loading = false
         root.visible = false
         root.goHomeRequested()
     }
@@ -70,14 +72,26 @@ Item {
             return
         }
 
-        const pages = QGCFileDialogController.renderPdfPages(root.pdfPath, 130)
-        root.pageUrls = pages
-        root.loading = false
+        // Async render keeps the loading spinner updating on the GUI thread.
+        QGCFileDialogController.renderPdfPagesAsync(root.pdfPath, 130)
+    }
 
-        if (!pages || pages.length === 0) {
-            root.statusMessage = qsTr("Unable to render PDF. Make sure poppler-utils (pdftoppm) is installed.")
-        } else {
-            root.statusMessage = ""
+    Connections {
+        target: QGCFileDialogController
+        function onPdfPagesRendered(pages, errorMessage) {
+            // Ignore completions after the viewer was closed/cancelled.
+            if (!root.loading) {
+                return
+            }
+            root.pageUrls = pages || []
+            root.loading = false
+            if (!pages || pages.length === 0) {
+                root.statusMessage = (errorMessage && errorMessage.length > 0)
+                        ? errorMessage
+                        : qsTr("Unable to render PDF. Make sure poppler-utils (pdftoppm) is installed.")
+            } else {
+                root.statusMessage = ""
+            }
         }
     }
 

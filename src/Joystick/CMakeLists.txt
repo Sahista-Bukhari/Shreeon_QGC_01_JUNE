@@ -47,7 +47,8 @@ endif()
 CPMAddPackage(
     NAME sdl_gamecontrollerdb
     GITHUB_REPOSITORY mdqinc/SDL_GameControllerDB
-    GIT_TAG master
+    # Pin immutable commit (was floating "master") for reproducible builds.
+    GIT_TAG ff333823a85ae896e73f4c53670932cf0f728adb
     DOWNLOAD_ONLY
 )
 

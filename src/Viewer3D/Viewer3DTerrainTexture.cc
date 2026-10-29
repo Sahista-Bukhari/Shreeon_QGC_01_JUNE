@@ -3,8 +3,11 @@
 #include "SettingsManager.h"
 #include "QGCMapEngine.h"
 #include "QGCMapUrlEngine.h"
+#include "QGCLoggingCategory.h"
 #include "FlightMapSettings.h"
 #include "OsmParser.h"
+
+QGC_LOGGING_CATEGORY(Viewer3DTerrainTextureLog, "Viewer3D.TerrainTexture")
 
 
 Viewer3DTerrainTexture::Viewer3DTerrainTexture()
@@ -36,6 +39,7 @@ void Viewer3DTerrainTexture::loadTexture()
         if(!_terrainTileLoader){
             _terrainTileLoader = new MapTileQuery(this);
             connect(_terrainTileLoader, &MapTileQuery::loadingMapCompleted, this, &Viewer3DTerrainTexture::updateTexture);
+            connect(_terrainTileLoader, &MapTileQuery::loadingMapFailed, this, &Viewer3DTerrainTexture::handleMapLoadFailed);
             connect(_terrainTileLoader, &MapTileQuery::textureGeometryReady, this, &Viewer3DTerrainTexture::setTextureGeometry);
         }
         _terrainTileLoader->adaptiveMapTilesLoader(_mapType, _mapId,
@@ -45,9 +49,24 @@ void Viewer3DTerrainTexture::loadTexture()
     }
 }
 
+void Viewer3DTerrainTexture::cleanupTerrainTileLoader()
+{
+    if (!_terrainTileLoader) {
+        return;
+    }
+    disconnect(_terrainTileLoader, &MapTileQuery::mapTileDownloaded, this, &Viewer3DTerrainTexture::setTextureDownloadProgress);
+    disconnect(_terrainTileLoader, &MapTileQuery::loadingMapCompleted, this, &Viewer3DTerrainTexture::updateTexture);
+    disconnect(_terrainTileLoader, &MapTileQuery::loadingMapFailed, this, &Viewer3DTerrainTexture::handleMapLoadFailed);
+    MapTileQuery *const loader = _terrainTileLoader;
+    _terrainTileLoader = nullptr;
+    loader->deleteLater();
+}
+
 void Viewer3DTerrainTexture::updateTexture()
 {
-    MapTileQuery* _extureQuery = qobject_cast<MapTileQuery*>(QObject::sender());
+    if (!_terrainTileLoader) {
+        return;
+    }
 
     setSize(_terrainTileLoader->getMapSize());
     setFormat(QQuick3DTextureData::RGBA32F);
@@ -56,11 +75,17 @@ void Viewer3DTerrainTexture::updateTexture()
     setTextureData(_terrainTileLoader->getMapData());
     setTextureLoaded(true);
     setTextureGeometryDone(true);
-    disconnect(_terrainTileLoader, &MapTileQuery::mapTileDownloaded, this, &Viewer3DTerrainTexture::setTextureDownloadProgress);
-    disconnect(_terrainTileLoader, &MapTileQuery::loadingMapCompleted, this, &Viewer3DTerrainTexture::updateTexture);
-    _terrainTileLoader = nullptr;
     setTextureDownloadProgress(100.0);
-    _extureQuery->deleteLater();
+    cleanupTerrainTileLoader();
+}
+
+void Viewer3DTerrainTexture::handleMapLoadFailed(const QString &errorMessage)
+{
+    qCWarning(Viewer3DTerrainTextureLog) << errorMessage;
+    setTextureLoaded(false);
+    setTextureGeometryDone(true);
+    setTextureDownloadProgress(100.0);
+    cleanupTerrainTileLoader();
 }
 
 void Viewer3DTerrainTexture::mapTypeChangedEvent(void)

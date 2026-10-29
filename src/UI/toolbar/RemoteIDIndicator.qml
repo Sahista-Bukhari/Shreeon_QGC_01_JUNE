@@ -43,16 +43,12 @@ Item {
         switch (remoteIDState) {
             case RemoteIDIndicator.RIDState.HEALTHY:
                 return qgcPal.colorGreen
-                break
             case RemoteIDIndicator.RIDState.WARNING:
                 return qgcPal.colorYellow
-                break
             case RemoteIDIndicator.RIDState.ERROR:
                 return qgcPal.colorRed
-                break
             case RemoteIDIndicator.RIDState.UNAVAILABLE:
                 return qgcPal.colorGrey
-                break
             default:
                 return qgcPal.colorGrey
         }

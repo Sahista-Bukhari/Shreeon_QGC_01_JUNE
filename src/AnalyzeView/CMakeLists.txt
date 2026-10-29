@@ -61,7 +61,8 @@ qt_add_qml_module(AnalyzeViewModule
 CPMAddPackage(
     NAME ulog_cpp
     GITHUB_REPOSITORY PX4/ulog_cpp
-    GIT_TAG main
+    # Pin immutable commit (was floating "main") for reproducible builds.
+    GIT_TAG 5b18d22dbe9cc194ce4ff92d5f506659624423f5
 )
 
 # Suppress Clang warnings for ulog_cpp

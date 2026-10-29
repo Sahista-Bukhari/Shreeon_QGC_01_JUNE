@@ -28,7 +28,7 @@ void SendMavlinkMessageState::_sendMessage()
     }
 
     SharedLinkInterfacePtr sharedLink = vehicle()->vehicleLinkManager()->primaryLink().lock();
-    if (!sharedLink) {
+    if (!sharedLink || !sharedLink->mavlinkChannelIsSet()) {
         qCWarning(QGCStateMachineLog) << "No active link available to send MAVLink message" << stateName();
         emit error();
         return;

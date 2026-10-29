@@ -50,7 +50,8 @@ qt_add_resources(${CMAKE_PROJECT_NAME} firmaware_plugin_apm_resource
 CPMAddPackage(
     NAME ArduPilotParams
     GITHUB_REPOSITORY ArduPilot/ParameterRepository
-    GIT_TAG main
+    # Pin immutable commit (was floating "main") for reproducible builds.
+    GIT_TAG 9ee834d487d7237d6bd5643f9324f8f44fdbadd9
 )
 
 set_source_files_properties("${ArduPilotParams_SOURCE_DIR}/Plane-4.0/apm.pdef.xml" PROPERTIES QT_RESOURCE_ALIAS "FirmwarePlugin/APM/APMParameterFactMetaData.Plane.4.0.xml")

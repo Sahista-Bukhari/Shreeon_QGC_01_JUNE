@@ -159,7 +159,8 @@ elseif(MACOS)
         CPMAddPackage(
             NAME create-dmg
             GITHUB_REPOSITORY create-dmg/create-dmg
-            GIT_TAG master
+            # Pin immutable release tag (was floating "master").
+            GIT_TAG v1.3.0
             DOWNLOAD_ONLY
         )
         set(CREATE_DMG_PROGRAM "${create-dmg_SOURCE_DIR}/create-dmg")
