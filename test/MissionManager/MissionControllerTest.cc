@@ -307,9 +307,11 @@ void MissionControllerTest::_testLoadBaylandsMappingPlan(void)
 
 void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
 {
-    constexpr double configuredAltitudeMeters = 43.25;
+    constexpr double highAltitudeMeters = 30.0;
+    constexpr double lowAltitudeMeters = 60.0;
     constexpr double highTriggerDistanceMeters = 6.0;
     constexpr double lowTriggerDistanceMeters = 9.0;
+    constexpr double presetSpeedMetersPerSecond = 5.0;
 
     _initForFirmwareType(MAV_AUTOPILOT_PX4);
 
@@ -331,18 +333,20 @@ void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
                     << launchCoordinate.atDistanceAndAzimuth(edgeDistanceMeters, 180.0);
     surveyItem->surveyAreaPolygon()->appendVertices(polygonVertices);
 
-    // Configure the vertical profile independently of image resolution.
+    // Route Mapping presets intentionally own the complete flight profile.
     surveyItem->cameraCalc()->setDistanceMode(QGroundControlQmlGlobal::AltitudeModeRelative);
     surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
-    surveyItem->cameraCalc()->distanceToSurface()->setRawValue(configuredAltitudeMeters);
-    takeoffItem->altitude()->setRawValue(configuredAltitudeMeters);
+    surveyItem->setSpecifyPatternFlightSpeed(true);
 
-    const auto verifyResolution = [this, surveyItem, takeoffItem, configuredAltitudeMeters](double triggerDistanceMeters) {
-        // This mirrors the Route Mapping resolution selection: only the
-        // capture interval changes between High and Low.
+    const auto verifyResolution = [this, surveyItem, takeoffItem, presetSpeedMetersPerSecond]
+            (double altitudeMeters, double triggerDistanceMeters) {
+        // Mirror RouteMappingTaskSettings.applyResolutionPreset().
+        surveyItem->cameraCalc()->distanceToSurface()->setRawValue(altitudeMeters);
+        takeoffItem->altitude()->setRawValue(altitudeMeters);
+        surveyItem->patternFlightSpeed()->setRawValue(presetSpeedMetersPerSecond);
         surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
-        QCOMPARE(surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), configuredAltitudeMeters);
-        QCOMPARE(takeoffItem->altitude()->rawValue().toDouble(), configuredAltitudeMeters);
+        QCOMPARE(surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), altitudeMeters);
+        QCOMPARE(takeoffItem->altitude()->rawValue().toDouble(), altitudeMeters);
 
         QObject missionItemParent;
         QList<MissionItem*> missionItems;
@@ -355,24 +359,29 @@ void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
         int takeoffCount = 0;
         int surveyCoordinateCount = 0;
         int triggerStartCount = 0;
+        int speedCommandCount = 0;
         bool takeoffSeen = false;
         for (const MissionItem* missionItem : std::as_const(missionItems)) {
             if (missionItem->command() == MAV_CMD_NAV_TAKEOFF) {
                 QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
-                QCOMPARE(missionItem->param7(), configuredAltitudeMeters);
+                QCOMPARE(missionItem->param7(), altitudeMeters);
                 takeoffSeen = true;
                 ++takeoffCount;
                 continue;
             }
 
-            if (missionItem->command() == MAV_CMD_DO_SET_CAM_TRIGG_DIST
+            if (missionItem->command() == MAV_CMD_DO_CHANGE_SPEED) {
+                if (missionItem->param2() == presetSpeedMetersPerSecond) {
+                    ++speedCommandCount;
+                }
+            } else if (missionItem->command() == MAV_CMD_DO_SET_CAM_TRIGG_DIST
                     && missionItem->param1() > 0) {
                 QCOMPARE(missionItem->param1(), triggerDistanceMeters);
                 ++triggerStartCount;
             } else if (takeoffSeen && (missionItem->command() == MAV_CMD_NAV_WAYPOINT
                                        || missionItem->command() == MAV_CMD_CONDITION_GATE)) {
                 QCOMPARE(missionItem->frame(), MAV_FRAME_GLOBAL_RELATIVE_ALT);
-                QCOMPARE(missionItem->param7(), configuredAltitudeMeters);
+                QCOMPARE(missionItem->param7(), altitudeMeters);
                 ++surveyCoordinateCount;
             }
         }
@@ -380,12 +389,11 @@ void MissionControllerTest::_testRouteMappingAltitudeProfile(void)
         QCOMPARE(takeoffCount, 1);
         QVERIFY(surveyCoordinateCount > 0);
         QVERIFY(triggerStartCount > 0);
+        QVERIFY(speedCommandCount > 0);
     };
 
-    verifyResolution(highTriggerDistanceMeters);
-    // Switching to Low after completing the High-resolution mission must not
-    // alter the already configured vertical profile.
-    verifyResolution(lowTriggerDistanceMeters);
+    verifyResolution(highAltitudeMeters, highTriggerDistanceMeters);
+    verifyResolution(lowAltitudeMeters, lowTriggerDistanceMeters);
 }
 
 void MissionControllerTest::_testGlobalAltMode(void)

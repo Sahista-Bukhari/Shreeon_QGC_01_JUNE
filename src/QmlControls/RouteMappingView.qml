@@ -1011,43 +1011,11 @@ Item {
         return false
     }
 
-    // Vehicle came back with no onboard mission — push the last uploaded plan again.
+    // Never write a Route Mapping mission as a side effect of reconnecting.
+    // Altitude is flight-critical (Low intentionally selects 60 m), so every
+    // mission write must pass through the explicit profile confirmation.
     function tryReuploadRouteMappingPlanAfterReconnect() {
-        if (_routeMappingUploadPending) {
-            return false
-        }
-
-        if (mainWindow.uploadedMissionEditor !== "" && mainWindow.uploadedMissionEditor !== "routeMapping") {
-            return false
-        }
-
-        if (!_routeMappingPlanUploaded || _missionController.visualItems.count <= 1) {
-            if (!loadPersistedUploadedPlan()) {
-                return false
-            }
-        }
-
-        _missionMapVisualsEnabled = true
-        _updateCachedSurveyItem()
-        if (_missionController.visualItems.count <= 1 || !_cachedSurveyItem) {
-            return false
-        }
-
-        var overlayData = _routeMappingOverlayData()
-        if (!overlayData || !overlayData.transectPath || overlayData.transectPath.length < 2) {
-            overlayData = _uploadedRouteMappingOverlayData
-        }
-        if (!overlayData || !overlayData.transectPath || overlayData.transectPath.length < 2) {
-            return false
-        }
-
-        _uploadedRouteMappingOverlayData = overlayData
-        _routeMappingUploadPending = true
-        if (!_planMasterController.upload()) {
-            _routeMappingUploadPending = false
-            return false
-        }
-        return true
+        return false
     }
 
     // Clear icon: validates plan exists, then confirms and clears from both views.
@@ -1256,9 +1224,90 @@ Item {
     // checks/pipeline. Uploading does not require saving the plan to a file and
     // does not navigate away from Route Mapping.
     function uploadRouteMappingPlan() {
-        mainWindow.confirmUploadToFlyView("routeMapping", function() {
-            _root._performRouteMappingUpload()
-        })
+        if (_activeVehicle && _activeVehicle.armed) {
+            mainWindow.showMessageDialog(
+                        qsTr("Upload Blocked"),
+                        qsTr("Route Mapping missions cannot be uploaded while the vehicle is armed. Land and disarm the vehicle, then review the mission profile before uploading."))
+            return
+        }
+
+        _confirmRouteMappingUploadProfile()
+    }
+
+    // Route Mapping resolution presets intentionally own altitude, photo
+    // spacing, and speed. Require an explicit review of those flight-critical
+    // values immediately before the mission is sent to the vehicle.
+    function _confirmRouteMappingUploadProfile() {
+        if (_activeVehicle && _activeVehicle.armed) {
+            mainWindow.showMessageDialog(
+                        qsTr("Upload Blocked"),
+                        qsTr("Route Mapping missions cannot be uploaded while the vehicle is armed. Land and disarm the vehicle before uploading."))
+            return
+        }
+
+        if (taskSettingsPanel.flushPendingWrites) {
+            taskSettingsPanel.flushPendingWrites()
+        }
+        if (taskSettingsPanel.resolutionPresetReadyForUpload
+                && !taskSettingsPanel.resolutionPresetReadyForUpload()) {
+            mainWindow.showMessageDialog(
+                        qsTr("Select Flight Profile"),
+                        qsTr("Select High (30 m) or Low (60 m) before uploading the Route Mapping mission."))
+            return
+        }
+
+        var takeoff = _findTakeoffItem()
+        var survey = _cachedSurveyItem || _taskSettingsSurveyItem
+        var takeoffAltitude = takeoff && takeoff.altitude
+                ? Number(takeoff.altitude.rawValue) : NaN
+        var patternAltitude = survey && survey.cameraCalc
+                && survey.cameraCalc.distanceToSurface
+                ? Number(survey.cameraCalc.distanceToSurface.rawValue) : NaN
+        var patternSpeed = survey && survey.patternFlightSpeed
+                ? Number(survey.patternFlightSpeed.rawValue) : NaN
+        var triggerDistance = survey && survey.cameraCalc
+                && survey.cameraCalc.adjustedFootprintFrontal
+                ? Number(survey.cameraCalc.adjustedFootprintFrontal.rawValue) : NaN
+        var altitudeReference = qsTr("Configured mission frame")
+        if (survey && survey.cameraCalc) {
+            switch (survey.cameraCalc.distanceMode) {
+            case QGroundControl.AltitudeModeRelative:
+                altitudeReference = qsTr("Relative to home")
+                break
+            case QGroundControl.AltitudeModeAbsolute:
+                altitudeReference = qsTr("AMSL")
+                break
+            case QGroundControl.AltitudeModeCalcAboveTerrain:
+            case QGroundControl.AltitudeModeTerrainFrame:
+                altitudeReference = qsTr("Above terrain")
+                break
+            }
+        }
+        var presetName = taskSettingsPanel.resolution === 0
+                ? qsTr("Low")
+                : taskSettingsPanel.resolution === 1
+                  ? qsTr("High") : qsTr("Custom")
+        var numberText = function(value) {
+            return isFinite(value) ? Number(value).toFixed(1) : qsTr("Not available")
+        }
+
+        var summary = qsTr("Review the flight profile before uploading:\n\nPreset: %1\nTakeoff altitude: %2 m\nSurvey altitude: %3 m\nAltitude reference: %4\nPhoto interval: %5 m\nFlight speed: %6 m/s\n\nUploading will replace the mission currently stored on the vehicle. Continue?")
+                .arg(presetName)
+                .arg(numberText(takeoffAltitude))
+                .arg(numberText(patternAltitude))
+                .arg(altitudeReference)
+                .arg(numberText(triggerDistance))
+                .arg(numberText(patternSpeed))
+
+        mainWindow.showMessageDialog(
+                    qsTr("Confirm Route Mapping Mission"),
+                    summary,
+                    Dialog.Yes | Dialog.Cancel,
+                    function() {
+                        mainWindow.confirmUploadToFlyView("routeMapping", function() {
+                            _root._performRouteMappingUpload()
+                        })
+                    })
     }
 
     function _performRouteMappingUpload() {
@@ -1266,9 +1315,25 @@ Item {
             return
         }
 
+        // Re-check here because the vehicle can be armed while a confirmation
+        // dialog is open.
+        if (_activeVehicle && _activeVehicle.armed) {
+            mainWindow.showMessageDialog(
+                        qsTr("Upload Blocked"),
+                        qsTr("The vehicle was armed before upload started. Land and disarm it before uploading a Route Mapping mission."))
+            return
+        }
+
         // Commit any in-progress altitude/speed slider edits before MAVLink build.
         if (taskSettingsPanel.flushPendingWrites) {
             taskSettingsPanel.flushPendingWrites()
+        }
+        if (taskSettingsPanel.resolutionPresetReadyForUpload
+                && !taskSettingsPanel.resolutionPresetReadyForUpload()) {
+            mainWindow.showMessageDialog(
+                        qsTr("Upload"),
+                        qsTr("Select High (30 m) or Low (60 m) before uploading the Route Mapping mission."))
+            return
         }
         if (taskSettingsPanel.altitudeProfileReadyForUpload
                 && !taskSettingsPanel.altitudeProfileReadyForUpload()) {
@@ -2697,6 +2762,8 @@ Item {
                 anchors.fill: parent
                 patternSectionTitle: qsTr("Route Mapping Pattern")
                 showPhotoSettings: true
+                missionSettingsEnabled: !_root._activeVehicle || !_root._activeVehicle.armed
+                lockFlightProfileToResolutionPresets: true
                 synchronizeTakeoffAltitudeWithPattern: true
                 // Log planned altitude/speed commits so Low/High presets are
                 // visible in the QGC console during PX4 SITL verification.
@@ -2887,6 +2954,7 @@ Item {
                 readonly property bool uploadEnabled: !_planMasterController.syncInProgress
                                                       && _planMasterController.containsItems
                                                       && !_planMasterController.offline
+                                                      && (!_root._activeVehicle || !_root._activeVehicle.armed)
 
                 width: routeSaveButton.width
                 height: routeSaveButton.height

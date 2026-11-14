@@ -401,27 +401,27 @@ void SurveyComplexItemTest::_testPatternParameters(void)
 
 void SurveyComplexItemTest::_testRouteMappingResolutionPreset(void)
 {
-    constexpr double configuredAltitudeMeters = 47.5;
-    constexpr double configuredSpeedMetersPerSecond = 7.5;
+    constexpr double highAltitudeMeters = 30.0;
+    constexpr double lowAltitudeMeters = 60.0;
+    constexpr double presetSpeedMetersPerSecond = 5.0;
     constexpr double highTriggerDistanceMeters = 6.0;
     constexpr double lowTriggerDistanceMeters = 9.0;
 
-    // Altitude and speed are configured independently before choosing a photo
-    // resolution. Applying High and then Low must change only the native
-    // distance-based camera trigger Fact.
+    // High and Low intentionally select altitude, speed, and photo interval.
     _surveyItem->cameraCalc()->valueSetIsDistance()->setRawValue(true);
-    _surveyItem->cameraCalc()->distanceToSurface()->setRawValue(configuredAltitudeMeters);
-    _surveyItem->patternFlightSpeed()->setRawValue(configuredSpeedMetersPerSecond);
-    _surveyItem->setSpecifyPatternFlightSpeed(false);
+    _surveyItem->setSpecifyPatternFlightSpeed(true);
     _surveyItem->cameraTriggerInTurnAround()->setRawValue(false);
 
-    const auto verifyResolution = [this, configuredAltitudeMeters, configuredSpeedMetersPerSecond](double triggerDistanceMeters) {
+    const auto verifyResolution = [this, presetSpeedMetersPerSecond]
+            (double altitudeMeters, double triggerDistanceMeters) {
+        _surveyItem->cameraCalc()->distanceToSurface()->setRawValue(altitudeMeters);
+        _surveyItem->patternFlightSpeed()->setRawValue(presetSpeedMetersPerSecond);
         _surveyItem->cameraCalc()->adjustedFootprintFrontal()->setRawValue(triggerDistanceMeters);
 
-        QCOMPARE(_surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), configuredAltitudeMeters);
+        QCOMPARE(_surveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), altitudeMeters);
         QCOMPARE(_surveyItem->cameraCalc()->adjustedFootprintFrontal()->rawValue().toDouble(), triggerDistanceMeters);
-        QCOMPARE(_surveyItem->patternFlightSpeed()->rawValue().toDouble(), configuredSpeedMetersPerSecond);
-        QVERIFY(!_surveyItem->specifyPatternFlightSpeed());
+        QCOMPARE(_surveyItem->patternFlightSpeed()->rawValue().toDouble(), presetSpeedMetersPerSecond);
+        QVERIFY(_surveyItem->specifyPatternFlightSpeed());
 
         QObject missionItemParent;
         QList<MissionItem*> missionItems;
@@ -443,23 +443,22 @@ void SurveyComplexItemTest::_testRouteMappingResolutionPreset(void)
                 }
             } else if (missionItem->command() == MAV_CMD_NAV_WAYPOINT
                        || missionItem->command() == MAV_CMD_CONDITION_GATE) {
-                QCOMPARE(missionItem->param7(), configuredAltitudeMeters);
+                QCOMPARE(missionItem->param7(), altitudeMeters);
                 ++coordinateItemCount;
             }
         }
 
-        QCOMPARE(speedCommandCount, 0);
+        QVERIFY(speedCommandCount > 0);
         QVERIFY(triggerStartCount > 0);
         QVERIFY(triggerStopCount > 0);
         QVERIFY(coordinateItemCount > 0);
     };
 
-    verifyResolution(highTriggerDistanceMeters);
-    // Simulate switching to Low after the High-resolution mission completed.
-    verifyResolution(lowTriggerDistanceMeters);
+    verifyResolution(highAltitudeMeters, highTriggerDistanceMeters);
+    verifyResolution(lowAltitudeMeters, lowTriggerDistanceMeters);
 
     // Plan persistence must retain the exact SI values used to rebuild the
-    // mission after the resolution switch without changing flight geometry.
+    // mission after switching from High to Low.
     QJsonArray savedItems;
     _surveyItem->save(savedItems);
     QCOMPARE(savedItems.count(), 1);
@@ -467,10 +466,10 @@ void SurveyComplexItemTest::_testRouteMappingResolutionPreset(void)
     auto* loadedSurveyItem = new SurveyComplexItem(_masterController, false /* flyView */, QString() /* kmlFile */);
     QString errorString;
     QVERIFY2(loadedSurveyItem->load(savedItems.first().toObject(), 0, errorString), qPrintable(errorString));
-    QCOMPARE(loadedSurveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), configuredAltitudeMeters);
+    QCOMPARE(loadedSurveyItem->cameraCalc()->distanceToSurface()->rawValue().toDouble(), lowAltitudeMeters);
     QCOMPARE(loadedSurveyItem->cameraCalc()->adjustedFootprintFrontal()->rawValue().toDouble(), lowTriggerDistanceMeters);
-    QCOMPARE(loadedSurveyItem->patternFlightSpeed()->rawValue().toDouble(), configuredSpeedMetersPerSecond);
-    QVERIFY(!loadedSurveyItem->specifyPatternFlightSpeed());
+    QCOMPARE(loadedSurveyItem->patternFlightSpeed()->rawValue().toDouble(), presetSpeedMetersPerSecond);
+    QVERIFY(loadedSurveyItem->specifyPatternFlightSpeed());
 }
 
 void SurveyComplexItemTest::_testRouteMappingTerrainFrame(void)
